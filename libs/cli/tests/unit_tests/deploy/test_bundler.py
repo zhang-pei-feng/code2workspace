@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from deepagents_cli.deploy.bundler import (
+from code2workspace_cli.deploy.bundler import (
     _MODEL_PROVIDER_DEPS,
     _build_seed,
     _render_deploy_graph,
@@ -16,7 +16,7 @@ from deepagents_cli.deploy.bundler import (
     bundle,
     print_bundle_summary,
 )
-from deepagents_cli.deploy.config import (
+from code2workspace_cli.deploy.config import (
     _MODEL_PROVIDER_ENV,
     AGENTS_MD_FILENAME,
     MCP_FILENAME,
@@ -166,7 +166,7 @@ class TestRenderDeployGraph:
 
     def test_each_provider_renders(self) -> None:
         """Every valid provider should produce compilable output."""
-        from deepagents_cli.deploy.config import VALID_SANDBOX_PROVIDERS
+        from code2workspace_cli.deploy.config import VALID_SANDBOX_PROVIDERS
 
         for provider in VALID_SANDBOX_PROVIDERS:
             config = _minimal_config(provider=provider)

@@ -6,7 +6,7 @@ import asyncio
 
 from textual.app import App, ComposeResult
 
-from deepagents_cli.widgets.loading import LoadingWidget
+from code2workspace_cli.widgets.loading import LoadingWidget
 
 
 class LoadingWidgetApp(App[None]):

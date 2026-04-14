@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from langchain.messages import ToolCall
     from langgraph.runtime import Runtime
 
-from deepagents_cli.agent import (
+from code2workspace_cli.agent import (
     DEFAULT_AGENT_NAME,
     _format_edit_file_description,
     _format_execute_description,
@@ -27,8 +27,8 @@ from deepagents_cli.agent import (
     list_agents,
     load_async_subagents,
 )
-from deepagents_cli.config import Settings, get_glyphs
-from deepagents_cli.project_utils import ProjectContext
+from code2workspace_cli.config import Settings, get_glyphs
+from code2workspace_cli.project_utils import ProjectContext
 
 
 def _make_fake_chat_model() -> GenericFakeChatModel:
@@ -410,7 +410,7 @@ class TestGetSystemPromptModelIdentity:
         mock_settings.model_unsupported_modalities = frozenset()
         mock_settings.model_context_limit = 200000
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "### Model Identity" in prompt
@@ -426,7 +426,7 @@ class TestGetSystemPromptModelIdentity:
         mock_settings.model_unsupported_modalities = frozenset()
         mock_settings.model_context_limit = 200000
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "### Model Identity" not in prompt
@@ -439,7 +439,7 @@ class TestGetSystemPromptModelIdentity:
         mock_settings.model_unsupported_modalities = frozenset()
         mock_settings.model_context_limit = 128000
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "### Model Identity" in prompt
@@ -455,7 +455,7 @@ class TestGetSystemPromptModelIdentity:
         mock_settings.model_unsupported_modalities = frozenset()
         mock_settings.model_context_limit = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "### Model Identity" in prompt
@@ -471,7 +471,7 @@ class TestGetSystemPromptModelIdentity:
         mock_settings.model_unsupported_modalities = frozenset()
         mock_settings.model_context_limit = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "### Model Identity" in prompt
@@ -489,7 +489,7 @@ class TestGetSystemPromptModelIdentity:
         )
         mock_settings.model_context_limit = 64000
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "Audio, image, pdf, and video input may not be available" in prompt
@@ -502,7 +502,7 @@ class TestGetSystemPromptModelIdentity:
         mock_settings.model_unsupported_modalities = frozenset({"audio"})
         mock_settings.model_context_limit = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "Audio input may not be available" in prompt
@@ -515,7 +515,7 @@ class TestGetSystemPromptModelIdentity:
         mock_settings.model_unsupported_modalities = frozenset()
         mock_settings.model_context_limit = 200000
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "may not be available" not in prompt
@@ -528,7 +528,7 @@ class TestGetSystemPromptNonInteractive:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=True)
 
         assert "interactive CLI" in prompt
@@ -538,7 +538,7 @@ class TestGetSystemPromptNonInteractive:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=False)
 
         assert "non-interactive" in prompt
@@ -548,7 +548,7 @@ class TestGetSystemPromptNonInteractive:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=False)
 
         assert "ask questions before acting" not in prompt
@@ -557,7 +557,7 @@ class TestGetSystemPromptNonInteractive:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=False)
 
         assert "Do NOT ask clarifying questions" in prompt
@@ -567,7 +567,7 @@ class TestGetSystemPromptNonInteractive:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=False)
 
         assert "non-interactive command variants" in prompt
@@ -577,7 +577,7 @@ class TestGetSystemPromptNonInteractive:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "interactive CLI" in prompt
@@ -587,7 +587,7 @@ class TestGetSystemPromptNonInteractive:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=True)
 
         assert "Wait for the user's response before marking the first todo" in prompt
@@ -597,7 +597,7 @@ class TestGetSystemPromptNonInteractive:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=False)
 
         wait_for_user = "Wait for the user's response before marking the first todo"
@@ -615,8 +615,8 @@ class TestGetSystemPromptCwdOSError:
         mock_settings.model_name = None
 
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.Path.cwd", side_effect=OSError("deleted")),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.Path.cwd", side_effect=OSError("deleted")),
         ):
             prompt = get_system_prompt("test-agent")
 
@@ -630,7 +630,7 @@ class TestGetSystemPromptSandbox:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", sandbox_type="modal")
 
         assert "do NOT have access to the user's local filesystem" in prompt
@@ -639,7 +639,7 @@ class TestGetSystemPromptSandbox:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", sandbox_type="modal")
 
         assert "/workspace" in prompt
@@ -649,7 +649,7 @@ class TestGetSystemPromptSandbox:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", sandbox_type="daytona")
 
         assert "subagents" in prompt
@@ -659,7 +659,7 @@ class TestGetSystemPromptSandbox:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent")
 
         assert "do NOT have access to the user's local filesystem" not in prompt
@@ -673,7 +673,7 @@ class TestGetSystemPromptPlaceholderValidation:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=True)
 
         # No raw {placeholder} patterns should remain
@@ -685,7 +685,7 @@ class TestGetSystemPromptPlaceholderValidation:
         mock_settings = Mock()
         mock_settings.model_name = None
 
-        with patch("deepagents_cli.agent.settings", mock_settings):
+        with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=False)
 
         import re
@@ -727,15 +727,15 @@ class TestCreateCliAgentInteractiveForwarding:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
-            patch("deepagents_cli.agent.create_deep_agent", return_value=mock_agent),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.create_workspace_agent", return_value=mock_agent),
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
-            patch("deepagents_cli.agent.get_system_prompt") as mock_get_prompt,
+            patch("code2workspace_cli.agent.get_system_prompt") as mock_get_prompt,
         ):
             mock_get_prompt.return_value = "mocked prompt"
             create_cli_agent(
@@ -780,15 +780,15 @@ class TestCreateCliAgentInteractiveForwarding:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
-            patch("deepagents_cli.agent.create_deep_agent", return_value=mock_agent),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.create_workspace_agent", return_value=mock_agent),
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
-            patch("deepagents_cli.agent.get_system_prompt") as mock_get_prompt,
+            patch("code2workspace_cli.agent.get_system_prompt") as mock_get_prompt,
         ):
             create_cli_agent(
                 model="fake-model",
@@ -811,7 +811,7 @@ class TestDefaultAgentName:
         """Guard against accidental renames of the default agent identifier.
 
         Other modules (main.py, commands.py) rely on this value matching
-        the directory name under `~/.deepagents/`.
+        the directory name under `~/.code2workspace/`.
         """
         assert DEFAULT_AGENT_NAME == "agent"
 
@@ -835,7 +835,7 @@ class TestListAgents:
         (other_dir / "AGENTS.md").touch()
 
         mock_settings = Mock()
-        mock_settings.user_deepagents_dir = agents_dir
+        mock_settings.user_code2workspace_dir = agents_dir
 
         output: list[str] = []
 
@@ -843,8 +843,8 @@ class TestListAgents:
             output.append(" ".join(str(a) for a in args))
 
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.console") as mock_console,
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.console") as mock_console,
         ):
             mock_console.print = capture_print
             list_agents()
@@ -872,7 +872,7 @@ class TestListAgents:
         (custom_dir / "AGENTS.md").touch()
 
         mock_settings = Mock()
-        mock_settings.user_deepagents_dir = agents_dir
+        mock_settings.user_code2workspace_dir = agents_dir
 
         output: list[str] = []
 
@@ -880,8 +880,8 @@ class TestListAgents:
             output.append(" ".join(str(a) for a in args))
 
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.console") as mock_console,
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.console") as mock_console,
         ):
             mock_console.print = capture_print
             list_agents()
@@ -909,11 +909,11 @@ class TestListAgentsJson:
         other_dir.mkdir()
 
         mock_settings = Mock()
-        mock_settings.user_deepagents_dir = agents_dir
+        mock_settings.user_code2workspace_dir = agents_dir
 
         buf = StringIO()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.settings", mock_settings),
             patch("sys.stdout", buf),
         ):
             list_agents(output_format="json")
@@ -941,11 +941,11 @@ class TestListAgentsJson:
         agents_dir.mkdir()
 
         mock_settings = Mock()
-        mock_settings.user_deepagents_dir = agents_dir
+        mock_settings.user_code2workspace_dir = agents_dir
 
         buf = StringIO()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.settings", mock_settings),
             patch("sys.stdout", buf),
         ):
             list_agents(output_format="json")
@@ -966,14 +966,14 @@ class TestResetAgentJson:
         agents_dir.mkdir()
 
         mock_settings = Mock()
-        mock_settings.user_deepagents_dir = agents_dir
+        mock_settings.user_code2workspace_dir = agents_dir
 
         buf = StringIO()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.settings", mock_settings),
             patch("sys.stdout", buf),
         ):
-            from deepagents_cli.agent import reset_agent
+            from code2workspace_cli.agent import reset_agent
 
             reset_agent("coder", output_format="json")
 
@@ -1045,12 +1045,12 @@ class TestCreateCliAgentSkillsSources:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware", FakeSkillsMiddleware),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
-            patch("deepagents_cli.agent.create_deep_agent", return_value=mock_agent),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware", FakeSkillsMiddleware),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.create_workspace_agent", return_value=mock_agent),
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):
@@ -1085,7 +1085,7 @@ class TestCreateCliAgentMemorySources:
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
 
-        project_inner = tmp_path / ".deepagents" / "AGENTS.md"
+        project_inner = tmp_path / ".code2workspace" / "AGENTS.md"
         project_root = tmp_path / "AGENTS.md"
 
         mock_settings = Mock()
@@ -1121,16 +1121,16 @@ class TestCreateCliAgentMemorySources:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware", FakeMemoryMiddleware),
-            patch("deepagents_cli.agent.FilesystemBackend"),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware", FakeMemoryMiddleware),
+            patch("code2workspace_cli.agent.FilesystemBackend"),
             patch(
-                "deepagents_cli.agent.create_deep_agent",
+                "code2workspace_cli.agent.create_workspace_agent",
                 return_value=mock_agent,
             ),
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):
@@ -1188,16 +1188,16 @@ class TestCreateCliAgentMemorySources:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware", FakeMemoryMiddleware),
-            patch("deepagents_cli.agent.FilesystemBackend"),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware", FakeMemoryMiddleware),
+            patch("code2workspace_cli.agent.FilesystemBackend"),
             patch(
-                "deepagents_cli.agent.create_deep_agent",
+                "code2workspace_cli.agent.create_workspace_agent",
                 return_value=mock_agent,
             ),
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):
@@ -1228,11 +1228,11 @@ class TestCreateCliAgentProjectContext:
         user_cwd = project_root / "src"
         user_cwd.mkdir()
 
-        project_skills_dir = project_root / ".deepagents" / "skills"
+        project_skills_dir = project_root / ".code2workspace" / "skills"
         project_skills_dir.mkdir(parents=True)
         project_agent_skills_dir = project_root / ".agents" / "skills"
         project_agent_skills_dir.mkdir(parents=True)
-        project_agents_dir = project_root / ".deepagents" / "agents"
+        project_agents_dir = project_root / ".code2workspace" / "agents"
         project_agents_dir.mkdir(parents=True)
         project_context = ProjectContext.from_user_cwd(user_cwd)
 
@@ -1276,12 +1276,12 @@ class TestCreateCliAgentProjectContext:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware", FakeSkillsMiddleware),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
-            patch("deepagents_cli.agent.list_subagents", return_value=[]) as mock_list,
-            patch("deepagents_cli.agent.create_deep_agent", return_value=mock_agent),
-            patch("deepagents._models.init_chat_model", return_value=fake_model),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware", FakeSkillsMiddleware),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.list_subagents", return_value=[]) as mock_list,
+            patch("code2workspace_cli.agent.create_workspace_agent", return_value=mock_agent),
+            patch("code2workspace._models.init_chat_model", return_value=fake_model),
         ):
             create_cli_agent(
                 model="fake-model",
@@ -1311,9 +1311,9 @@ class TestCreateCliAgentProjectContext:
         user_cwd = project_root / "src"
         user_cwd.mkdir()
 
-        deepagents_md = project_root / ".deepagents" / "AGENTS.md"
-        deepagents_md.parent.mkdir(parents=True)
-        deepagents_md.write_text("deepagents instructions")
+        code2workspace_md = project_root / ".code2workspace" / "AGENTS.md"
+        code2workspace_md.parent.mkdir(parents=True)
+        code2workspace_md.write_text("code2workspace instructions")
         root_md = project_root / "AGENTS.md"
         root_md.write_text("root instructions")
         project_context = ProjectContext.from_user_cwd(user_cwd)
@@ -1354,12 +1354,12 @@ class TestCreateCliAgentProjectContext:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware", FakeMemoryMiddleware),
-            patch("deepagents_cli.agent.FilesystemBackend"),
-            patch("deepagents_cli.agent.create_deep_agent", return_value=mock_agent),
-            patch("deepagents._models.init_chat_model", return_value=fake_model),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware", FakeMemoryMiddleware),
+            patch("code2workspace_cli.agent.FilesystemBackend"),
+            patch("code2workspace_cli.agent.create_workspace_agent", return_value=mock_agent),
+            patch("code2workspace._models.init_chat_model", return_value=fake_model),
         ):
             create_cli_agent(
                 model="fake-model",
@@ -1373,7 +1373,7 @@ class TestCreateCliAgentProjectContext:
         assert len(captured_sources) == 1
         sources = captured_sources[0]
         assert sources[0] == str(agent_dir / "AGENTS.md")
-        assert sources[1:] == [str(deepagents_md), str(root_md)]
+        assert sources[1:] == [str(code2workspace_md), str(root_md)]
 
     def test_project_context_sets_local_shell_root_dir(self, tmp_path: Path) -> None:
         """Shell backend root should follow the explicit user working directory."""
@@ -1413,14 +1413,14 @@ class TestCreateCliAgentProjectContext:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
             patch(
-                "deepagents_cli.agent.LocalShellBackend", return_value=mock_backend
+                "code2workspace_cli.agent.LocalShellBackend", return_value=mock_backend
             ) as mock_shell,
-            patch("deepagents_cli.agent.create_deep_agent", return_value=mock_agent),
-            patch("deepagents._models.init_chat_model", return_value=fake_model),
+            patch("code2workspace_cli.agent.create_workspace_agent", return_value=mock_agent),
+            patch("code2workspace._models.init_chat_model", return_value=fake_model),
         ):
             create_cli_agent(
                 model="fake-model",
@@ -1467,12 +1467,12 @@ class TestCreateCliAgentProjectContext:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.FilesystemBackend") as mock_filesystem,
-            patch("deepagents_cli.agent.create_deep_agent", return_value=mock_agent),
-            patch("deepagents._models.init_chat_model", return_value=fake_model),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.FilesystemBackend") as mock_filesystem,
+            patch("code2workspace_cli.agent.create_workspace_agent", return_value=mock_agent),
+            patch("code2workspace._models.init_chat_model", return_value=fake_model),
         ):
             create_cli_agent(
                 model="fake-model",
@@ -1487,7 +1487,7 @@ class TestCreateCliAgentProjectContext:
 
 
 class TestMiddlewareStackConformance:
-    """Verify all middleware passed to create_deep_agent inherits AgentMiddleware."""
+    """Verify all middleware passed to create_workspace_agent inherits AgentMiddleware."""
 
     def test_all_middleware_inherit_agent_middleware(self, tmp_path: Path) -> None:
         """Every middleware in the stack must be an AgentMiddleware subclass.
@@ -1529,13 +1529,13 @@ class TestMiddlewareStackConformance:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.settings", mock_settings),
             patch(
-                "deepagents_cli.agent.create_deep_agent",
+                "code2workspace_cli.agent.create_workspace_agent",
                 side_effect=capture_create_agent,
             ),
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):
@@ -1595,13 +1595,13 @@ class TestEnableAskUser:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.settings", mock_settings),
             patch(
-                "deepagents_cli.agent.create_deep_agent",
+                "code2workspace_cli.agent.create_workspace_agent",
                 side_effect=capture,
             ),
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):
@@ -1617,13 +1617,13 @@ class TestEnableAskUser:
         return captured[0]
 
     def test_ask_user_included_when_enabled(self, tmp_path: Path) -> None:
-        from deepagents_cli.ask_user import AskUserMiddleware
+        from code2workspace_cli.ask_user import AskUserMiddleware
 
         middleware = self._capture_middleware(tmp_path, enable_ask_user=True)
         assert any(isinstance(mw, AskUserMiddleware) for mw in middleware)
 
     def test_ask_user_excluded_when_disabled(self, tmp_path: Path) -> None:
-        from deepagents_cli.ask_user import AskUserMiddleware
+        from code2workspace_cli.ask_user import AskUserMiddleware
 
         middleware = self._capture_middleware(tmp_path, enable_ask_user=False)
         assert not any(isinstance(mw, AskUserMiddleware) for mw in middleware)
@@ -1708,7 +1708,7 @@ class TestShellAllowListMiddleware:
 
     def test_allows_approved_shell_command_sync(self) -> None:
         """Approved shell commands pass through in synchronous contexts."""
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         middleware = ShellAllowListMiddleware(allow_list=["ls"])
         request = Mock()
@@ -1725,7 +1725,7 @@ class TestShellAllowListMiddleware:
 
     def test_allows_non_shell_tools_sync(self) -> None:
         """Non-shell tools pass through unconditionally in synchronous contexts."""
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         middleware = ShellAllowListMiddleware(allow_list=["ls"])
         request = Mock()
@@ -1740,7 +1740,7 @@ class TestShellAllowListMiddleware:
         """Non-shell tools pass through unconditionally."""
         from unittest.mock import AsyncMock
 
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         middleware = ShellAllowListMiddleware(allow_list=["ls"])
         request = Mock()
@@ -1764,7 +1764,7 @@ class TestShellAllowListMiddleware:
         """Shell commands in the allow-list pass through for all SHELL_TOOL_NAMES."""
         from unittest.mock import AsyncMock
 
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         middleware = ShellAllowListMiddleware(allow_list=["ls", "cat"])
         request = Mock()
@@ -1785,7 +1785,7 @@ class TestShellAllowListMiddleware:
 
         from langchain_core.messages import ToolMessage
 
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         middleware = ShellAllowListMiddleware(allow_list=["ls", "cat"])
         request = Mock()
@@ -1808,7 +1808,7 @@ class TestShellAllowListMiddleware:
         """Disallowed shell commands are rejected in synchronous contexts."""
         from langchain_core.messages import ToolMessage
 
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         middleware = ShellAllowListMiddleware(allow_list=["ls", "cat"])
         request = Mock()
@@ -1831,7 +1831,7 @@ class TestShellAllowListMiddleware:
 
         from langchain_core.messages import ToolMessage
 
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         middleware = ShellAllowListMiddleware(allow_list=["ls"])
         request = Mock()
@@ -1849,7 +1849,7 @@ class TestShellAllowListMiddleware:
 
         from langchain_core.messages import ToolMessage
 
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         middleware = ShellAllowListMiddleware(allow_list=["ls"])
         request = Mock()
@@ -1867,7 +1867,7 @@ class TestShellAllowListMiddleware:
 
         from langchain_core.messages import ToolMessage
 
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         middleware = ShellAllowListMiddleware(allow_list=["ls"])
         request = Mock()
@@ -1883,7 +1883,7 @@ class TestShellAllowListMiddleware:
         """Constructor rejects empty allow-list."""
         import pytest
 
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         with pytest.raises(ValueError, match="must not be empty"):
             ShellAllowListMiddleware(allow_list=[])
@@ -1892,8 +1892,8 @@ class TestShellAllowListMiddleware:
         """Constructor rejects SHELL_ALLOW_ALL sentinel."""
         import pytest
 
-        from deepagents_cli.agent import ShellAllowListMiddleware
-        from deepagents_cli.config import SHELL_ALLOW_ALL
+        from code2workspace_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.config import SHELL_ALLOW_ALL
 
         with pytest.raises(TypeError, match="SHELL_ALLOW_ALL"):
             ShellAllowListMiddleware(allow_list=SHELL_ALLOW_ALL)
@@ -1933,7 +1933,7 @@ class TestCreateCliAgentShellMiddlewareWiring:
         self, tmp_path: Path
     ) -> None:
         """Middleware is added and `interrupt_on={}` with interrupt_shell_only."""
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         mock_settings = self._build_mock_settings(tmp_path)
 
@@ -1942,15 +1942,15 @@ class TestCreateCliAgentShellMiddlewareWiring:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
             patch(
-                "deepagents_cli.agent.create_deep_agent",
+                "code2workspace_cli.agent.create_workspace_agent",
                 return_value=mock_agent,
             ) as mock_create,
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):
@@ -1972,7 +1972,7 @@ class TestCreateCliAgentShellMiddlewareWiring:
         self, tmp_path: Path
     ) -> None:
         """When `auto_approve=True`, `interrupt_shell_only` has no effect."""
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         mock_settings = self._build_mock_settings(tmp_path)
 
@@ -1981,15 +1981,15 @@ class TestCreateCliAgentShellMiddlewareWiring:
 
         fake_model = _make_fake_chat_model()
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
             patch(
-                "deepagents_cli.agent.create_deep_agent",
+                "code2workspace_cli.agent.create_workspace_agent",
                 return_value=mock_agent,
             ) as mock_create,
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):
@@ -2012,7 +2012,7 @@ class TestCreateCliAgentShellMiddlewareWiring:
         self, tmp_path: Path
     ) -> None:
         """Restrictive shell mode must cover delegated subagents too."""
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         mock_settings = self._build_mock_settings(tmp_path)
         mock_agent = Mock()
@@ -2027,19 +2027,19 @@ class TestCreateCliAgentShellMiddlewareWiring:
         }
 
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
             patch(
-                "deepagents_cli.agent.list_subagents",
+                "code2workspace_cli.agent.list_subagents",
                 return_value=[subagent_meta],
             ),
             patch(
-                "deepagents_cli.agent.create_deep_agent",
+                "code2workspace_cli.agent.create_workspace_agent",
                 return_value=mock_agent,
             ) as mock_create,
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):
@@ -2070,7 +2070,7 @@ class TestCreateCliAgentShellMiddlewareWiring:
         self, tmp_path: Path
     ) -> None:
         """User-defined general-purpose subagent is not duplicated."""
-        from deepagents_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.agent import ShellAllowListMiddleware
 
         mock_settings = self._build_mock_settings(tmp_path)
         mock_agent = Mock()
@@ -2085,19 +2085,19 @@ class TestCreateCliAgentShellMiddlewareWiring:
         }
 
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
             patch(
-                "deepagents_cli.agent.list_subagents",
+                "code2workspace_cli.agent.list_subagents",
                 return_value=[subagent_meta],
             ),
             patch(
-                "deepagents_cli.agent.create_deep_agent",
+                "code2workspace_cli.agent.create_workspace_agent",
                 return_value=mock_agent,
             ) as mock_create,
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):
@@ -2121,8 +2121,8 @@ class TestCreateCliAgentShellMiddlewareWiring:
 
     def test_shell_allow_all_skips_subagent_middleware(self, tmp_path: Path) -> None:
         """`SHELL_ALLOW_ALL` sentinel should not inject middleware on subagents."""
-        from deepagents_cli.agent import ShellAllowListMiddleware
-        from deepagents_cli.config import SHELL_ALLOW_ALL
+        from code2workspace_cli.agent import ShellAllowListMiddleware
+        from code2workspace_cli.config import SHELL_ALLOW_ALL
 
         mock_settings = self._build_mock_settings(tmp_path)
         mock_settings.shell_allow_list = SHELL_ALLOW_ALL
@@ -2138,19 +2138,19 @@ class TestCreateCliAgentShellMiddlewareWiring:
         }
 
         with (
-            patch("deepagents_cli.agent.settings", mock_settings),
-            patch("deepagents_cli.agent.SkillsMiddleware"),
-            patch("deepagents_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware"),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
             patch(
-                "deepagents_cli.agent.list_subagents",
+                "code2workspace_cli.agent.list_subagents",
                 return_value=[subagent_meta],
             ),
             patch(
-                "deepagents_cli.agent.create_deep_agent",
+                "code2workspace_cli.agent.create_workspace_agent",
                 return_value=mock_agent,
             ) as mock_create,
             patch(
-                "deepagents._models.init_chat_model",
+                "code2workspace._models.init_chat_model",
                 return_value=fake_model,
             ),
         ):

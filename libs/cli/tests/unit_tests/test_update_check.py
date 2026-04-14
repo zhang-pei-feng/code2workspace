@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from packaging.version import InvalidVersion, Version
 
-from deepagents_cli.update_check import (
+from code2workspace_cli.update_check import (
     CACHE_TTL,
     _latest_from_releases,
     _parse_version,
@@ -25,7 +25,7 @@ from deepagents_cli.update_check import (
 def cache_file(tmp_path):
     """Override CACHE_FILE to use a temporary directory."""
     path = tmp_path / "latest_version.json"
-    with patch("deepagents_cli.update_check.CACHE_FILE", path):
+    with patch("code2workspace_cli.update_check.CACHE_FILE", path):
         yield path
 
 
@@ -253,7 +253,7 @@ class TestGetLatestVersion:
 class TestIsUpdateAvailable:
     def test_newer_available(self) -> None:
         with patch(
-            "deepagents_cli.update_check.get_latest_version", return_value="99.0.0"
+            "code2workspace_cli.update_check.get_latest_version", return_value="99.0.0"
         ):
             available, latest = is_update_available()
 
@@ -263,9 +263,9 @@ class TestIsUpdateAvailable:
     def test_current_version(self) -> None:
         with (
             patch(
-                "deepagents_cli.update_check.get_latest_version", return_value="0.0.1"
+                "code2workspace_cli.update_check.get_latest_version", return_value="0.0.1"
             ),
-            patch("deepagents_cli.update_check.__version__", "0.0.1"),
+            patch("code2workspace_cli.update_check.__version__", "0.0.1"),
         ):
             available, latest = is_update_available()
 
@@ -276,9 +276,9 @@ class TestIsUpdateAvailable:
         """Dev build ahead of PyPI should not flag an update."""
         with (
             patch(
-                "deepagents_cli.update_check.get_latest_version", return_value="0.0.1"
+                "code2workspace_cli.update_check.get_latest_version", return_value="0.0.1"
             ),
-            patch("deepagents_cli.update_check.__version__", "99.0.0"),
+            patch("code2workspace_cli.update_check.__version__", "99.0.0"),
         ):
             available, latest = is_update_available()
 
@@ -286,7 +286,7 @@ class TestIsUpdateAvailable:
         assert latest is None
 
     def test_fetch_failure(self) -> None:
-        with patch("deepagents_cli.update_check.get_latest_version", return_value=None):
+        with patch("code2workspace_cli.update_check.get_latest_version", return_value=None):
             available, latest = is_update_available()
 
         assert available is False
@@ -296,10 +296,10 @@ class TestIsUpdateAvailable:
         """User on alpha sees a newer alpha as available."""
         with (
             patch(
-                "deepagents_cli.update_check.get_latest_version",
+                "code2workspace_cli.update_check.get_latest_version",
                 return_value="1.0.0a2",
             ),
-            patch("deepagents_cli.update_check.__version__", "1.0.0a1"),
+            patch("code2workspace_cli.update_check.__version__", "1.0.0a1"),
         ):
             available, latest = is_update_available()
 
@@ -310,10 +310,10 @@ class TestIsUpdateAvailable:
         """User on alpha sees the stable release as available."""
         with (
             patch(
-                "deepagents_cli.update_check.get_latest_version",
+                "code2workspace_cli.update_check.get_latest_version",
                 return_value="1.0.0",
             ),
-            patch("deepagents_cli.update_check.__version__", "1.0.0a1"),
+            patch("code2workspace_cli.update_check.__version__", "1.0.0a1"),
         ):
             available, latest = is_update_available()
 
@@ -324,10 +324,10 @@ class TestIsUpdateAvailable:
         """Stable user on current version sees no update available."""
         with (
             patch(
-                "deepagents_cli.update_check.get_latest_version",
+                "code2workspace_cli.update_check.get_latest_version",
                 return_value="1.0.0",
             ),
-            patch("deepagents_cli.update_check.__version__", "1.0.0"),
+            patch("code2workspace_cli.update_check.__version__", "1.0.0"),
         ):
             available, latest = is_update_available()
 
@@ -338,10 +338,10 @@ class TestIsUpdateAvailable:
         """Verify include_prereleases is True when installed version is pre-release."""
         with (
             patch(
-                "deepagents_cli.update_check.get_latest_version",
+                "code2workspace_cli.update_check.get_latest_version",
                 return_value=None,
             ) as mock_get,
-            patch("deepagents_cli.update_check.__version__", "1.0.0a1"),
+            patch("code2workspace_cli.update_check.__version__", "1.0.0a1"),
         ):
             is_update_available()
 
@@ -351,10 +351,10 @@ class TestIsUpdateAvailable:
         """Verify include_prereleases is False when installed version is stable."""
         with (
             patch(
-                "deepagents_cli.update_check.get_latest_version",
+                "code2workspace_cli.update_check.get_latest_version",
                 return_value=None,
             ) as mock_get,
-            patch("deepagents_cli.update_check.__version__", "1.0.0"),
+            patch("code2workspace_cli.update_check.__version__", "1.0.0"),
         ):
             is_update_available()
 
@@ -362,7 +362,7 @@ class TestIsUpdateAvailable:
 
     def test_invalid_installed_version(self) -> None:
         """Non-PEP 440 installed version disables update check gracefully."""
-        with patch("deepagents_cli.update_check.__version__", "not-a-version"):
+        with patch("code2workspace_cli.update_check.__version__", "not-a-version"):
             available, latest = is_update_available()
 
         assert available is False
@@ -372,10 +372,10 @@ class TestIsUpdateAvailable:
         """Malformed PyPI version string does not crash."""
         with (
             patch(
-                "deepagents_cli.update_check.get_latest_version",
+                "code2workspace_cli.update_check.get_latest_version",
                 return_value="not-a-version",
             ),
-            patch("deepagents_cli.update_check.__version__", "1.0.0"),
+            patch("code2workspace_cli.update_check.__version__", "1.0.0"),
         ):
             available, latest = is_update_available()
 
@@ -388,7 +388,7 @@ class TestSetAutoUpdate:
     def config_path(self, tmp_path):
         """Override DEFAULT_CONFIG_PATH to use a temporary file."""
         path = tmp_path / "config.toml"
-        with patch("deepagents_cli.update_check.DEFAULT_CONFIG_PATH", path):
+        with patch("code2workspace_cli.update_check.DEFAULT_CONFIG_PATH", path):
             yield path
 
     def test_enable_creates_config(self, config_path) -> None:
@@ -438,12 +438,12 @@ class TestSetAutoUpdate:
         """set_auto_update(True) makes is_auto_update_enabled() return True."""
         set_auto_update(True)
         with (
-            patch("deepagents_cli.config._is_editable_install", return_value=False),
+            patch("code2workspace_cli.config._is_editable_install", return_value=False),
             patch.dict("os.environ", {}, clear=False),
         ):
             import os
 
-            os.environ.pop("DEEPAGENTS_CLI_AUTO_UPDATE", None)
+            os.environ.pop("CODE2WORKSPACE_CLI_AUTO_UPDATE", None)
             assert is_auto_update_enabled() is True
 
 
@@ -452,25 +452,25 @@ class TestIsAutoUpdateEnabled:
     def config_path(self, tmp_path):
         """Override DEFAULT_CONFIG_PATH to use a temporary file."""
         path = tmp_path / "config.toml"
-        with patch("deepagents_cli.update_check.DEFAULT_CONFIG_PATH", path):
+        with patch("code2workspace_cli.update_check.DEFAULT_CONFIG_PATH", path):
             yield path
 
     def test_default_is_false(self, config_path) -> None:  # noqa: ARG002
         """Auto-update defaults to disabled."""
         with (
-            patch("deepagents_cli.config._is_editable_install", return_value=False),
+            patch("code2workspace_cli.config._is_editable_install", return_value=False),
             patch.dict("os.environ", {}, clear=False),
         ):
             import os
 
-            os.environ.pop("DEEPAGENTS_CLI_AUTO_UPDATE", None)
+            os.environ.pop("CODE2WORKSPACE_CLI_AUTO_UPDATE", None)
             assert is_auto_update_enabled() is False
 
     def test_env_var_enables(self, config_path) -> None:  # noqa: ARG002
-        """DEEPAGENTS_CLI_AUTO_UPDATE=1 enables auto-update."""
+        """CODE2WORKSPACE_CLI_AUTO_UPDATE=1 enables auto-update."""
         with (
-            patch("deepagents_cli.config._is_editable_install", return_value=False),
-            patch.dict("os.environ", {"DEEPAGENTS_CLI_AUTO_UPDATE": "1"}),
+            patch("code2workspace_cli.config._is_editable_install", return_value=False),
+            patch.dict("os.environ", {"CODE2WORKSPACE_CLI_AUTO_UPDATE": "1"}),
         ):
             assert is_auto_update_enabled() is True
 
@@ -478,5 +478,5 @@ class TestIsAutoUpdateEnabled:
         """Editable installs never auto-update, even with config set."""
         set_auto_update(True)
         assert config_path.exists()
-        with patch("deepagents_cli.config._is_editable_install", return_value=True):
+        with patch("code2workspace_cli.config._is_editable_install", return_value=True):
             assert is_auto_update_enabled() is False

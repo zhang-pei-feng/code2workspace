@@ -3,13 +3,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "deepagents-cli"
+name = "code2workspace-cli"
 version = "0.0.37"
-description = "Terminal interface for Deep Agents - interactive AI agent with file operations, shell access, and sub-agent capabilities."
+description = "Terminal interface for Code2Workspace - interactive AI agent with file operations, shell access, and sub-agent capabilities."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<4.0"
-keywords = ["agents", "ai", "cli", "terminal", "llm", "langgraph", "langchain", "deep-agent"]
+keywords = ["agents", "ai", "cli", "terminal", "llm", "langgraph", "langchain", "workspace-agent"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -26,7 +26,7 @@ classifiers = [
 ]
 dependencies = [
     # Framework
-    "deepagents==0.5.2",
+    "code2workspace==0.5.2",
     "langchain>=1.2.15,<2.0.0",
     "langgraph>=1.1.6,<2.0.0",
     "langgraph-checkpoint-sqlite>=3.0.0,<4.0.0",
@@ -97,7 +97,7 @@ perplexity = ["langchain-perplexity>=1.0.0,<2.0.0"]
 vertexai = ["langchain-google-vertexai>=3.0.0,<4.0.0"]
 xai = ["langchain-xai>=1.0.0,<2.0.0"]
 all-providers = [
-    "deepagents-cli[anthropic,baseten,bedrock,cohere,deepseek,fireworks,google-genai,groq,huggingface,ibm,litellm,mistralai,nvidia,ollama,openai,openrouter,perplexity,vertexai,xai]",
+    "code2workspace-cli[anthropic,baseten,bedrock,cohere,deepseek,fireworks,google-genai,groq,huggingface,ibm,litellm,mistralai,nvidia,ollama,openai,openrouter,perplexity,vertexai,xai]",
 ]
 
 # Sandbox providers
@@ -106,23 +106,19 @@ daytona = ["langchain-daytona>=0.0.4"]
 modal = ["langchain-modal>=0.0.2"]
 runloop = ["langchain-runloop>=0.0.3"]
 all-sandboxes = [
-    "deepagents-cli[agentcore,daytona,modal,runloop]",
+    "code2workspace-cli[agentcore,daytona,modal,runloop]",
 ]
 
 
 [project.scripts]
-deepagents = "deepagents_cli:cli_main"
-deepagents-cli = "deepagents_cli:cli_main"
+code2workspace = "code2workspace_cli:cli_main"
+code2workspace-cli = "code2workspace_cli:cli_main"
 
 [project.urls]
-Homepage = "https://docs.langchain.com/oss/python/deepagents/overview"
-Documentation = "https://reference.langchain.com/python/deepagents/"
-Repository = "https://github.com/langchain-ai/deepagents"
-Issues = "https://github.com/langchain-ai/deepagents/issues"
-Changelog = "https://github.com/langchain-ai/deepagents/blob/main/libs/cli/CHANGELOG.md"
-Twitter = "https://x.com/LangChain"
-Slack = "https://www.langchain.com/join-community"
-Reddit = "https://www.reddit.com/r/LangChain/"
+Homepage = "https://github.com/zhang-pei-feng/code2workspace"
+Documentation = "https://github.com/zhang-pei-feng/code2workspace"
+Repository = "https://github.com/zhang-pei-feng/code2workspace"
+Issues = "https://github.com/zhang-pei-feng/code2workspace/issues"
 
 [dependency-groups]
 test = [
@@ -145,19 +141,19 @@ test = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["deepagents_cli"]
+packages = ["code2workspace_cli"]
 
 [tool.hatch.build.targets.wheel.shared-data]
-"deepagents_cli/default_agent_prompt.md" = "deepagents_cli/default_agent_prompt.md"
-"deepagents_cli/*.tcss" = "deepagents_cli/"
+"code2workspace_cli/default_agent_prompt.md" = "code2workspace_cli/default_agent_prompt.md"
+"code2workspace_cli/*.tcss" = "code2workspace_cli/"
 
 [tool.uv.sources]
-deepagents = { path = "../deepagents", editable = true }
+code2workspace = { path = "../code2workspace", editable = true }
 
 [tool.ty.environment]
 python-version = "3.11"
 extra-paths = [
-    "../deepagents",
+    "../code2workspace",
 ]
 
 [tool.ty.rules]
@@ -199,7 +195,7 @@ ban-relative-imports = "all"
 [tool.ruff.lint.isort]
 force-single-line = false
 combine-as-imports = true
-known-first-party = ["deepagents_cli"]
+known-first-party = ["code2workspace_cli"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -240,7 +236,7 @@ ignore-var-parameters = true
     "T201",     # `print` found — examples use print for output
     "TRY300",   # Consider moving to `else` block — examples prioritize readability
 ]
-"deepagents_cli/built_in_skills/**/scripts/**" = [
+"code2workspace_cli/built_in_skills/**/scripts/**" = [
     "ANN001",   # Missing type annotation for function argument — standalone scripts
     "ANN201",   # Missing return type annotation — standalone scripts
     "BLE001",   # Blind exception catch — resilience in standalone scripts
@@ -249,7 +245,7 @@ ignore-var-parameters = true
     "PLR2004",  # Magic value used in comparison — fine in scripts
     "T201",     # `print` found — scripts use print for output
 ]
-"deepagents_cli/deploy/**" = [
+"code2workspace_cli/deploy/**" = [
     "BLE001",   # Blind exception catch — resilience in CLI commands
     "DOC",      # Docstring conventions — internal CLI module
     "PLW0108",  # Lambda may be unnecessary — closures over local vars require lambdas

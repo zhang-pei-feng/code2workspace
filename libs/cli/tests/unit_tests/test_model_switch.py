@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from deepagents_cli import model_config
-from deepagents_cli.app import DeepAgentsApp, _extract_model_params_flag
-from deepagents_cli.config import settings
-from deepagents_cli.model_config import ModelSpec, clear_caches
-from deepagents_cli.remote_client import RemoteAgent
-from deepagents_cli.widgets.messages import AppMessage, ErrorMessage
+from code2workspace_cli import model_config
+from code2workspace_cli.app import Code2WorkspaceApp, _extract_model_params_flag
+from code2workspace_cli.config import settings
+from code2workspace_cli.model_config import ModelSpec, clear_caches
+from code2workspace_cli.remote_client import RemoteAgent
+from code2workspace_cli.widgets.messages import AppMessage, ErrorMessage
 
 
 def _make_remote_agent() -> RemoteAgent:
@@ -90,7 +90,7 @@ def mock_create_model() -> Iterator[Mock]:
         )
 
     with patch(
-        "deepagents_cli.config.create_model",
+        "code2workspace_cli.config.create_model",
         side_effect=fake_create_model,
     ) as mock:
         yield mock
@@ -106,7 +106,7 @@ class TestModelSwitchNoOp:
         from the model selector would print "Switched to X" even though no
         actual switch occurred.
         """
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         # Replace method with mock to track calls (hence ignore)
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
@@ -124,7 +124,7 @@ class TestModelSwitchNoOp:
 
         with (
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=True,
             ),
             patch.object(AppMessage, "__init__", capture_init),
@@ -146,7 +146,7 @@ class TestModelSwitchErrorHandling:
 
     async def test_missing_credentials_shows_error(self) -> None:
         """_switch_model shows error when provider credentials are missing."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -163,11 +163,11 @@ class TestModelSwitchErrorHandling:
 
         with (
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=False,
             ),
             patch(
-                "deepagents_cli.model_config.get_credential_env_var",
+                "code2workspace_cli.model_config.get_credential_env_var",
                 return_value="ANTHROPIC_API_KEY",
             ),
             patch.object(ErrorMessage, "__init__", capture_init),
@@ -182,7 +182,7 @@ class TestModelSwitchErrorHandling:
 
     async def test_save_recent_model_failure_shows_warning(self) -> None:
         """Permission error saving recent model shows error, no success message."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -205,10 +205,10 @@ class TestModelSwitchErrorHandling:
 
         with (
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=True,
             ),
-            patch("deepagents_cli.model_config.save_recent_model", return_value=False),
+            patch("code2workspace_cli.model_config.save_recent_model", return_value=False),
             patch.object(ErrorMessage, "__init__", capture_err),
             patch.object(AppMessage, "__init__", capture_app),
         ):
@@ -217,7 +217,7 @@ class TestModelSwitchErrorHandling:
         # Should warn about save failure
         assert len(captured_errors) == 1
         assert "could not save" in captured_errors[0].lower()
-        assert "~/.deepagents/" in captured_errors[0]
+        assert "~/.code2workspace/" in captured_errors[0]
 
         # Should NOT show success message when save fails
         assert not any("Switched to" in m for m in captured_messages)
@@ -225,7 +225,7 @@ class TestModelSwitchErrorHandling:
 
     async def test_remote_agent_sets_model_override(self) -> None:
         """With remote agent, sets model override for ConfigurableModelMiddleware."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -241,11 +241,11 @@ class TestModelSwitchErrorHandling:
 
         with (
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=True,
             ),
             patch(
-                "deepagents_cli.model_config.save_recent_model", return_value=True
+                "code2workspace_cli.model_config.save_recent_model", return_value=True
             ) as mock_save,
             patch.object(AppMessage, "__init__", capture_init),
         ):
@@ -262,7 +262,7 @@ class TestModelSwitchErrorHandling:
         self, mock_create_model: Mock
     ) -> None:
         """Switching models should refresh derived settings like context size."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
         app._profile_override = {"max_input_tokens": 180_000}
@@ -273,10 +273,10 @@ class TestModelSwitchErrorHandling:
 
         with (
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=True,
             ),
-            patch("deepagents_cli.model_config.save_recent_model", return_value=True),
+            patch("code2workspace_cli.model_config.save_recent_model", return_value=True),
         ):
             await app._switch_model(
                 "anthropic:claude-sonnet-4-5",
@@ -294,7 +294,7 @@ class TestModelSwitchErrorHandling:
 
     async def test_remote_agent_sets_model_params_override(self) -> None:
         """With remote agent, extra_kwargs are stored as _model_params_override."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -303,10 +303,10 @@ class TestModelSwitchErrorHandling:
 
         with (
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=True,
             ),
-            patch("deepagents_cli.model_config.save_recent_model", return_value=True),
+            patch("code2workspace_cli.model_config.save_recent_model", return_value=True),
         ):
             await app._switch_model(
                 "anthropic:claude-sonnet-4-5",
@@ -325,7 +325,7 @@ class TestModelSwitchConcurrencyGuard:
 
     async def test_concurrent_model_switch_blocked(self) -> None:
         """Second _switch_model call is rejected while first is in-flight."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._model_switching = True
 
@@ -345,7 +345,7 @@ class TestModelSwitchConcurrencyGuard:
 
     async def test_model_switching_flag_reset_on_success(self) -> None:
         """_model_switching resets to False after a successful switch."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -354,10 +354,10 @@ class TestModelSwitchConcurrencyGuard:
 
         with (
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=True,
             ),
-            patch("deepagents_cli.model_config.save_recent_model", return_value=True),
+            patch("code2workspace_cli.model_config.save_recent_model", return_value=True),
         ):
             await app._switch_model("anthropic:claude-sonnet-4-5")
 
@@ -383,7 +383,7 @@ class TestModelSwitchConfigProvider:
 models = ["llama-v3p1-70b"]
 api_key_env = "FIREWORKS_API_KEY"
 """)
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -401,7 +401,7 @@ api_key_env = "FIREWORKS_API_KEY"
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
             patch.dict("os.environ", {"FIREWORKS_API_KEY": "test-key"}),
             patch(
-                "deepagents_cli.model_config.save_recent_model", return_value=True
+                "code2workspace_cli.model_config.save_recent_model", return_value=True
             ) as mock_save,
             patch.object(AppMessage, "__init__", capture_app),
         ):
@@ -425,7 +425,7 @@ api_key_env = "FIREWORKS_API_KEY"
 models = ["llama-v3p1-70b"]
 api_key_env = "FIREWORKS_API_KEY"
 """)
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -458,7 +458,7 @@ api_key_env = "FIREWORKS_API_KEY"
 [models.providers.ollama]
 models = ["llama3"]
 """)
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -475,7 +475,7 @@ models = ["llama3"]
         with (
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
             patch(
-                "deepagents_cli.model_config.save_recent_model", return_value=True
+                "code2workspace_cli.model_config.save_recent_model", return_value=True
             ) as mock_save,
             patch.object(AppMessage, "__init__", capture_app),
         ):
@@ -493,7 +493,7 @@ class TestModelSwitchBareModelName:
 
     async def test_bare_model_name_auto_detects_provider(self) -> None:
         """Bare model name like 'gpt-4o' auto-detects provider and switches."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -508,13 +508,13 @@ class TestModelSwitchBareModelName:
             original_init(self, message, **kwargs)
 
         with (
-            patch("deepagents_cli.config.detect_provider", return_value="openai"),
+            patch("code2workspace_cli.config.detect_provider", return_value="openai"),
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=True,
             ),
             patch(
-                "deepagents_cli.model_config.save_recent_model", return_value=True
+                "code2workspace_cli.model_config.save_recent_model", return_value=True
             ) as mock_save,
             patch.object(AppMessage, "__init__", capture_init),
         ):
@@ -528,7 +528,7 @@ class TestModelSwitchBareModelName:
 
     async def test_bare_model_name_missing_credentials(self) -> None:
         """Bare model name shows credential error when provider creds are missing."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -543,13 +543,13 @@ class TestModelSwitchBareModelName:
             original_init(self, message, **kwargs)
 
         with (
-            patch("deepagents_cli.config.detect_provider", return_value="openai"),
+            patch("code2workspace_cli.config.detect_provider", return_value="openai"),
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=False,
             ),
             patch(
-                "deepagents_cli.model_config.get_credential_env_var",
+                "code2workspace_cli.model_config.get_credential_env_var",
                 return_value="OPENAI_API_KEY",
             ),
             patch.object(ErrorMessage, "__init__", capture_init),
@@ -563,7 +563,7 @@ class TestModelSwitchBareModelName:
 
     async def test_bare_model_name_already_using(self) -> None:
         """Bare model name matching current model shows 'Already using'."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
         app._agent = _make_remote_agent()
 
@@ -578,9 +578,9 @@ class TestModelSwitchBareModelName:
             original_init(self, message, **kwargs)
 
         with (
-            patch("deepagents_cli.config.detect_provider", return_value="openai"),
+            patch("code2workspace_cli.config.detect_provider", return_value="openai"),
             patch(
-                "deepagents_cli.model_config.has_provider_credentials",
+                "code2workspace_cli.model_config.has_provider_credentials",
                 return_value=True,
             ),
             patch.object(AppMessage, "__init__", capture_init),
@@ -683,7 +683,7 @@ class TestModelCommandIntegration:
 
     async def test_invalid_model_params_shows_error(self) -> None:
         """/model with invalid --model-params JSON shows error."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
 
         captured_errors: list[str] = []
@@ -702,7 +702,7 @@ class TestModelCommandIntegration:
 
     async def test_model_params_with_default_rejected(self) -> None:
         """/model --model-params with --default shows error."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._mount_message = AsyncMock()  # type: ignore[method-assign]
 
         captured_errors: list[str] = []

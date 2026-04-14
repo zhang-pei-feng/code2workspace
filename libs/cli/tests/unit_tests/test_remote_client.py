@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
 
-from deepagents_cli.remote_client import (
+from code2workspace_cli.remote_client import (
     RemoteAgent,
     _convert_ai_message,
     _convert_human_message,

@@ -7,12 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from deepagents_cli.command_registry import (
+from code2workspace_cli.command_registry import (
     _STATIC_SKILL_ALIASES,
     build_skill_commands,
     parse_skill_command,
 )
-from deepagents_cli.skills.load import load_skill_content
+from code2workspace_cli.skills.load import load_skill_content
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -262,9 +262,9 @@ class TestSkillCommandParsing:
 
 def _make_app() -> MagicMock:
     """Create a mock app with the methods _handle_skill_command needs."""
-    from deepagents_cli.app import DeepAgentsApp
+    from code2workspace_cli.app import Code2WorkspaceApp
 
-    app = MagicMock(spec=DeepAgentsApp)
+    app = MagicMock(spec=Code2WorkspaceApp)
     app._assistant_id = "agent"
     app._discovered_skills = []
     app._skill_allowed_roots = []
@@ -276,9 +276,9 @@ def _make_app() -> MagicMock:
     app._mount_message = AsyncMock(side_effect=capture_mount)
     app._handle_user_message = AsyncMock()
     app._send_to_agent = AsyncMock()
-    app._invoke_skill = DeepAgentsApp._invoke_skill.__get__(app)
-    app._handle_skill_command = DeepAgentsApp._handle_skill_command.__get__(app)
-    app._discover_skills_and_roots = DeepAgentsApp._discover_skills_and_roots.__get__(
+    app._invoke_skill = Code2WorkspaceApp._invoke_skill.__get__(app)
+    app._handle_skill_command = Code2WorkspaceApp._handle_skill_command.__get__(app)
+    app._discover_skills_and_roots = Code2WorkspaceApp._discover_skills_and_roots.__get__(
         app
     )
     return app
@@ -286,7 +286,7 @@ def _make_app() -> MagicMock:
 
 def _app_message_texts(app: MagicMock) -> list[str]:
     """Extract plain text from AppMessage widgets mounted by the mock app."""
-    from deepagents_cli.widgets.messages import AppMessage
+    from code2workspace_cli.widgets.messages import AppMessage
 
     return [str(m.content) for m in app._mounted_messages if isinstance(m, AppMessage)]
 
@@ -313,7 +313,7 @@ class TestBuildSkillInvocationEnvelope:
 
     def test_happy_path_with_args(self) -> None:
         """Envelope should contain wrapped prompt and full metadata."""
-        from deepagents_cli.skills.invocation import build_skill_invocation_envelope
+        from code2workspace_cli.skills.invocation import build_skill_invocation_envelope
 
         skill = {
             "name": "code-review",
@@ -337,7 +337,7 @@ class TestBuildSkillInvocationEnvelope:
 
     def test_empty_args_omits_user_request(self) -> None:
         """No `**User request:**` line when args is empty."""
-        from deepagents_cli.skills.invocation import build_skill_invocation_envelope
+        from code2workspace_cli.skills.invocation import build_skill_invocation_envelope
 
         skill = {"name": "test", "description": "", "source": "built-in", "path": "/x"}
         envelope = build_skill_invocation_envelope(
@@ -350,7 +350,7 @@ class TestBuildSkillInvocationEnvelope:
 
     def test_missing_optional_fields_default_to_empty(self) -> None:
         """Skill dicts without `description`/`source` should default to ''."""
-        from deepagents_cli.skills.invocation import build_skill_invocation_envelope
+        from code2workspace_cli.skills.invocation import build_skill_invocation_envelope
 
         skill = {"name": "minimal", "path": "/x"}
         envelope = build_skill_invocation_envelope(
@@ -381,8 +381,8 @@ class TestHandleSkillCommand:
     async def test_skill_not_found(self) -> None:
         app = _make_app()
         with (
-            patch("deepagents_cli.skills.load.list_skills", return_value=[]),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.skills.load.list_skills", return_value=[]),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._handle_skill_command("/skill:nonexistent")
 
@@ -394,9 +394,9 @@ class TestHandleSkillCommand:
         app = _make_app()
         skill = _fake_skill()
         with (
-            patch("deepagents_cli.skills.load.list_skills", return_value=[skill]),
-            patch("deepagents_cli.skills.load.load_skill_content", return_value=None),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.skills.load.list_skills", return_value=[skill]),
+            patch("code2workspace_cli.skills.load.load_skill_content", return_value=None),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._handle_skill_command("/skill:test-skill")
 
@@ -408,15 +408,15 @@ class TestHandleSkillCommand:
         app = _make_app()
         skill = _fake_skill()
         with (
-            patch("deepagents_cli.skills.load.list_skills", return_value=[skill]),
+            patch("code2workspace_cli.skills.load.list_skills", return_value=[skill]),
             patch(
-                "deepagents_cli.skills.load.load_skill_content",
+                "code2workspace_cli.skills.load.load_skill_content",
                 side_effect=PermissionError(
                     "Skill path /tmp/evil resolves outside "
                     "all allowed skill directories."
                 ),
             ),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._handle_skill_command("/skill:test-skill")
 
@@ -428,9 +428,9 @@ class TestHandleSkillCommand:
         app = _make_app()
         skill = _fake_skill()
         with (
-            patch("deepagents_cli.skills.load.list_skills", return_value=[skill]),
-            patch("deepagents_cli.skills.load.load_skill_content", return_value=""),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.skills.load.list_skills", return_value=[skill]),
+            patch("code2workspace_cli.skills.load.load_skill_content", return_value=""),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._handle_skill_command("/skill:test-skill")
 
@@ -439,17 +439,17 @@ class TestHandleSkillCommand:
         app._send_to_agent.assert_not_awaited()
 
     async def test_happy_path_sends_prompt(self) -> None:
-        from deepagents_cli.widgets.messages import SkillMessage
+        from code2workspace_cli.widgets.messages import SkillMessage
 
         app = _make_app()
         skill = _fake_skill()
         with (
-            patch("deepagents_cli.skills.load.list_skills", return_value=[skill]),
+            patch("code2workspace_cli.skills.load.list_skills", return_value=[skill]),
             patch(
-                "deepagents_cli.skills.load.load_skill_content",
+                "code2workspace_cli.skills.load.load_skill_content",
                 return_value="# Instructions\nDo stuff",
             ),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._handle_skill_command("/skill:test-skill")
 
@@ -463,17 +463,17 @@ class TestHandleSkillCommand:
         assert skill_msgs[0]._skill_name == "test-skill"
 
     async def test_happy_path_with_args(self) -> None:
-        from deepagents_cli.widgets.messages import SkillMessage
+        from code2workspace_cli.widgets.messages import SkillMessage
 
         app = _make_app()
         skill = _fake_skill()
         with (
-            patch("deepagents_cli.skills.load.list_skills", return_value=[skill]),
+            patch("code2workspace_cli.skills.load.list_skills", return_value=[skill]),
             patch(
-                "deepagents_cli.skills.load.load_skill_content",
+                "code2workspace_cli.skills.load.load_skill_content",
                 return_value="# Instructions\nDo stuff",
             ),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._handle_skill_command("/skill:test-skill find quantum")
 
@@ -489,12 +489,12 @@ class TestHandleSkillCommand:
         app = _make_app()
         skill = _fake_skill()
         with (
-            patch("deepagents_cli.skills.load.list_skills", return_value=[skill]),
+            patch("code2workspace_cli.skills.load.list_skills", return_value=[skill]),
             patch(
-                "deepagents_cli.skills.load.load_skill_content",
+                "code2workspace_cli.skills.load.load_skill_content",
                 return_value="# Instructions\nDo stuff",
             ),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._invoke_skill("test-skill", "  keep leading whitespace")
 
@@ -510,10 +510,10 @@ class TestHandleSkillCommand:
         app = _make_app()
         with (
             patch(
-                "deepagents_cli.skills.load.list_skills",
+                "code2workspace_cli.skills.load.list_skills",
                 side_effect=PermissionError("access denied"),
             ),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._handle_skill_command("/skill:test-skill")
 
@@ -525,10 +525,10 @@ class TestHandleSkillCommand:
         app = _make_app()
         with (
             patch(
-                "deepagents_cli.skills.load.list_skills",
+                "code2workspace_cli.skills.load.list_skills",
                 side_effect=TypeError("bad argument"),
             ),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._handle_skill_command("/skill:test-skill")
 
@@ -548,10 +548,10 @@ class TestHandleSkillCommand:
 
         with (
             patch(
-                "deepagents_cli.skills.load.load_skill_content",
+                "code2workspace_cli.skills.load.load_skill_content",
                 return_value="# Cached\nDo cached stuff",
             ) as mock_load,
-            patch("deepagents_cli.skills.load.list_skills") as mock_list,
+            patch("code2workspace_cli.skills.load.list_skills") as mock_list,
         ):
             await app._handle_skill_command("/skill:test-skill")
 
@@ -574,14 +574,14 @@ class TestHandleSkillCommand:
 
         with (
             patch(
-                "deepagents_cli.skills.load.list_skills",
+                "code2workspace_cli.skills.load.list_skills",
                 return_value=[skill],
             ) as mock_list,
             patch(
-                "deepagents_cli.skills.load.load_skill_content",
+                "code2workspace_cli.skills.load.load_skill_content",
                 return_value="# Fresh\nContent",
             ),
-            patch("deepagents_cli.config.settings"),
+            patch("code2workspace_cli.config.settings"),
         ):
             await app._handle_skill_command("/skill:new-skill")
 

@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from deepagents_cli.app import AppResult, DeepAgentsApp, run_textual_app
-from deepagents_cli.config import build_langsmith_thread_url, reset_langsmith_url_cache
-from deepagents_cli.main import (
+from code2workspace_cli.app import AppResult, Code2WorkspaceApp, run_textual_app
+from code2workspace_cli.config import build_langsmith_thread_url, reset_langsmith_url_cache
+from code2workspace_cli.main import (
     _ripgrep_install_hint,
     check_optional_tools,
     format_tool_warning_cli,
@@ -183,7 +183,7 @@ class TestRunTextualCliAsyncMcp:
             await asyncio.sleep(0)
             return app_result
 
-        with patch("deepagents_cli.app.run_textual_app", new=_run_textual_app_stub):
+        with patch("code2workspace_cli.app.run_textual_app", new=_run_textual_app_stub):
             result = await run_textual_cli_async(
                 "agent",
                 thread_id="thread-123",
@@ -219,7 +219,7 @@ class TestRunTextualCliAsyncMcp:
             await asyncio.sleep(0)
             return app_result
 
-        with patch("deepagents_cli.app.run_textual_app", new=_run_textual_app_stub):
+        with patch("code2workspace_cli.app.run_textual_app", new=_run_textual_app_stub):
             await run_textual_cli_async(
                 "agent",
                 thread_id="thread-123",
@@ -238,7 +238,7 @@ class TestServerCleanupLifecycle:
         server_proc = SimpleNamespace(stop=MagicMock())
 
         with patch.object(
-            DeepAgentsApp,
+            Code2WorkspaceApp,
             "run_async",
             new_callable=AsyncMock,
         ):
@@ -252,7 +252,7 @@ class TestServerCleanupLifecycle:
 
         with (
             patch.object(
-                DeepAgentsApp,
+                Code2WorkspaceApp,
                 "run_async",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("boom"),
@@ -267,12 +267,12 @@ class TestServerCleanupLifecycle:
         """server_proc set by the background worker must still be cleaned up."""
         server_proc = SimpleNamespace(stop=MagicMock())
 
-        async def _fake_run_async(self: DeepAgentsApp) -> None:  # noqa: RUF029
+        async def _fake_run_async(self: Code2WorkspaceApp) -> None:  # noqa: RUF029
             # Simulate the background worker having set _server_proc
             self._server_proc = server_proc
 
         with patch.object(
-            DeepAgentsApp,
+            Code2WorkspaceApp,
             "run_async",
             new=_fake_run_async,
         ):
@@ -291,21 +291,21 @@ class TestCheckOptionalTools:
     def _tavily_available(self) -> Iterator[None]:
         """Patch settings.has_tavily to True so ripgrep-only tests stay isolated."""
         with patch(
-            "deepagents_cli.config.settings",
+            "code2workspace_cli.config.settings",
             SimpleNamespace(has_tavily=True),
         ):
             yield
 
     def test_returns_tool_name_when_rg_not_found(self) -> None:
         """Returns `['ripgrep']` when `rg` is not on PATH."""
-        with patch("deepagents_cli.main.shutil.which", return_value=None):
+        with patch("code2workspace_cli.main.shutil.which", return_value=None):
             missing = check_optional_tools()
 
         assert missing == ["ripgrep"]
 
     def test_returns_empty_when_rg_found(self) -> None:
         """Returns empty list when `rg` is found on PATH."""
-        with patch("deepagents_cli.main.shutil.which", return_value="/usr/bin/rg"):
+        with patch("code2workspace_cli.main.shutil.which", return_value="/usr/bin/rg"):
             missing = check_optional_tools()
 
         assert missing == []
@@ -315,7 +315,7 @@ class TestCheckOptionalTools:
         config_path = tmp_path / "config.toml"
         config_path.write_text('[warnings]\nsuppress = ["ripgrep"]\n')
 
-        with patch("deepagents_cli.main.shutil.which", return_value=None):
+        with patch("code2workspace_cli.main.shutil.which", return_value=None):
             missing = check_optional_tools(config_path=config_path)
 
         assert missing == []
@@ -325,7 +325,7 @@ class TestCheckOptionalTools:
         config_path = tmp_path / "config.toml"
         config_path.write_text("this is not valid toml [[[")
 
-        with patch("deepagents_cli.main.shutil.which", return_value=None):
+        with patch("code2workspace_cli.main.shutil.which", return_value=None):
             missing = check_optional_tools(config_path=config_path)
 
         assert missing == ["ripgrep"]
@@ -335,7 +335,7 @@ class TestCheckOptionalTools:
         config_path = tmp_path / "config.toml"
         config_path.write_text("[warnings]\nsuppress = true\n")
 
-        with patch("deepagents_cli.main.shutil.which", return_value=None):
+        with patch("code2workspace_cli.main.shutil.which", return_value=None):
             missing = check_optional_tools(config_path=config_path)
 
         assert missing == ["ripgrep"]
@@ -345,7 +345,7 @@ class TestCheckOptionalTools:
         config_path = tmp_path / "config.toml"
         config_path.write_text('[warnings]\nsuppress = ["something_else"]\n')
 
-        with patch("deepagents_cli.main.shutil.which", return_value=None):
+        with patch("code2workspace_cli.main.shutil.which", return_value=None):
             missing = check_optional_tools(config_path=config_path)
 
         assert missing == ["ripgrep"]
@@ -353,9 +353,9 @@ class TestCheckOptionalTools:
     def test_returns_tavily_when_key_missing(self) -> None:
         """Returns `'tavily'` when TAVILY_API_KEY is not set."""
         with (
-            patch("deepagents_cli.main.shutil.which", return_value="/usr/bin/rg"),
+            patch("code2workspace_cli.main.shutil.which", return_value="/usr/bin/rg"),
             patch(
-                "deepagents_cli.config.settings",
+                "code2workspace_cli.config.settings",
                 SimpleNamespace(has_tavily=False),
             ),
         ):
@@ -365,7 +365,7 @@ class TestCheckOptionalTools:
 
     def test_omits_tavily_when_key_present(self) -> None:
         """Does not include `'tavily'` when TAVILY_API_KEY is set."""
-        with patch("deepagents_cli.main.shutil.which", return_value="/usr/bin/rg"):
+        with patch("code2workspace_cli.main.shutil.which", return_value="/usr/bin/rg"):
             missing = check_optional_tools()
 
         assert "tavily" not in missing
@@ -376,9 +376,9 @@ class TestCheckOptionalTools:
         config_path.write_text('[warnings]\nsuppress = ["tavily"]\n')
 
         with (
-            patch("deepagents_cli.main.shutil.which", return_value="/usr/bin/rg"),
+            patch("code2workspace_cli.main.shutil.which", return_value="/usr/bin/rg"),
             patch(
-                "deepagents_cli.config.settings",
+                "code2workspace_cli.config.settings",
                 SimpleNamespace(has_tavily=False),
             ),
         ):
@@ -397,8 +397,8 @@ class TestRipgrepInstallHint:
             return "/opt/homebrew/bin/brew" if cmd == "brew" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "darwin"
             assert _ripgrep_install_hint() == "brew install ripgrep"
@@ -410,8 +410,8 @@ class TestRipgrepInstallHint:
             return "/opt/local/bin/port" if cmd == "port" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "darwin"
             assert _ripgrep_install_hint() == "sudo port install ripgrep"
@@ -423,8 +423,8 @@ class TestRipgrepInstallHint:
             return "/usr/bin/apt-get" if cmd == "apt-get" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "linux"
             assert _ripgrep_install_hint() == "sudo apt-get install ripgrep"
@@ -436,8 +436,8 @@ class TestRipgrepInstallHint:
             return "/usr/bin/dnf" if cmd == "dnf" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "linux"
             assert _ripgrep_install_hint() == "sudo dnf install ripgrep"
@@ -449,8 +449,8 @@ class TestRipgrepInstallHint:
             return "/usr/bin/pacman" if cmd == "pacman" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "linux"
             assert _ripgrep_install_hint() == "sudo pacman -S ripgrep"
@@ -462,8 +462,8 @@ class TestRipgrepInstallHint:
             return "/usr/bin/zypper" if cmd == "zypper" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "linux"
             assert _ripgrep_install_hint() == "sudo zypper install ripgrep"
@@ -475,8 +475,8 @@ class TestRipgrepInstallHint:
             return "/sbin/apk" if cmd == "apk" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "linux"
             assert _ripgrep_install_hint() == "sudo apk add ripgrep"
@@ -490,8 +490,8 @@ class TestRipgrepInstallHint:
             return None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "linux"
             assert _ripgrep_install_hint() == "nix-env -iA nixpkgs.ripgrep"
@@ -505,8 +505,8 @@ class TestRipgrepInstallHint:
             return None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "win32"
             assert _ripgrep_install_hint() == "choco install ripgrep"
@@ -520,8 +520,8 @@ class TestRipgrepInstallHint:
             return None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "win32"
             assert _ripgrep_install_hint() == "scoop install ripgrep"
@@ -533,8 +533,8 @@ class TestRipgrepInstallHint:
             return "C:\\winget.exe" if cmd == "winget" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "win32"
             assert _ripgrep_install_hint() == "winget install BurntSushi.ripgrep"
@@ -546,8 +546,8 @@ class TestRipgrepInstallHint:
             return "/usr/bin/cargo" if cmd == "cargo" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "darwin"
             assert _ripgrep_install_hint() == "cargo install ripgrep"
@@ -555,8 +555,8 @@ class TestRipgrepInstallHint:
     def test_linux_no_manager_falls_through(self) -> None:
         """Falls through to URL on Linux without any package manager."""
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", return_value=None),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", return_value=None),
         ):
             mock_sys.platform = "linux"
             assert "github.com/BurntSushi/ripgrep" in _ripgrep_install_hint()
@@ -568,8 +568,8 @@ class TestRipgrepInstallHint:
             return "/usr/bin/cargo" if cmd == "cargo" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "freebsd"
             assert _ripgrep_install_hint() == "cargo install ripgrep"
@@ -581,8 +581,8 @@ class TestRipgrepInstallHint:
             return "/usr/bin/conda" if cmd == "conda" else None
 
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", side_effect=_which),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", side_effect=_which),
         ):
             mock_sys.platform = "freebsd"
             assert _ripgrep_install_hint() == "conda install -c conda-forge ripgrep"
@@ -590,8 +590,8 @@ class TestRipgrepInstallHint:
     def test_url_fallback(self) -> None:
         """Returns GitHub URL when nothing is detected."""
         with (
-            patch("deepagents_cli.main.sys") as mock_sys,
-            patch("deepagents_cli.main.shutil.which", return_value=None),
+            patch("code2workspace_cli.main.sys") as mock_sys,
+            patch("code2workspace_cli.main.shutil.which", return_value=None),
         ):
             mock_sys.platform = "freebsd"
             hint = _ripgrep_install_hint()
@@ -605,7 +605,7 @@ class TestFormatToolWarnings:
     def test_tui_format_contains_install_hint(self) -> None:
         """TUI format includes a platform-specific install hint."""
         hint_patch = patch(
-            "deepagents_cli.main._ripgrep_install_hint",
+            "code2workspace_cli.main._ripgrep_install_hint",
             return_value="brew install ripgrep",
         )
         with hint_patch:
@@ -616,7 +616,7 @@ class TestFormatToolWarnings:
     def test_cli_format_contains_install_hint(self) -> None:
         """CLI format includes a platform-specific install hint."""
         hint_patch = patch(
-            "deepagents_cli.main._ripgrep_install_hint",
+            "code2workspace_cli.main._ripgrep_install_hint",
             return_value="brew install ripgrep",
         )
         with hint_patch:
@@ -627,7 +627,7 @@ class TestFormatToolWarnings:
         """CLI format wraps URL fallback in Rich `[link]` markup."""
         url = "https://github.com/BurntSushi/ripgrep#installation"
         hint_patch = patch(
-            "deepagents_cli.main._ripgrep_install_hint",
+            "code2workspace_cli.main._ripgrep_install_hint",
             return_value=url,
         )
         with hint_patch:
@@ -681,14 +681,14 @@ class TestRunTextualCliAsyncModelConfigError:
 
     async def test_returns_error_code_on_no_credentials(self) -> None:
         """ModelConfigError from _get_default_model_spec gives return code 1."""
-        from deepagents_cli.model_config import ModelConfigError
+        from code2workspace_cli.model_config import ModelConfigError
 
         with (
             patch(
-                "deepagents_cli.config._get_default_model_spec",
+                "code2workspace_cli.config._get_default_model_spec",
                 side_effect=ModelConfigError("No credentials configured"),
             ),
-            patch("deepagents_cli.config._get_console") as mock_console_fn,
+            patch("code2workspace_cli.config._get_console") as mock_console_fn,
         ):
             mock_console = MagicMock()
             mock_console_fn.return_value = mock_console
@@ -705,7 +705,7 @@ class TestRunTextualCliAsyncModelConfigError:
         async def _stub(**_kwargs: Any) -> AppResult:  # noqa: RUF029  # must be async for run_textual_app signature
             return app_result
 
-        with patch("deepagents_cli.app.run_textual_app", new=_stub):
+        with patch("code2workspace_cli.app.run_textual_app", new=_stub):
             result = await run_textual_cli_async("agent", model_name="openai:gpt-4o")
 
         assert result.return_code == 0

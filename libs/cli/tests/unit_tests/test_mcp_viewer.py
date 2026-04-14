@@ -4,8 +4,8 @@ from textual.app import App, ComposeResult
 from textual.widget import Widget
 from textual.widgets import Static
 
-from deepagents_cli.mcp_tools import MCPServerInfo, MCPToolInfo
-from deepagents_cli.widgets.mcp_viewer import (
+from code2workspace_cli.mcp_tools import MCPServerInfo, MCPToolInfo
+from code2workspace_cli.widgets.mcp_viewer import (
     MCPToolItem,
     MCPViewerScreen,
 )

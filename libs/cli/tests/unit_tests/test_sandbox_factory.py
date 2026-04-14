@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from deepagents_cli.integrations.sandbox_factory import (
+from code2workspace_cli.integrations.sandbox_factory import (
     _get_provider,
     get_default_working_dir,
     verify_sandbox_deps,
@@ -34,7 +34,7 @@ def test_get_provider_raises_helpful_error_for_missing_optional_dependency(
     )
     with (
         patch(
-            "deepagents_cli.integrations.sandbox_factory.importlib.import_module",
+            "code2workspace_cli.integrations.sandbox_factory.importlib.import_module",
             side_effect=ImportError("missing dependency"),
         ),
         pytest.raises(ImportError, match=error),
@@ -56,7 +56,7 @@ def test_agentcore_get_or_create_raises_for_missing_dep() -> None:
 
     with (
         patch(
-            "deepagents_cli.integrations.sandbox_factory.importlib.import_module",
+            "code2workspace_cli.integrations.sandbox_factory.importlib.import_module",
             side_effect=ImportError("missing dependency"),
         ),
         pytest.raises(ImportError, match=error),
@@ -154,7 +154,7 @@ def test_agentcore_get_or_create_happy_path() -> None:
         return mock_backend_module
 
     with patch(
-        "deepagents_cli.integrations.sandbox_factory._import_provider_module",
+        "code2workspace_cli.integrations.sandbox_factory._import_provider_module",
         side_effect=fake_import,
     ):
         result = provider.get_or_create()
@@ -184,7 +184,7 @@ def test_agentcore_start_failure_cleans_up() -> None:
 
     with (
         patch(
-            "deepagents_cli.integrations.sandbox_factory._import_provider_module",
+            "code2workspace_cli.integrations.sandbox_factory._import_provider_module",
             side_effect=fake_import,
         ),
         pytest.raises(RuntimeError, match="connection failed"),
@@ -268,7 +268,7 @@ class TestVerifySandboxDeps:
     ) -> None:
         """Should raise ImportError with install instructions."""
         mock_find_spec = patch(
-            "deepagents_cli.integrations.sandbox_factory.importlib.util.find_spec",
+            "code2workspace_cli.integrations.sandbox_factory.importlib.util.find_spec",
             return_value=None,
         )
         with (
@@ -276,7 +276,7 @@ class TestVerifySandboxDeps:
             pytest.raises(
                 ImportError,
                 match=rf"Missing dependencies for '{provider}' sandbox.*"
-                rf"pip install 'deepagents-cli\[{provider}\]'",
+                rf"pip install 'code2workspace-cli\[{provider}\]'",
             ),
         ):
             verify_sandbox_deps(provider)
@@ -291,7 +291,7 @@ class TestVerifySandboxDeps:
         """Should not raise when the backend module is found."""
         spec_sentinel = object()
         with patch(
-            "deepagents_cli.integrations.sandbox_factory.importlib.util.find_spec",
+            "code2workspace_cli.integrations.sandbox_factory.importlib.util.find_spec",
             return_value=spec_sentinel,
         ):
             verify_sandbox_deps(provider)  # should not raise
@@ -304,7 +304,7 @@ class TestVerifySandboxDeps:
         """find_spec can raise ImportError/ValueError in corrupted envs."""
         with (
             patch(
-                "deepagents_cli.integrations.sandbox_factory.importlib.util.find_spec",
+                "code2workspace_cli.integrations.sandbox_factory.importlib.util.find_spec",
                 side_effect=exc_cls("broken"),
             ),
             pytest.raises(ImportError, match="Missing dependencies"),

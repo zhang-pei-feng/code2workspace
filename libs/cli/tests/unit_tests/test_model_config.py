@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from deepagents_cli import model_config
-from deepagents_cli.model_config import (
+from code2workspace_cli import model_config
+from code2workspace_cli.model_config import (
     PROVIDER_API_KEY_ENV,
     THREAD_COLUMN_DEFAULTS,
     ModelConfig,
@@ -125,10 +125,10 @@ class TestHasProviderCredentials:
             assert has_provider_credentials("anthropic") is False
 
     def test_returns_true_with_prefixed_env_var(self):
-        """Returns True when only the DEEPAGENTS_CLI_ prefixed var is set."""
+        """Returns True when only the CODE2WORKSPACE_CLI_ prefixed var is set."""
         with patch.dict(
             "os.environ",
-            {"DEEPAGENTS_CLI_ANTHROPIC_API_KEY": "sk-prefixed"},
+            {"CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY": "sk-prefixed"},
             clear=True,
         ):
             assert has_provider_credentials("anthropic") is True
@@ -177,7 +177,7 @@ class TestThreadRelativeTimePersistence:
 
     def test_save_and_load_round_trip(self, tmp_path: Path) -> None:
         """Saved relative-time preference should load back on the next session."""
-        from deepagents_cli.model_config import (
+        from code2workspace_cli.model_config import (
             load_thread_relative_time,
             save_thread_relative_time,
         )
@@ -191,14 +191,14 @@ class TestThreadRelativeTimePersistence:
 
     def test_default_is_true(self, tmp_path: Path) -> None:
         """When no config file exists, relative time defaults to True."""
-        from deepagents_cli.model_config import load_thread_relative_time
+        from code2workspace_cli.model_config import load_thread_relative_time
 
         config_path = tmp_path / "config.toml"
         assert load_thread_relative_time(config_path) is True
 
     def test_preserves_other_config_sections(self, tmp_path: Path) -> None:
         """Saving relative-time should not clobber other config sections."""
-        from deepagents_cli.model_config import save_thread_relative_time
+        from code2workspace_cli.model_config import save_thread_relative_time
 
         config_path = tmp_path / "config.toml"
         config_path.write_text('[models]\ndefault = "anthropic:claude-sonnet-4-5"\n')
@@ -218,7 +218,7 @@ class TestThreadSortOrderPersistence:
 
     def test_save_and_load_round_trip(self, tmp_path: Path) -> None:
         """Saved sort order should load back on the next session."""
-        from deepagents_cli.model_config import (
+        from code2workspace_cli.model_config import (
             load_thread_sort_order,
             save_thread_sort_order,
         )
@@ -232,14 +232,14 @@ class TestThreadSortOrderPersistence:
 
     def test_default_is_updated_at(self, tmp_path: Path) -> None:
         """When no config file exists, sort order defaults to updated_at."""
-        from deepagents_cli.model_config import load_thread_sort_order
+        from code2workspace_cli.model_config import load_thread_sort_order
 
         config_path = tmp_path / "config.toml"
         assert load_thread_sort_order(config_path) == "updated_at"
 
     def test_invalid_value_falls_back_to_default(self, tmp_path: Path) -> None:
         """An unrecognized sort_order value should fall back to updated_at."""
-        from deepagents_cli.model_config import load_thread_sort_order
+        from code2workspace_cli.model_config import load_thread_sort_order
 
         config_path = tmp_path / "config.toml"
         config_path.write_text('[threads]\nsort_order = "bogus"\n')
@@ -247,7 +247,7 @@ class TestThreadSortOrderPersistence:
 
     def test_preserves_other_config_sections(self, tmp_path: Path) -> None:
         """Saving sort order should not clobber other config sections."""
-        from deepagents_cli.model_config import save_thread_sort_order
+        from code2workspace_cli.model_config import save_thread_sort_order
 
         config_path = tmp_path / "config.toml"
         config_path.write_text('[models]\ndefault = "anthropic:claude-sonnet-4-5"\n')
@@ -267,7 +267,7 @@ class TestThreadConfigCoalesced:
 
     def test_defaults_when_no_file(self, tmp_path: Path) -> None:
         """When the config file does not exist, defaults should be returned."""
-        from deepagents_cli.model_config import load_thread_config
+        from code2workspace_cli.model_config import load_thread_config
 
         config_path = tmp_path / "config.toml"
         cfg = load_thread_config(config_path)
@@ -277,7 +277,7 @@ class TestThreadConfigCoalesced:
 
     def test_reads_all_sections_from_one_parse(self, tmp_path: Path) -> None:
         """A single TOML read should populate columns, relative_time, and sort_order."""
-        from deepagents_cli.model_config import load_thread_config
+        from code2workspace_cli.model_config import load_thread_config
 
         config_path = tmp_path / "config.toml"
         config_path.write_text(
@@ -301,7 +301,7 @@ messages = false
 
     def test_matches_individual_loaders(self, tmp_path: Path) -> None:
         """Coalesced result should match the three individual loaders."""
-        from deepagents_cli.model_config import (
+        from code2workspace_cli.model_config import (
             load_thread_columns,
             load_thread_config,
             load_thread_relative_time,
@@ -327,7 +327,7 @@ cwd = true
 
     def test_corrupt_toml_returns_defaults(self, tmp_path: Path) -> None:
         """A corrupt config file should return defaults without crashing."""
-        from deepagents_cli.model_config import load_thread_config
+        from code2workspace_cli.model_config import load_thread_config
 
         config_path = tmp_path / "config.toml"
         config_path.write_text("this is not valid TOML {{{{")
@@ -338,7 +338,7 @@ cwd = true
 
     def test_default_path_uses_cache(self) -> None:
         """Second call with default path should return cached result."""
-        from deepagents_cli.model_config import (
+        from code2workspace_cli.model_config import (
             _thread_config_cache,
             invalidate_thread_config_cache,
             load_thread_config,
@@ -354,7 +354,7 @@ cwd = true
 
     def test_save_invalidates_cache(self, tmp_path: Path) -> None:
         """Saving thread config should invalidate the cached value."""
-        from deepagents_cli.model_config import (
+        from code2workspace_cli.model_config import (
             invalidate_thread_config_cache,
             load_thread_config,
             save_thread_columns,
@@ -367,7 +367,7 @@ cwd = true
 
             save_thread_columns(dict(THREAD_COLUMN_DEFAULTS), tmp_path / "c.toml")
             # Cache was invalidated by save
-            from deepagents_cli.model_config import _thread_config_cache
+            from code2workspace_cli.model_config import _thread_config_cache
 
             assert _thread_config_cache is None
         finally:
@@ -375,7 +375,7 @@ cwd = true
 
     def test_save_relative_time_invalidates_cache(self, tmp_path: Path) -> None:
         """Saving relative_time should invalidate the cached value."""
-        from deepagents_cli.model_config import (
+        from code2workspace_cli.model_config import (
             _thread_config_cache,
             invalidate_thread_config_cache,
             load_thread_config,
@@ -386,7 +386,7 @@ cwd = true
         try:
             load_thread_config()
             save_thread_relative_time(False, tmp_path / "c.toml")
-            from deepagents_cli.model_config import _thread_config_cache
+            from code2workspace_cli.model_config import _thread_config_cache
 
             assert _thread_config_cache is None
         finally:
@@ -394,7 +394,7 @@ cwd = true
 
     def test_save_sort_order_invalidates_cache(self, tmp_path: Path) -> None:
         """Saving sort_order should invalidate the cached value."""
-        from deepagents_cli.model_config import (
+        from code2workspace_cli.model_config import (
             _thread_config_cache,
             invalidate_thread_config_cache,
             load_thread_config,
@@ -405,7 +405,7 @@ cwd = true
         try:
             load_thread_config()
             save_thread_sort_order("created_at", tmp_path / "c.toml")
-            from deepagents_cli.model_config import _thread_config_cache
+            from code2workspace_cli.model_config import _thread_config_cache
 
             assert _thread_config_cache is None
         finally:
@@ -418,24 +418,24 @@ class TestResolveEnvVar:
     def test_returns_canonical_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Falls back to the canonical env var when no prefix is set."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-canonical")
-        monkeypatch.delenv("DEEPAGENTS_CLI_ANTHROPIC_API_KEY", raising=False)
-        from deepagents_cli.model_config import resolve_env_var
+        monkeypatch.delenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", raising=False)
+        from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("ANTHROPIC_API_KEY") == "sk-canonical"
 
     def test_prefix_beats_canonical(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DEEPAGENTS_CLI_ prefixed var takes priority over canonical."""
+        """CODE2WORKSPACE_CLI_ prefixed var takes priority over canonical."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-canonical")
-        monkeypatch.setenv("DEEPAGENTS_CLI_ANTHROPIC_API_KEY", "sk-override")
-        from deepagents_cli.model_config import resolve_env_var
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", "sk-override")
+        from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("ANTHROPIC_API_KEY") == "sk-override"
 
     def test_returns_none_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Returns None when neither form is set."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("DEEPAGENTS_CLI_ANTHROPIC_API_KEY", raising=False)
-        from deepagents_cli.model_config import resolve_env_var
+        monkeypatch.delenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", raising=False)
+        from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("ANTHROPIC_API_KEY") is None
 
@@ -444,16 +444,16 @@ class TestResolveEnvVar:
     ) -> None:
         """Empty strings are normalized to None."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "")
-        monkeypatch.setenv("DEEPAGENTS_CLI_ANTHROPIC_API_KEY", "")
-        from deepagents_cli.model_config import resolve_env_var
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", "")
+        from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("ANTHROPIC_API_KEY") is None
 
     def test_prefix_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Works when only the prefixed var is set."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.setenv("DEEPAGENTS_CLI_OPENAI_API_KEY", "sk-prefixed")
-        from deepagents_cli.model_config import resolve_env_var
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_OPENAI_API_KEY", "sk-prefixed")
+        from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("OPENAI_API_KEY") == "sk-prefixed"
 
@@ -462,18 +462,18 @@ class TestResolveEnvVar:
     ) -> None:
         """Empty prefix var blocks fallback to canonical (explicit disable)."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-real")
-        monkeypatch.setenv("DEEPAGENTS_CLI_ANTHROPIC_API_KEY", "")
-        from deepagents_cli.model_config import resolve_env_var
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", "")
+        from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("ANTHROPIC_API_KEY") is None
 
     def test_skips_double_prefix(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Names already carrying the prefix don't get double-prefixed."""
-        monkeypatch.setenv("DEEPAGENTS_CLI_MY_KEY", "direct")
-        monkeypatch.delenv("DEEPAGENTS_CLI_DEEPAGENTS_CLI_MY_KEY", raising=False)
-        from deepagents_cli.model_config import resolve_env_var
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_MY_KEY", "direct")
+        monkeypatch.delenv("CODE2WORKSPACE_CLI_CODE2WORKSPACE_CLI_MY_KEY", raising=False)
+        from code2workspace_cli.model_config import resolve_env_var
 
-        assert resolve_env_var("DEEPAGENTS_CLI_MY_KEY") == "direct"
+        assert resolve_env_var("CODE2WORKSPACE_CLI_MY_KEY") == "direct"
 
 
 class TestProviderApiKeyEnv:
@@ -682,7 +682,7 @@ api_key_env = "ANTHROPIC_API_KEY"
             assert config.has_credentials("anthropic") is False
 
     def test_returns_true_with_prefixed_env_var(self, tmp_path):
-        """Returns True when only the DEEPAGENTS_CLI_ prefixed var is set."""
+        """Returns True when only the CODE2WORKSPACE_CLI_ prefixed var is set."""
         config_path = tmp_path / "config.toml"
         config_path.write_text("""
 [models.providers.anthropic]
@@ -693,7 +693,7 @@ api_key_env = "ANTHROPIC_API_KEY"
 
         with patch.dict(
             "os.environ",
-            {"DEEPAGENTS_CLI_ANTHROPIC_API_KEY": "sk-prefixed"},
+            {"CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY": "sk-prefixed"},
             clear=True,
         ):
             assert config.has_credentials("anthropic") is True
@@ -918,10 +918,10 @@ class TestModelPersistenceBetweenSessions:
         2. Call _get_default_model_spec() without specifying a model
         3. Verify the saved recent model is used
         """
-        from deepagents_cli.config import _get_default_model_spec
+        from code2workspace_cli.config import _get_default_model_spec
 
         # Use a temporary config path
-        config_path = tmp_path / ".deepagents" / "config.toml"
+        config_path = tmp_path / ".code2workspace" / "config.toml"
 
         # Step 1: Save model to config (simulating /model anthropic:claude-opus-4-5)
         save_recent_model("anthropic:claude-opus-4-5", config_path)
@@ -955,10 +955,10 @@ class TestModelPersistenceBetweenSessions:
         When both a config file default AND API keys are present,
         the config file's default model should be used.
         """
-        from deepagents_cli.config import _get_default_model_spec
-        from deepagents_cli.model_config import save_default_model
+        from code2workspace_cli.config import _get_default_model_spec
+        from code2workspace_cli.model_config import save_default_model
 
-        config_path = tmp_path / ".deepagents" / "config.toml"
+        config_path = tmp_path / ".code2workspace" / "config.toml"
 
         # Save an OpenAI model as default
         save_default_model("openai:gpt-5.2", config_path)
@@ -999,7 +999,7 @@ class TestGetAvailableModels:
             raise ImportError(msg)
 
         with patch(
-            "deepagents_cli.model_config._load_provider_profiles",
+            "code2workspace_cli.model_config._load_provider_profiles",
             side_effect=mock_load,
         ):
             models = get_available_models()
@@ -1014,10 +1014,10 @@ class TestGetAvailableModels:
         """Logs debug message when provider package is not installed."""
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=ImportError("not installed"),
             ),
-            caplog.at_level(logging.DEBUG, logger="deepagents_cli.model_config"),
+            caplog.at_level(logging.DEBUG, logger="code2workspace_cli.model_config"),
         ):
             get_available_models()
 
@@ -1039,7 +1039,7 @@ api_key_env = "FIREWORKS_API_KEY"
 """)
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=ImportError("not installed"),
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1068,7 +1068,7 @@ models = ["claude-custom-finetune"]
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1097,7 +1097,7 @@ models = ["claude-sonnet-4-5"]
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1115,7 +1115,7 @@ api_key_env = "SOME_KEY"
 """)
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=ImportError("not installed"),
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1147,7 +1147,7 @@ enabled = false
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1167,7 +1167,7 @@ api_key_env = "CUSTOM_KEY"
 """)
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=ImportError("not installed"),
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1195,7 +1195,7 @@ enabled = true
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1227,7 +1227,7 @@ enabled = false
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1249,7 +1249,7 @@ api_key_env = "CUSTOM_KEY"
 """)
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=ImportError("not installed"),
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1281,7 +1281,7 @@ api_key_env = "CUSTOM_KEY"
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1351,7 +1351,7 @@ models = ["claude-sonnet-4-5"]
 [models.providers.anthropic]
 enabled = "false"
 """)
-        with caplog.at_level(logging.WARNING, logger="deepagents_cli.model_config"):
+        with caplog.at_level(logging.WARNING, logger="code2workspace_cli.model_config"):
             config = ModelConfig.load(config_path)
 
         assert config.is_provider_enabled("anthropic") is True
@@ -1420,7 +1420,7 @@ api_key_env = "BASETEN_API_KEY"
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1450,7 +1450,7 @@ api_key_env = "BASETEN_API_KEY"
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1475,7 +1475,7 @@ api_key_env = "BASETEN_API_KEY"
 """)
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=ImportError("not installed"),
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1509,7 +1509,7 @@ max_input_tokens = 9999
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1530,7 +1530,7 @@ api_key_env = "BASETEN_API_KEY"
 """)
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=ImportError("not installed"),
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -1557,11 +1557,11 @@ api_key_env = "BASETEN_API_KEY"
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
-            caplog.at_level(logging.WARNING, logger="deepagents_cli.model_config"),
+            caplog.at_level(logging.WARNING, logger="code2workspace_cli.model_config"),
         ):
             models = get_available_models()
 
@@ -1589,12 +1589,12 @@ models = ["my-explicit-model"]
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
             patch(
-                "deepagents_cli.model_config._get_builtin_providers",
+                "code2workspace_cli.model_config._get_builtin_providers",
                 return_value={},
             ),
         ):
@@ -1620,7 +1620,7 @@ class_path = "langchain_anthropic.chat_models:ChatAnthropic"
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -2039,7 +2039,7 @@ models = ["llama3"]
 [models.providers.ollama.params."qwen3:4b"]
 temperature = 0.5
 """)
-        with caplog.at_level(logging.WARNING, logger="deepagents_cli.model_config"):
+        with caplog.at_level(logging.WARNING, logger="code2workspace_cli.model_config"):
             ModelConfig.load(config_path)
 
         assert any(
@@ -2056,7 +2056,7 @@ models = ["qwen3:4b"]
 [models.providers.ollama.params."qwen3:4b"]
 temperature = 0.5
 """)
-        with caplog.at_level(logging.WARNING, logger="deepagents_cli.model_config"):
+        with caplog.at_level(logging.WARNING, logger="code2workspace_cli.model_config"):
             ModelConfig.load(config_path)
 
         assert not any("params for" in record.message for record in caplog.records)
@@ -2071,7 +2071,7 @@ models = ["llama3"]
 [models.providers.ollama.params]
 temperature = 0
 """)
-        with caplog.at_level(logging.WARNING, logger="deepagents_cli.model_config"):
+        with caplog.at_level(logging.WARNING, logger="code2workspace_cli.model_config"):
             ModelConfig.load(config_path)
 
         assert not any("params for" in record.message for record in caplog.records)
@@ -2088,7 +2088,7 @@ class TestModelConfigValidateClassPath:
 class_path = "my_package.MyChatModel"
 models = ["my-model"]
 """)
-        with caplog.at_level(logging.WARNING, logger="deepagents_cli.model_config"):
+        with caplog.at_level(logging.WARNING, logger="code2workspace_cli.model_config"):
             ModelConfig.load(config_path)
 
         assert any("invalid class_path" in record.message for record in caplog.records)
@@ -2101,7 +2101,7 @@ models = ["my-model"]
 class_path = "my_package.models:MyChatModel"
 models = ["my-model"]
 """)
-        with caplog.at_level(logging.WARNING, logger="deepagents_cli.model_config"):
+        with caplog.at_level(logging.WARNING, logger="code2workspace_cli.model_config"):
             ModelConfig.load(config_path)
 
         assert not any(
@@ -2121,7 +2121,7 @@ class TestGetProviderProfileModules:
             "fireworks": ("langchain_fireworks", "ChatFireworks", None),
         }
         with patch(
-            "deepagents_cli.model_config._get_builtin_providers",
+            "code2workspace_cli.model_config._get_builtin_providers",
             return_value=fake_registry,
         ):
             result = _get_provider_profile_modules()
@@ -2142,7 +2142,7 @@ class TestGetProviderProfileModules:
             ),
         }
         with patch(
-            "deepagents_cli.model_config._get_builtin_providers",
+            "code2workspace_cli.model_config._get_builtin_providers",
             return_value=fake_registry,
         ):
             result = _get_provider_profile_modules()
@@ -2329,7 +2329,7 @@ class TestGetAvailableModelsTextIO:
             raise ImportError(msg)
 
         with patch(
-            "deepagents_cli.model_config._load_provider_profiles",
+            "code2workspace_cli.model_config._load_provider_profiles",
             side_effect=mock_load,
         ):
             models = get_available_models()
@@ -2351,7 +2351,7 @@ class TestGetAvailableModelsTextIO:
             raise ImportError(msg)
 
         with patch(
-            "deepagents_cli.model_config._load_provider_profiles",
+            "code2workspace_cli.model_config._load_provider_profiles",
             side_effect=mock_load,
         ):
             models = get_available_models()
@@ -2376,7 +2376,7 @@ class TestGetAvailableModelsTextIO:
             raise ImportError(msg)
 
         with patch(
-            "deepagents_cli.model_config._load_provider_profiles",
+            "code2workspace_cli.model_config._load_provider_profiles",
             side_effect=mock_load,
         ):
             models = get_available_models()
@@ -2396,7 +2396,7 @@ class TestGetAvailableModelsTextIO:
             raise ImportError(msg)
 
         with patch(
-            "deepagents_cli.model_config._load_provider_profiles",
+            "code2workspace_cli.model_config._load_provider_profiles",
             side_effect=mock_load,
         ):
             models = get_available_models()
@@ -2512,7 +2512,7 @@ class TestModelPrecedenceOrder:
 
     def test_default_takes_priority_over_recent(self, tmp_path):
         """[models].default takes priority over [models].recent."""
-        from deepagents_cli.config import _get_default_model_spec
+        from code2workspace_cli.config import _get_default_model_spec
 
         config_path = tmp_path / "config.toml"
         config_path.write_text("""
@@ -2535,7 +2535,7 @@ recent = "anthropic:claude-sonnet-4-5"
 
     def test_recent_takes_priority_over_env(self, tmp_path):
         """[models].recent takes priority over env var auto-detection."""
-        from deepagents_cli.config import _get_default_model_spec
+        from code2workspace_cli.config import _get_default_model_spec
 
         config_path = tmp_path / "config.toml"
         config_path.write_text("""
@@ -2557,7 +2557,7 @@ recent = "openai:gpt-5.2"
 
     def test_env_used_when_neither_set(self, tmp_path):
         """Falls back to env var auto-detection when neither default nor recent set."""
-        from deepagents_cli.config import _get_default_model_spec, settings
+        from code2workspace_cli.config import _get_default_model_spec, settings
 
         config_path = tmp_path / "config.toml"
         config_path.write_text("")
@@ -2773,7 +2773,7 @@ class TestGetModelProfiles:
             raise ImportError(msg)
 
         with patch(
-            "deepagents_cli.model_config._load_provider_profiles",
+            "code2workspace_cli.model_config._load_provider_profiles",
             side_effect=mock_load,
         ):
             profiles = get_model_profiles()
@@ -2808,7 +2808,7 @@ max_input_tokens = 100000
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -2833,7 +2833,7 @@ max_input_tokens = 4096
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=ImportError("not installed"),
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -2858,7 +2858,7 @@ max_input_tokens = 4096
             raise ImportError(msg)
 
         with patch(
-            "deepagents_cli.model_config._load_provider_profiles",
+            "code2workspace_cli.model_config._load_provider_profiles",
             side_effect=mock_load,
         ):
             get_model_profiles()
@@ -2891,7 +2891,7 @@ max_input_tokens = 100000
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
@@ -2921,7 +2921,7 @@ max_input_tokens = 100000
             raise ImportError(msg)
 
         with patch(
-            "deepagents_cli.model_config._load_provider_profiles",
+            "code2workspace_cli.model_config._load_provider_profiles",
             side_effect=mock_load,
         ):
             profiles = get_model_profiles(cli_override={"max_input_tokens": 4096})
@@ -2944,7 +2944,7 @@ max_input_tokens = 100000
             raise ImportError(msg)
 
         with patch(
-            "deepagents_cli.model_config._load_provider_profiles",
+            "code2workspace_cli.model_config._load_provider_profiles",
             side_effect=mock_load,
         ):
             get_model_profiles(cli_override={"max_input_tokens": 4096})
@@ -2963,7 +2963,7 @@ max_input_tokens = 8192
 
         with (
             patch(
-                "deepagents_cli.model_config._load_provider_profiles",
+                "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=ImportError("not installed"),
             ),
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from deepagents_cli.deploy.config import (
+from code2workspace_cli.deploy.config import (
     AGENTS_MD_FILENAME,
     DEFAULT_CONFIG_FILENAME,
     MCP_FILENAME,
@@ -66,7 +66,7 @@ class TestSandboxConfig:
     def test_defaults(self) -> None:
         cfg = SandboxConfig()
         assert cfg.provider == "none"
-        assert cfg.template == "deepagents-deploy"
+        assert cfg.template == "code2workspace-deploy"
         assert cfg.image == "python:3"
         assert cfg.scope == "thread"
 
@@ -297,6 +297,6 @@ class TestValidateSandboxCredentials:
 class TestCrossModuleConsistency:
     def test_sandbox_blocks_matches_valid_providers(self) -> None:
         """SANDBOX_BLOCKS keys in templates.py must match VALID_SANDBOX_PROVIDERS."""
-        from deepagents_cli.deploy.templates import SANDBOX_BLOCKS
+        from code2workspace_cli.deploy.templates import SANDBOX_BLOCKS
 
         assert frozenset(SANDBOX_BLOCKS.keys()) == VALID_SANDBOX_PROVIDERS

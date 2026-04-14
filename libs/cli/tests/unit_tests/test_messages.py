@@ -6,9 +6,9 @@ import pytest
 from rich.style import Style
 from textual.content import Content
 
-from deepagents_cli import theme
-from deepagents_cli.input import INPUT_HIGHLIGHT_PATTERN
-from deepagents_cli.widgets.messages import (
+from code2workspace_cli import theme
+from code2workspace_cli.input import INPUT_HIGHLIGHT_PATTERN
+from code2workspace_cli.widgets.messages import (
     AppMessage,
     AssistantMessage,
     DiffMessage,
@@ -377,8 +377,8 @@ class TestModeColorsDrift:
     """Ensure `_mode_color` handles every mode in `MODE_PREFIXES`."""
 
     def test_mode_color_returns_non_primary_for_all_modes(self) -> None:
-        from deepagents_cli.config import MODE_PREFIXES
-        from deepagents_cli.widgets.messages import _mode_color
+        from code2workspace_cli.config import MODE_PREFIXES
+        from code2workspace_cli.widgets.messages import _mode_color
 
         primary = _mode_color(None)
         for mode in MODE_PREFIXES:
@@ -420,7 +420,7 @@ class TestAppMessageAutoLinksDisabled:
         assert AppMessage.auto_links is False
 
 
-_WEBBROWSER_OPEN = "deepagents_cli.widgets._links.webbrowser.open"
+_WEBBROWSER_OPEN = "code2workspace_cli.widgets._links.webbrowser.open"
 
 
 class TestAppMessageOnClickOpensLink:
@@ -478,7 +478,7 @@ class TestAppMessageOnClickOpensLink:
 # Timestamp toast tests
 # ---------------------------------------------------------------------------
 
-_MSG_STORE_PATH = "deepagents_cli.widgets.messages"
+_MSG_STORE_PATH = "code2workspace_cli.widgets.messages"
 
 
 class TestShowTimestampToast:
@@ -512,7 +512,7 @@ class TestShowTimestampToast:
 
     def test_shows_toast_with_formatted_timestamp(self) -> None:
         """Should call notify with a human-readable timestamp."""
-        from deepagents_cli.widgets.message_store import MessageData, MessageType
+        from code2workspace_cli.widgets.message_store import MessageData, MessageType
 
         data = MessageData(
             type=MessageType.USER,
@@ -595,7 +595,7 @@ class TestMountMessageIdSync:
 
     def test_widget_id_assigned_from_message_data(self) -> None:
         """Widget with no id should get the MessageData id after from_widget."""
-        from deepagents_cli.widgets.message_store import MessageData
+        from code2workspace_cli.widgets.message_store import MessageData
 
         widget = UserMessage("hello")
         assert widget.id is None
@@ -610,7 +610,7 @@ class TestMountMessageIdSync:
 
     def test_widget_with_existing_id_is_preserved(self) -> None:
         """Widget with an explicit id should keep it."""
-        from deepagents_cli.widgets.message_store import MessageData
+        from code2workspace_cli.widgets.message_store import MessageData
 
         widget = UserMessage("hello", id="my-custom-id")
         data = MessageData.from_widget(widget)

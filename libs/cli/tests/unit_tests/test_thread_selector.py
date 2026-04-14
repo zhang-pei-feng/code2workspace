@@ -14,9 +14,9 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Checkbox, Input, Static
 
-from deepagents_cli.app import DeepAgentsApp
-from deepagents_cli.sessions import ThreadInfo
-from deepagents_cli.widgets.thread_selector import (
+from code2workspace_cli.app import Code2WorkspaceApp
+from code2workspace_cli.sessions import ThreadInfo
+from code2workspace_cli.widgets.thread_selector import (
     DeleteThreadConfirmScreen,
     ThreadSelectorScreen,
 )
@@ -63,7 +63,7 @@ def _patch_list_threads(threads: list[ThreadInfo] | None = None) -> Any:  # noqa
     """
     data = threads if threads is not None else MOCK_THREADS
     return patch(
-        "deepagents_cli.sessions.list_threads",
+        "code2workspace_cli.sessions.list_threads",
         new_callable=AsyncMock,
         return_value=data,
     )
@@ -73,7 +73,7 @@ def _patch_columns(columns: dict[str, bool] | None = None) -> Any:  # noqa: ANN4
     """Patch thread config loaders for tests."""
     import contextlib
 
-    from deepagents_cli.model_config import THREAD_COLUMN_DEFAULTS, ThreadConfig
+    from code2workspace_cli.model_config import THREAD_COLUMN_DEFAULTS, ThreadConfig
 
     cols = columns if columns is not None else THREAD_COLUMN_DEFAULTS
 
@@ -81,15 +81,15 @@ def _patch_columns(columns: dict[str, bool] | None = None) -> Any:  # noqa: ANN4
     def _ctx() -> Any:  # noqa: ANN401
         with (
             patch(
-                "deepagents_cli.model_config.load_thread_columns",
+                "code2workspace_cli.model_config.load_thread_columns",
                 return_value=dict(cols),
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_sort_order",
+                "code2workspace_cli.model_config.load_thread_sort_order",
                 return_value="updated_at",
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_config",
+                "code2workspace_cli.model_config.load_thread_config",
                 return_value=ThreadConfig(
                     columns=dict(cols),
                     relative_time=True,
@@ -727,7 +727,7 @@ class TestThreadSelectorClickHandling:
                 screen = app.screen
                 assert isinstance(screen, ThreadSelectorScreen)
 
-                from deepagents_cli.widgets.thread_selector import ThreadOption
+                from code2workspace_cli.widgets.thread_selector import ThreadOption
 
                 assert len(screen._option_widgets) > 1, (
                     "Expected option widgets to be built"
@@ -742,7 +742,7 @@ class TestThreadSelectorClickHandling:
                 assert app.result == "def67890"
 
 
-_WEBBROWSER_OPEN = "deepagents_cli.widgets._links.webbrowser.open"
+_WEBBROWSER_OPEN = "code2workspace_cli.widgets._links.webbrowser.open"
 
 
 class TestThreadSelectorOnClickOpensLink:
@@ -818,7 +818,7 @@ class TestThreadSelectorBuildTitle:
         assert len(spans) > 0
         style = spans[0].style
         assert isinstance(style, TStyle)
-        from deepagents_cli.theme import DARK_COLORS
+        from code2workspace_cli.theme import DARK_COLORS
 
         assert style.foreground == TColor.parse(DARK_COLORS.primary)
 
@@ -846,7 +846,7 @@ class TestFetchThreadUrl:
         with (
             _patch_list_threads(),
             patch(
-                "deepagents_cli.widgets.thread_selector.build_langsmith_thread_url",
+                "code2workspace_cli.widgets.thread_selector.build_langsmith_thread_url",
                 return_value="https://smith.langchain.com/p/t/abc12345",
             ),
         ):
@@ -875,11 +875,11 @@ class TestFetchThreadUrl:
         with (
             _patch_list_threads(),
             patch(
-                "deepagents_cli.widgets.thread_selector._URL_FETCH_TIMEOUT",
+                "code2workspace_cli.widgets.thread_selector._URL_FETCH_TIMEOUT",
                 0.01,
             ),
             patch(
-                "deepagents_cli.widgets.thread_selector.build_langsmith_thread_url",
+                "code2workspace_cli.widgets.thread_selector.build_langsmith_thread_url",
                 side_effect=_blocking,
             ),
         ):
@@ -900,7 +900,7 @@ class TestFetchThreadUrl:
         with (
             _patch_list_threads(),
             patch(
-                "deepagents_cli.widgets.thread_selector.build_langsmith_thread_url",
+                "code2workspace_cli.widgets.thread_selector.build_langsmith_thread_url",
                 side_effect=OSError("network failure"),
             ),
         ):
@@ -921,7 +921,7 @@ class TestFetchThreadUrl:
         with (
             _patch_list_threads(),
             patch(
-                "deepagents_cli.widgets.thread_selector.build_langsmith_thread_url",
+                "code2workspace_cli.widgets.thread_selector.build_langsmith_thread_url",
                 side_effect=AttributeError("SDK changed"),
             ),
         ):
@@ -942,7 +942,7 @@ class TestFetchThreadUrl:
         with (
             _patch_list_threads(),
             patch(
-                "deepagents_cli.widgets.thread_selector.build_langsmith_thread_url",
+                "code2workspace_cli.widgets.thread_selector.build_langsmith_thread_url",
                 return_value=None,
             ),
         ):
@@ -966,7 +966,7 @@ class TestThreadSelectorColumnHeader:
 
     def test_header_contains_default_column_names(self) -> None:
         """Column header labels should contain visible column names."""
-        from deepagents_cli.widgets.thread_selector import _format_header_label
+        from code2workspace_cli.widgets.thread_selector import _format_header_label
 
         assert "Created" in _format_header_label("created_at")
         assert "Msgs" in _format_header_label("messages")
@@ -1001,7 +1001,7 @@ class TestThreadSelectorColumnHeader:
 
     async def test_timestamp_columns_share_width_with_rows(self) -> None:
         """Timestamp header cells should use the same width as row cells."""
-        from deepagents_cli.widgets.thread_selector import (
+        from code2workspace_cli.widgets.thread_selector import (
             _format_column_value,
             _format_header_label,
         )
@@ -1122,7 +1122,7 @@ class TestThreadSelectorAutoWidthColumns:
 
     async def test_agent_name_column_uses_shared_width_capped_at_twelve(self) -> None:
         """Agent column should size to visible content up to the 12-char cap."""
-        from deepagents_cli.widgets.thread_selector import (
+        from code2workspace_cli.widgets.thread_selector import (
             _format_column_value,
             _format_header_label,
         )
@@ -1184,7 +1184,7 @@ class TestThreadSelectorErrorHandling:
     async def test_list_threads_error_still_dismissable(self) -> None:
         """Database error should not crash; Escape still works."""
         with patch(
-            "deepagents_cli.sessions.list_threads",
+            "code2workspace_cli.sessions.list_threads",
             new_callable=AsyncMock,
             side_effect=OSError("database is locked"),
         ):
@@ -1213,7 +1213,7 @@ class TestThreadSelectorLimit:
         """get_thread_limit() return value should be forwarded to list_threads."""
         with (
             patch(
-                "deepagents_cli.sessions.get_thread_limit",
+                "code2workspace_cli.sessions.get_thread_limit",
                 return_value=5,
             ),
             _patch_list_threads() as mock_lt,
@@ -1255,13 +1255,13 @@ class TestThreadSelectorLimit:
 
         with (
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=threads_without_details,
             ) as mock_lt,
             _patch_columns(),
             patch(
-                "deepagents_cli.sessions.populate_thread_checkpoint_details",
+                "code2workspace_cli.sessions.populate_thread_checkpoint_details",
                 new_callable=AsyncMock,
                 side_effect=_populate,
             ) as mock_populate,
@@ -1305,16 +1305,16 @@ class TestThreadSelectorLimit:
 
         with (
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=threads_without_counts,
             ),
             patch(
-                "deepagents_cli.sessions.apply_cached_thread_message_counts",
+                "code2workspace_cli.sessions.apply_cached_thread_message_counts",
                 side_effect=_apply_cached,
             ) as mock_apply_cached,
             patch(
-                "deepagents_cli.sessions.populate_thread_checkpoint_details",
+                "code2workspace_cli.sessions.populate_thread_checkpoint_details",
                 new_callable=AsyncMock,
             ) as mock_populate,
         ):
@@ -1349,12 +1349,12 @@ class TestThreadSelectorCheckpointDetailErrors:
 
         with (
             patch(
-                "deepagents_cli.sessions.populate_thread_checkpoint_details",
+                "code2workspace_cli.sessions.populate_thread_checkpoint_details",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("unexpected type mismatch"),
             ),
             patch(
-                "deepagents_cli.widgets.thread_selector.logger.warning"
+                "code2workspace_cli.widgets.thread_selector.logger.warning"
             ) as mock_warning,
         ):
             await screen._load_checkpoint_details()
@@ -1398,7 +1398,7 @@ class TestThreadSelectorPrefetchedRows:
             return refreshed
 
         with patch(
-            "deepagents_cli.sessions.list_threads",
+            "code2workspace_cli.sessions.list_threads",
             new_callable=AsyncMock,
             side_effect=_list_threads,
         ) as mock_list_threads:
@@ -1454,13 +1454,13 @@ class TestThreadSelectorPrefetchedRows:
             }
         ]
 
-        from deepagents_cli import sessions
+        from code2workspace_cli import sessions
 
         sessions._initial_prompt_cache.clear()
         sessions._initial_prompt_cache["abc12345"] = ("cp_1", "cached prompt")
         try:
             with patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=refreshed,
             ):
@@ -1494,7 +1494,7 @@ class TestThreadSelectorPrefetchedRows:
         ]
         app = ThreadSelectorTestApp(current_thread="abc12345")
         with patch(
-            "deepagents_cli.sessions.list_threads",
+            "code2workspace_cli.sessions.list_threads",
             new_callable=AsyncMock,
             return_value=refreshed,
         ) as mock_list_threads:
@@ -1551,21 +1551,21 @@ class TestThreadSelectorInitialSortOrder:
 
         import contextlib
 
-        from deepagents_cli.model_config import THREAD_COLUMN_DEFAULTS, ThreadConfig
+        from code2workspace_cli.model_config import THREAD_COLUMN_DEFAULTS, ThreadConfig
 
         @contextlib.contextmanager
         def _patch_sort_created() -> Any:  # noqa: ANN401
             with (
                 patch(
-                    "deepagents_cli.model_config.load_thread_columns",
+                    "code2workspace_cli.model_config.load_thread_columns",
                     return_value=dict(THREAD_COLUMN_DEFAULTS),
                 ),
                 patch(
-                    "deepagents_cli.model_config.load_thread_sort_order",
+                    "code2workspace_cli.model_config.load_thread_sort_order",
                     return_value="created_at",
                 ),
                 patch(
-                    "deepagents_cli.model_config.load_thread_config",
+                    "code2workspace_cli.model_config.load_thread_config",
                     return_value=ThreadConfig(
                         columns=dict(THREAD_COLUMN_DEFAULTS),
                         relative_time=True,
@@ -1583,7 +1583,7 @@ class TestThreadSelectorInitialSortOrder:
 
         with (
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 side_effect=_list_threads,
             ),
@@ -1792,7 +1792,7 @@ class TestThreadSelectorDelete:
         with (
             _patch_list_threads(),
             patch(
-                "deepagents_cli.sessions.delete_thread",
+                "code2workspace_cli.sessions.delete_thread",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -1836,7 +1836,7 @@ class TestThreadSelectorDelete:
         with (
             _patch_list_threads(single_thread),
             patch(
-                "deepagents_cli.sessions.delete_thread",
+                "code2workspace_cli.sessions.delete_thread",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -1868,7 +1868,7 @@ class TestThreadSelectorDelete:
         with (
             _patch_list_threads(),
             patch(
-                "deepagents_cli.sessions.delete_thread",
+                "code2workspace_cli.sessions.delete_thread",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -1905,7 +1905,7 @@ class TestThreadSelectorDelete:
         with (
             _patch_list_threads(),
             patch(
-                "deepagents_cli.sessions.delete_thread",
+                "code2workspace_cli.sessions.delete_thread",
                 new_callable=AsyncMock,
                 side_effect=OSError("disk full"),
             ),
@@ -1937,7 +1937,7 @@ class TestThreadSelectorColumnConfig:
 
     def test_default_columns(self) -> None:
         """Default column config should match THREAD_COLUMN_DEFAULTS."""
-        from deepagents_cli.model_config import THREAD_COLUMN_DEFAULTS
+        from code2workspace_cli.model_config import THREAD_COLUMN_DEFAULTS
 
         with _patch_columns():
             screen = ThreadSelectorScreen(current_thread=None)
@@ -1949,7 +1949,7 @@ class TestThreadSelectorColumnConfig:
             _patch_list_threads(),
             _patch_columns(),
             patch(
-                "deepagents_cli.model_config.save_thread_columns",
+                "code2workspace_cli.model_config.save_thread_columns",
                 return_value=True,
             ) as mock_save,
         ):
@@ -2011,7 +2011,7 @@ class TestThreadSelectorColumnConfig:
             _patch_list_threads(threads_without_prompt),
             _patch_columns(columns),
             patch(
-                "deepagents_cli.sessions.populate_thread_checkpoint_details",
+                "code2workspace_cli.sessions.populate_thread_checkpoint_details",
                 new_callable=AsyncMock,
                 side_effect=_populate,
             ) as mock_populate,
@@ -2053,11 +2053,11 @@ def _get_widget_text(widget: Static) -> str:
 
 
 class TestResumeThread:
-    """Tests for DeepAgentsApp._resume_thread."""
+    """Tests for Code2WorkspaceApp._resume_thread."""
 
     async def test_no_agent_shows_error(self) -> None:
         """_resume_thread with no agent should show an error message."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         mounted: list[Static] = []
         app._mount_message = AsyncMock(side_effect=lambda w: mounted.append(w))  # type: ignore[assignment]
         app._agent = None
@@ -2069,7 +2069,7 @@ class TestResumeThread:
 
     async def test_no_session_state_shows_error(self) -> None:
         """_resume_thread with no session state should show an error message."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         mounted: list[Static] = []
         app._mount_message = AsyncMock(side_effect=lambda w: mounted.append(w))  # type: ignore[assignment]
         app._agent = MagicMock()
@@ -2082,7 +2082,7 @@ class TestResumeThread:
 
     async def test_already_switching_shows_message(self) -> None:
         """_resume_thread should reject concurrent thread switches."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         mounted: list[Static] = []
         app._mount_message = AsyncMock(side_effect=lambda w: mounted.append(w))  # type: ignore[assignment]
         app._agent = MagicMock()
@@ -2097,7 +2097,7 @@ class TestResumeThread:
 
     async def test_already_on_thread_shows_message(self) -> None:
         """_resume_thread when already on the thread should show info message."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         mounted: list[Static] = []
         app._mount_message = AsyncMock(side_effect=lambda w: mounted.append(w))  # type: ignore[assignment]
         app._agent = MagicMock()
@@ -2113,7 +2113,7 @@ class TestResumeThread:
         """Successful _resume_thread should update thread IDs and load history."""
         from textual.css.query import NoMatches as _NoMatches
 
-        app = DeepAgentsApp(thread_id="old-thread")
+        app = Code2WorkspaceApp(thread_id="old-thread")
         app._agent = MagicMock()
         app._session_state = MagicMock()
         app._session_state.thread_id = "old-thread"
@@ -2147,13 +2147,13 @@ class TestResumeThread:
         """If _clear_messages raises, thread IDs should be restored."""
         from textual.css.query import NoMatches as _NoMatches
 
-        app = DeepAgentsApp(thread_id="old-thread")
+        app = Code2WorkspaceApp(thread_id="old-thread")
         app._agent = MagicMock()
         app._session_state = MagicMock()
         app._session_state.thread_id = "old-thread"
         app._pending_messages = MagicMock()
         app._queued_widgets = MagicMock()
-        from deepagents_cli.app import _ThreadHistoryPayload
+        from code2workspace_cli.app import _ThreadHistoryPayload
 
         mock_payload = _ThreadHistoryPayload(messages=[], context_tokens=0)
         app._fetch_thread_history_data = AsyncMock(return_value=mock_payload)  # type: ignore[assignment]
@@ -2176,7 +2176,7 @@ class TestResumeThread:
         """If _load_thread_history raises, thread IDs should be rolled back."""
         from textual.css.query import NoMatches as _NoMatches
 
-        app = DeepAgentsApp(thread_id="old-thread")
+        app = Code2WorkspaceApp(thread_id="old-thread")
         app._agent = MagicMock()
         app._session_state = MagicMock()
         app._session_state.thread_id = "old-thread"
@@ -2205,7 +2205,7 @@ class TestResumeThread:
 
     async def test_prefetch_failure_keeps_current_thread_visible(self) -> None:
         """Failed prefetch should not clear current conversation state."""
-        app = DeepAgentsApp(thread_id="old-thread")
+        app = Code2WorkspaceApp(thread_id="old-thread")
         app._agent = MagicMock()
         app._session_state = MagicMock()
         app._session_state.thread_id = "old-thread"
@@ -2230,7 +2230,7 @@ class TestResumeThread:
 
     async def test_prefetch_failure_clears_switch_lock_and_restores_input(self) -> None:
         """Prefetch failures should release switch lock and restore input state."""
-        app = DeepAgentsApp(thread_id="old-thread")
+        app = Code2WorkspaceApp(thread_id="old-thread")
         app._agent = MagicMock()
         app._session_state = MagicMock()
         app._session_state.thread_id = "old-thread"
@@ -2253,7 +2253,7 @@ class TestResumeThread:
         """If rollback restore fails, user-facing error should mention it."""
         from textual.css.query import NoMatches as _NoMatches
 
-        app = DeepAgentsApp(thread_id="old-thread")
+        app = Code2WorkspaceApp(thread_id="old-thread")
         app._agent = MagicMock()
         app._session_state = MagicMock()
         app._session_state.thread_id = "old-thread"
@@ -2280,11 +2280,11 @@ class TestResumeThread:
 
 
 class TestFetchThreadHistoryData:
-    """Tests for DeepAgentsApp._fetch_thread_history_data."""
+    """Tests for Code2WorkspaceApp._fetch_thread_history_data."""
 
     async def test_returns_empty_when_agent_missing(self) -> None:
         """No active agent should return an empty history payload."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._agent = None
 
         payload = await app._fetch_thread_history_data("tid-1")
@@ -2294,7 +2294,7 @@ class TestFetchThreadHistoryData:
 
     async def test_returns_empty_when_state_missing(self) -> None:
         """Missing checkpoint state should return an empty history payload."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._agent = MagicMock()
         app._agent.aget_state = AsyncMock(return_value=None)
 
@@ -2308,7 +2308,7 @@ class TestFetchThreadHistoryData:
 
     async def test_returns_empty_when_messages_missing(self) -> None:
         """State with no messages should return an empty history payload."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._agent = MagicMock()
         state = MagicMock()
         state.values = {}
@@ -2321,9 +2321,9 @@ class TestFetchThreadHistoryData:
 
     async def test_offloads_conversion_to_thread(self) -> None:
         """Message conversion should be offloaded via `asyncio.to_thread`."""
-        from deepagents_cli.widgets.message_store import MessageData, MessageType
+        from code2workspace_cli.widgets.message_store import MessageData, MessageType
 
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._agent = MagicMock()
         raw_messages = [object()]
         state = MagicMock()
@@ -2332,7 +2332,7 @@ class TestFetchThreadHistoryData:
         converted = [MessageData(type=MessageType.USER, content="hello")]
 
         with patch(
-            "deepagents_cli.app.asyncio.to_thread",
+            "code2workspace_cli.app.asyncio.to_thread",
             new_callable=AsyncMock,
             return_value=converted,
         ) as to_thread_mock:
@@ -2346,9 +2346,9 @@ class TestFetchThreadHistoryData:
 
     async def test_extracts_nonzero_context_tokens(self) -> None:
         """Persisted _context_tokens should propagate to the payload."""
-        from deepagents_cli.widgets.message_store import MessageData, MessageType
+        from code2workspace_cli.widgets.message_store import MessageData, MessageType
 
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._agent = MagicMock()
         raw_messages = [object()]
         state = MagicMock()
@@ -2357,7 +2357,7 @@ class TestFetchThreadHistoryData:
         converted = [MessageData(type=MessageType.USER, content="hello")]
 
         with patch(
-            "deepagents_cli.app.asyncio.to_thread",
+            "code2workspace_cli.app.asyncio.to_thread",
             new_callable=AsyncMock,
             return_value=converted,
         ):
@@ -2367,9 +2367,9 @@ class TestFetchThreadHistoryData:
 
     async def test_none_context_tokens_coerced_to_zero(self) -> None:
         """`_context_tokens: None` in checkpoint should coerce to 0."""
-        from deepagents_cli.widgets.message_store import MessageData, MessageType
+        from code2workspace_cli.widgets.message_store import MessageData, MessageType
 
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._agent = MagicMock()
         raw_messages = [object()]
         state = MagicMock()
@@ -2378,7 +2378,7 @@ class TestFetchThreadHistoryData:
         converted = [MessageData(type=MessageType.USER, content="hello")]
 
         with patch(
-            "deepagents_cli.app.asyncio.to_thread",
+            "code2workspace_cli.app.asyncio.to_thread",
             new_callable=AsyncMock,
             return_value=converted,
         ):
@@ -2388,13 +2388,13 @@ class TestFetchThreadHistoryData:
 
 
 class TestLoadThreadHistory:
-    """Tests for DeepAgentsApp._load_thread_history."""
+    """Tests for Code2WorkspaceApp._load_thread_history."""
 
     async def test_preloaded_history_skips_fetch_and_schedules_link(self) -> None:
         """Preloaded history should render without state fetch round-trip."""
-        from deepagents_cli.widgets.message_store import MessageData, MessageType
+        from code2workspace_cli.widgets.message_store import MessageData, MessageType
 
-        app = DeepAgentsApp(thread_id="tid-1")
+        app = Code2WorkspaceApp(thread_id="tid-1")
         app._agent = MagicMock()
         fetch_history_mock = AsyncMock()
         mount_message_mock = AsyncMock()
@@ -2409,7 +2409,7 @@ class TestLoadThreadHistory:
         messages_container.mount = AsyncMock()
         app.query_one = MagicMock(return_value=messages_container)  # type: ignore[assignment]
 
-        from deepagents_cli.app import _ThreadHistoryPayload
+        from code2workspace_cli.app import _ThreadHistoryPayload
 
         preloaded = _ThreadHistoryPayload(
             messages=[MessageData(type=MessageType.USER, content="hello")],
@@ -2424,9 +2424,9 @@ class TestLoadThreadHistory:
 
     async def test_resume_seeds_context_tokens_from_state(self) -> None:
         """Resuming a thread with persisted tokens should seed the local cache."""
-        from deepagents_cli.widgets.message_store import MessageData, MessageType
+        from code2workspace_cli.widgets.message_store import MessageData, MessageType
 
-        app = DeepAgentsApp(thread_id="tid-1")
+        app = Code2WorkspaceApp(thread_id="tid-1")
 
         mount_message_mock = AsyncMock()
         schedule_link_mock = MagicMock()
@@ -2439,7 +2439,7 @@ class TestLoadThreadHistory:
         messages_container.mount = AsyncMock()
         app.query_one = MagicMock(return_value=messages_container)  # type: ignore[assignment]
 
-        from deepagents_cli.app import _ThreadHistoryPayload
+        from code2workspace_cli.app import _ThreadHistoryPayload
 
         preloaded = _ThreadHistoryPayload(
             messages=[MessageData(type=MessageType.USER, content="hello")],
@@ -2451,9 +2451,9 @@ class TestLoadThreadHistory:
 
     async def test_zero_context_tokens_does_not_overwrite_cache(self) -> None:
         """Loading a payload with 0 tokens should not reset an existing cache."""
-        from deepagents_cli.widgets.message_store import MessageData, MessageType
+        from code2workspace_cli.widgets.message_store import MessageData, MessageType
 
-        app = DeepAgentsApp(thread_id="tid-1")
+        app = Code2WorkspaceApp(thread_id="tid-1")
         app._context_tokens = 5000  # pre-existing cache from a previous thread
 
         mount_message_mock = AsyncMock()
@@ -2467,7 +2467,7 @@ class TestLoadThreadHistory:
         messages_container.mount = AsyncMock()
         app.query_one = MagicMock(return_value=messages_container)  # type: ignore[assignment]
 
-        from deepagents_cli.app import _ThreadHistoryPayload
+        from code2workspace_cli.app import _ThreadHistoryPayload
 
         preloaded = _ThreadHistoryPayload(
             messages=[MessageData(type=MessageType.USER, content="hello")],
@@ -2479,11 +2479,11 @@ class TestLoadThreadHistory:
 
     async def test_fallback_fetch_path_used_without_preloaded_data(self) -> None:
         """History should be fetched when preloaded data is not provided."""
-        from deepagents_cli.widgets.message_store import MessageData, MessageType
+        from code2workspace_cli.widgets.message_store import MessageData, MessageType
 
-        app = DeepAgentsApp(thread_id="tid-1")
+        app = Code2WorkspaceApp(thread_id="tid-1")
         app._agent = MagicMock()
-        from deepagents_cli.app import _ThreadHistoryPayload
+        from code2workspace_cli.app import _ThreadHistoryPayload
 
         fetched = _ThreadHistoryPayload(
             messages=[MessageData(type=MessageType.USER, content="hello")],
@@ -2511,10 +2511,10 @@ class TestLoadThreadHistory:
 
     async def test_assistant_render_failure_does_not_abort_history_load(self) -> None:
         """A single assistant render failure should not abort history loading."""
-        from deepagents_cli.widgets.message_store import MessageData, MessageType
-        from deepagents_cli.widgets.messages import AssistantMessage
+        from code2workspace_cli.widgets.message_store import MessageData, MessageType
+        from code2workspace_cli.widgets.messages import AssistantMessage
 
-        app = DeepAgentsApp(thread_id="tid-1")
+        app = Code2WorkspaceApp(thread_id="tid-1")
         app._agent = MagicMock()
         mount_message_mock = AsyncMock()
         schedule_link_mock = MagicMock()
@@ -2527,7 +2527,7 @@ class TestLoadThreadHistory:
         messages_container.mount = AsyncMock()
         app.query_one = MagicMock(return_value=messages_container)  # type: ignore[assignment]
 
-        from deepagents_cli.app import _ThreadHistoryPayload
+        from code2workspace_cli.app import _ThreadHistoryPayload
 
         preloaded = _ThreadHistoryPayload(
             messages=[
@@ -2558,11 +2558,11 @@ class TestLoadThreadHistory:
 
     async def test_early_return_without_thread_id_logs_debug(self) -> None:
         """Missing thread ID should early-return with a debug log entry."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._lc_thread_id = None
         app._agent = MagicMock()
 
-        with patch("deepagents_cli.app.logger.debug") as debug_mock:
+        with patch("code2workspace_cli.app.logger.debug") as debug_mock:
             await app._load_thread_history()
 
         debug_mock.assert_called_once_with(
@@ -2571,10 +2571,10 @@ class TestLoadThreadHistory:
 
     async def test_early_return_without_agent_logs_debug(self) -> None:
         """No agent and no preloaded payload should early-return with debug log."""
-        app = DeepAgentsApp(thread_id="tid-1")
+        app = Code2WorkspaceApp(thread_id="tid-1")
         app._agent = None
 
-        with patch("deepagents_cli.app.logger.debug") as debug_mock:
+        with patch("code2workspace_cli.app.logger.debug") as debug_mock:
             await app._load_thread_history(thread_id="tid-1")
 
         debug_mock.assert_called_once_with(
@@ -2584,11 +2584,11 @@ class TestLoadThreadHistory:
 
 
 class TestUpgradeThreadMessageLink:
-    """Tests for DeepAgentsApp._upgrade_thread_message_link."""
+    """Tests for Code2WorkspaceApp._upgrade_thread_message_link."""
 
     async def test_noop_when_link_does_not_resolve(self) -> None:
         """Plain-string result should leave widget content unchanged."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._build_thread_message = AsyncMock(return_value="Resumed thread: tid-1")  # type: ignore[assignment]
         widget = MagicMock()
         widget.parent = object()
@@ -2607,7 +2607,7 @@ class TestUpgradeThreadMessageLink:
         """Unmounted widget should not be updated even when link resolves."""
         from textual.content import Content
 
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         app._build_thread_message = AsyncMock(  # type: ignore[assignment]
             return_value=Content("Resumed thread: tid-1")
         )
@@ -2627,7 +2627,7 @@ class TestUpgradeThreadMessageLink:
         """Resolved Content should replace widget content."""
         from textual.content import Content
 
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         linked = Content("Resumed thread: tid-1")
         app._build_thread_message = AsyncMock(return_value=linked)  # type: ignore[assignment]
         widget = MagicMock()
@@ -2645,12 +2645,12 @@ class TestUpgradeThreadMessageLink:
 
 
 class TestBuildThreadMessage:
-    """Tests for DeepAgentsApp._build_thread_message."""
+    """Tests for Code2WorkspaceApp._build_thread_message."""
 
     async def test_plain_text_when_tracing_not_configured(self) -> None:
         """Returns plain string when LangSmith URL is not available."""
-        app = DeepAgentsApp()
-        target = "deepagents_cli.config.build_langsmith_thread_url"
+        app = Code2WorkspaceApp()
+        target = "code2workspace_cli.config.build_langsmith_thread_url"
         with patch(target, return_value=None):
             result = await app._build_thread_message("Resumed thread", "tid-123")
 
@@ -2662,9 +2662,9 @@ class TestBuildThreadMessage:
         from textual.content import Content
         from textual.style import Style as TStyle
 
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         url = "https://smith.langchain.com/o/org/projects/p/proj/t/tid-123"
-        target = "deepagents_cli.config.build_langsmith_thread_url"
+        target = "code2workspace_cli.config.build_langsmith_thread_url"
         with patch(target, return_value=url):
             result = await app._build_thread_message("Resumed thread", "tid-123")
 
@@ -2681,9 +2681,9 @@ class TestBuildThreadMessage:
 
     async def test_fallback_on_timeout(self) -> None:
         """Returns plain string when URL resolution times out."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         with patch(
-            "deepagents_cli.app.asyncio.wait_for",
+            "code2workspace_cli.app.asyncio.wait_for",
             side_effect=TimeoutError,
         ):
             result = await app._build_thread_message("Resumed thread", "t-1")
@@ -2693,9 +2693,9 @@ class TestBuildThreadMessage:
 
     async def test_fallback_on_exception(self) -> None:
         """Returns plain string when URL resolution raises an exception."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         with patch(
-            "deepagents_cli.config.build_langsmith_thread_url",
+            "code2workspace_cli.config.build_langsmith_thread_url",
             side_effect=OSError("network error"),
         ):
             result = await app._build_thread_message("Resumed thread", "t-1")
@@ -2705,7 +2705,7 @@ class TestBuildThreadMessage:
 
 
 class TestConvertMessagesToData:
-    """Tests for DeepAgentsApp._convert_messages_to_data."""
+    """Tests for Code2WorkspaceApp._convert_messages_to_data."""
 
     def _make_human(self, content: str) -> object:
         """Create a HumanMessage."""
@@ -2736,10 +2736,10 @@ class TestConvertMessagesToData:
 
     def test_human_message_conversion(self) -> None:
         """HumanMessage should become a USER MessageData."""
-        from deepagents_cli.widgets.message_store import MessageType
+        from code2workspace_cli.widgets.message_store import MessageType
 
         msgs = [self._make_human("Hello")]
-        result = DeepAgentsApp._convert_messages_to_data(msgs)
+        result = Code2WorkspaceApp._convert_messages_to_data(msgs)
 
         assert len(result) == 1
         assert result[0].type == MessageType.USER
@@ -2751,17 +2751,17 @@ class TestConvertMessagesToData:
             self._make_human("[SYSTEM] Auto-injected context"),
             self._make_human("Real user message"),
         ]
-        result = DeepAgentsApp._convert_messages_to_data(msgs)
+        result = Code2WorkspaceApp._convert_messages_to_data(msgs)
 
         assert len(result) == 1
         assert result[0].content == "Real user message"
 
     def test_ai_message_text_content(self) -> None:
         """AIMessage with string content should become ASSISTANT MessageData."""
-        from deepagents_cli.widgets.message_store import MessageType
+        from code2workspace_cli.widgets.message_store import MessageType
 
         msgs = [self._make_ai("Here is the answer.")]
-        result = DeepAgentsApp._convert_messages_to_data(msgs)
+        result = Code2WorkspaceApp._convert_messages_to_data(msgs)
 
         assert len(result) == 1
         assert result[0].type == MessageType.ASSISTANT
@@ -2769,14 +2769,14 @@ class TestConvertMessagesToData:
 
     def test_ai_message_content_block_list(self) -> None:
         """AIMessage with list-of-blocks content should extract text."""
-        from deepagents_cli.widgets.message_store import MessageType
+        from code2workspace_cli.widgets.message_store import MessageType
 
         blocks: list[dict[str, str]] = [
             {"type": "text", "text": "Part 1. "},
             {"type": "text", "text": "Part 2."},
         ]
         msgs = [self._make_ai(blocks)]
-        result = DeepAgentsApp._convert_messages_to_data(msgs)
+        result = Code2WorkspaceApp._convert_messages_to_data(msgs)
 
         assert len(result) == 1
         assert result[0].type == MessageType.ASSISTANT
@@ -2785,13 +2785,13 @@ class TestConvertMessagesToData:
     def test_ai_message_empty_text_skipped(self) -> None:
         """AIMessage with empty text should not produce an ASSISTANT entry."""
         msgs = [self._make_ai("   ")]
-        result = DeepAgentsApp._convert_messages_to_data(msgs)
+        result = Code2WorkspaceApp._convert_messages_to_data(msgs)
 
         assert len(result) == 0
 
     def test_tool_call_matching(self) -> None:
         """ToolMessage should be matched to its AIMessage tool call by ID."""
-        from deepagents_cli.widgets.message_store import MessageType, ToolStatus
+        from code2workspace_cli.widgets.message_store import MessageType, ToolStatus
 
         msgs = [
             self._make_ai(
@@ -2801,7 +2801,7 @@ class TestConvertMessagesToData:
             ),
             self._make_tool("file contents", tool_call_id="tc-1"),
         ]
-        result = DeepAgentsApp._convert_messages_to_data(msgs)
+        result = Code2WorkspaceApp._convert_messages_to_data(msgs)
 
         assert len(result) == 1
         assert result[0].type == MessageType.TOOL
@@ -2811,7 +2811,7 @@ class TestConvertMessagesToData:
 
     def test_tool_call_error_status(self) -> None:
         """ToolMessage with error status should set ERROR on the tool data."""
-        from deepagents_cli.widgets.message_store import ToolStatus
+        from code2workspace_cli.widgets.message_store import ToolStatus
 
         msgs = [
             self._make_ai(
@@ -2819,26 +2819,26 @@ class TestConvertMessagesToData:
             ),
             self._make_tool("command failed", tool_call_id="tc-2", status="error"),
         ]
-        result = DeepAgentsApp._convert_messages_to_data(msgs)
+        result = Code2WorkspaceApp._convert_messages_to_data(msgs)
 
         assert result[0].tool_status == ToolStatus.ERROR
         assert result[0].tool_output == "command failed"
 
     def test_unmatched_tool_call_rejected(self) -> None:
         """Tool calls with no matching ToolMessage should be REJECTED."""
-        from deepagents_cli.widgets.message_store import ToolStatus
+        from code2workspace_cli.widgets.message_store import ToolStatus
 
         msgs = [
             self._make_ai(tool_calls=[{"id": "tc-3", "name": "bash", "args": {}}]),
         ]
-        result = DeepAgentsApp._convert_messages_to_data(msgs)
+        result = Code2WorkspaceApp._convert_messages_to_data(msgs)
 
         assert len(result) == 1
         assert result[0].tool_status == ToolStatus.REJECTED
 
     def test_mixed_message_sequence(self) -> None:
         """Full conversation with mixed message types should convert correctly."""
-        from deepagents_cli.widgets.message_store import MessageType, ToolStatus
+        from code2workspace_cli.widgets.message_store import MessageType, ToolStatus
 
         msgs = [
             self._make_human("What files are here?"),
@@ -2849,7 +2849,7 @@ class TestConvertMessagesToData:
             self._make_tool("file1.py\nfile2.py", tool_call_id="tc-a"),
             self._make_ai("I found 2 files."),
         ]
-        result = DeepAgentsApp._convert_messages_to_data(msgs)
+        result = Code2WorkspaceApp._convert_messages_to_data(msgs)
 
         assert len(result) == 4
         assert result[0].type == MessageType.USER
@@ -2862,14 +2862,14 @@ class TestConvertMessagesToData:
 
     def test_empty_messages(self) -> None:
         """Empty input should return empty output."""
-        result = DeepAgentsApp._convert_messages_to_data([])
+        result = Code2WorkspaceApp._convert_messages_to_data([])
         assert result == []
 
     def test_skill_message_from_additional_kwargs(self) -> None:
         """HumanMessage with __skill in additional_kwargs → SKILL MessageData."""
         from langchain_core.messages import HumanMessage
 
-        from deepagents_cli.widgets.message_store import MessageType
+        from code2workspace_cli.widgets.message_store import MessageType
 
         msg = HumanMessage(
             content="I'm invoking the skill `web-research`.\n---\n# Body\n---",
@@ -2882,7 +2882,7 @@ class TestConvertMessagesToData:
                 },
             },
         )
-        result = DeepAgentsApp._convert_messages_to_data([msg])
+        result = Code2WorkspaceApp._convert_messages_to_data([msg])
 
         assert len(result) == 1
         assert result[0].type == MessageType.SKILL
@@ -2897,13 +2897,13 @@ class TestConvertMessagesToData:
         """__skill dict missing name should fall back to USER."""
         from langchain_core.messages import HumanMessage
 
-        from deepagents_cli.widgets.message_store import MessageType
+        from code2workspace_cli.widgets.message_store import MessageType
 
         msg = HumanMessage(
             content="some text",
             additional_kwargs={"__skill": {"description": "no name"}},
         )
-        result = DeepAgentsApp._convert_messages_to_data([msg])
+        result = Code2WorkspaceApp._convert_messages_to_data([msg])
 
         assert len(result) == 1
         assert result[0].type == MessageType.USER
@@ -2914,8 +2914,8 @@ class TestColumnKeyConsistency:
 
     def test_all_column_dicts_share_same_keys(self) -> None:
         """All parallel column dicts must have the same key set."""
-        from deepagents_cli.model_config import THREAD_COLUMN_DEFAULTS
-        from deepagents_cli.widgets.thread_selector import (
+        from code2workspace_cli.model_config import THREAD_COLUMN_DEFAULTS
+        from code2workspace_cli.widgets.thread_selector import (
             _COLUMN_LABELS,
             _COLUMN_ORDER,
             _COLUMN_TOGGLE_LABELS,
@@ -3020,7 +3020,7 @@ class TestThreadSelectorDomSkip:
         app = ThreadSelectorTestApp(current_thread="abc12345")
 
         with patch(
-            "deepagents_cli.sessions.list_threads",
+            "code2workspace_cli.sessions.list_threads",
             new_callable=AsyncMock,
             return_value=refreshed,
         ):

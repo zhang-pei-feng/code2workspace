@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from deepagents_cli.deploy.config import (
+from code2workspace_cli.deploy.config import (
     AGENTS_MD_FILENAME,
     DEFAULT_CONFIG_FILENAME,
     MCP_FILENAME,
@@ -26,7 +26,7 @@ class TestInitProject:
     ) -> None:
         monkeypatch.chdir(tmp_path)
 
-        from deepagents_cli.deploy.commands import _init_project
+        from code2workspace_cli.deploy.commands import _init_project
 
         _init_project(name="my-agent")
 
@@ -43,7 +43,7 @@ class TestInitProject:
     ) -> None:
         monkeypatch.chdir(tmp_path)
 
-        from deepagents_cli.deploy.commands import _init_project
+        from code2workspace_cli.deploy.commands import _init_project
 
         _init_project(name="enc-test")
 
@@ -58,7 +58,7 @@ class TestInitProject:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "exists").mkdir()
 
-        from deepagents_cli.deploy.commands import _init_project
+        from code2workspace_cli.deploy.commands import _init_project
 
         with pytest.raises(SystemExit):
             _init_project(name="exists")
@@ -69,7 +69,7 @@ class TestInitProject:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "proj").mkdir()
 
-        from deepagents_cli.deploy.commands import _init_project
+        from code2workspace_cli.deploy.commands import _init_project
 
         _init_project(name="proj", force=True)
         assert (tmp_path / "proj" / DEFAULT_CONFIG_FILENAME).is_file()

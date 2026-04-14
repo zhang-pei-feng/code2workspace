@@ -12,7 +12,7 @@ import pytest
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-import deepagents_cli.hooks as hooks_mod
+import code2workspace_cli.hooks as hooks_mod
 
 
 @pytest.fixture(autouse=True)
@@ -36,7 +36,7 @@ class TestLoadHooks:
     def test_missing_config_file(self, tmp_path):
         """Returns empty list when config file does not exist."""
         # tmp_path exists but has no hooks.json
-        with patch("deepagents_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
+        with patch("code2workspace_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
             result = hooks_mod._load_hooks()
 
         assert result == []
@@ -46,7 +46,7 @@ class TestLoadHooks:
         config = {"hooks": [{"command": ["echo", "hi"], "events": ["session.start"]}]}
         (tmp_path / "hooks.json").write_text(json.dumps(config))
 
-        with patch("deepagents_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
+        with patch("code2workspace_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
             result = hooks_mod._load_hooks()
 
         assert result == config["hooks"]
@@ -55,7 +55,7 @@ class TestLoadHooks:
         """Returns empty list and logs warning on invalid JSON."""
         (tmp_path / "hooks.json").write_text("{not json!!")
 
-        with patch("deepagents_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
+        with patch("code2workspace_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
             result = hooks_mod._load_hooks()
 
         assert result == []
@@ -64,7 +64,7 @@ class TestLoadHooks:
         """Returns empty list when 'hooks' key is absent."""
         (tmp_path / "hooks.json").write_text(json.dumps({"other": "data"}))
 
-        with patch("deepagents_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
+        with patch("code2workspace_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
             result = hooks_mod._load_hooks()
 
         assert result == []
@@ -75,7 +75,7 @@ class TestLoadHooks:
         cfg_path = tmp_path / "hooks.json"
         cfg_path.write_text(json.dumps(config))
 
-        with patch("deepagents_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
+        with patch("code2workspace_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
             first = hooks_mod._load_hooks()
             # Overwrite file — cached result should still be returned.
             cfg_path.write_text(json.dumps({"hooks": []}))
@@ -89,7 +89,7 @@ class TestLoadHooks:
         (tmp_path / "hooks.json").write_text("{}")
 
         with (
-            patch("deepagents_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path),
+            patch("code2workspace_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path),
             patch("pathlib.Path.read_text", side_effect=OSError("permission denied")),
         ):
             result = hooks_mod._load_hooks()
@@ -100,7 +100,7 @@ class TestLoadHooks:
         """Returns empty list when config root is not a JSON object."""
         (tmp_path / "hooks.json").write_text(json.dumps([1, 2, 3]))
 
-        with patch("deepagents_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
+        with patch("code2workspace_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
             result = hooks_mod._load_hooks()
 
         assert result == []
@@ -109,7 +109,7 @@ class TestLoadHooks:
         """Returns empty list when 'hooks' value is not a list."""
         (tmp_path / "hooks.json").write_text(json.dumps({"hooks": "not-a-list"}))
 
-        with patch("deepagents_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
+        with patch("code2workspace_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
             result = hooks_mod._load_hooks()
 
         assert result == []
@@ -118,7 +118,7 @@ class TestLoadHooks:
         """Returns empty list when config is JSON null."""
         (tmp_path / "hooks.json").write_text("null")
 
-        with patch("deepagents_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
+        with patch("code2workspace_cli.model_config.DEFAULT_CONFIG_DIR", tmp_path):
             result = hooks_mod._load_hooks()
 
         assert result == []
@@ -144,7 +144,7 @@ class TestDispatchHook:
             {"command": ["echo", "hi"], "events": ["session.start"]}
         ]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("session.start", {"thread_id": "abc"})
 
         mock_run.assert_called_once()
@@ -155,7 +155,7 @@ class TestDispatchHook:
         """Event name is automatically added to the payload."""
         hooks_mod._hooks_config = [{"command": ["echo"]}]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("task.complete", {})
 
         stdin_bytes = mock_run.call_args[1]["input"]
@@ -167,7 +167,7 @@ class TestDispatchHook:
             {"command": ["echo", "hi"], "events": ["task.complete"]}
         ]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("session.start", {})
 
         mock_run.assert_not_called()
@@ -176,7 +176,7 @@ class TestDispatchHook:
         """Hook with no events filter receives all events."""
         hooks_mod._hooks_config = [{"command": ["echo", "hi"], "events": []}]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("any.event", {})
 
         mock_run.assert_called_once()
@@ -185,7 +185,7 @@ class TestDispatchHook:
         """Hook with omitted events key receives all events."""
         hooks_mod._hooks_config = [{"command": ["echo", "hi"]}]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("any.event", {})
 
         mock_run.assert_called_once()
@@ -194,7 +194,7 @@ class TestDispatchHook:
         """Hook entry missing 'command' is silently skipped."""
         hooks_mod._hooks_config = [{"events": ["session.start"]}]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("session.start", {})
 
         mock_run.assert_not_called()
@@ -203,7 +203,7 @@ class TestDispatchHook:
         """Hook with string command (not list) is skipped."""
         hooks_mod._hooks_config = [{"command": "echo hello"}]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("session.start", {})
 
         mock_run.assert_not_called()
@@ -212,7 +212,7 @@ class TestDispatchHook:
         """Hook with empty command list is skipped."""
         hooks_mod._hooks_config = [{"command": []}]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("session.start", {})
 
         mock_run.assert_not_called()
@@ -222,7 +222,7 @@ class TestDispatchHook:
         hooks_mod._hooks_config = [{"command": ["sleep", "999"]}]
 
         with patch(
-            "deepagents_cli.hooks.subprocess.run",
+            "code2workspace_cli.hooks.subprocess.run",
             side_effect=subprocess.TimeoutExpired("sleep", 5),
         ):
             # Should not raise.
@@ -233,7 +233,7 @@ class TestDispatchHook:
         hooks_mod._hooks_config = [{"command": ["nonexistent"]}]
 
         with patch(
-            "deepagents_cli.hooks.subprocess.run",
+            "code2workspace_cli.hooks.subprocess.run",
             side_effect=FileNotFoundError("nonexistent"),
         ):
             # Should not raise.
@@ -244,7 +244,7 @@ class TestDispatchHook:
         hooks_mod._hooks_config = [{"command": ["/not/executable"]}]
 
         with patch(
-            "deepagents_cli.hooks.subprocess.run",
+            "code2workspace_cli.hooks.subprocess.run",
             side_effect=PermissionError("not executable"),
         ):
             # Should not raise.
@@ -255,7 +255,7 @@ class TestDispatchHook:
         hooks_mod._hooks_config = [{"command": ["bad"]}]
 
         with patch(
-            "deepagents_cli.hooks.subprocess.run",
+            "code2workspace_cli.hooks.subprocess.run",
             side_effect=RuntimeError("unexpected"),
         ):
             # Should not raise.
@@ -268,7 +268,7 @@ class TestDispatchHook:
             {"command": ["second"]},
         ]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("session.start", {})
 
         assert mock_run.call_count == 2
@@ -288,7 +288,7 @@ class TestDispatchHook:
                 msg = "fail"
                 raise FileNotFoundError(msg)
 
-        with patch("deepagents_cli.hooks.subprocess.run", side_effect=side_effect):
+        with patch("code2workspace_cli.hooks.subprocess.run", side_effect=side_effect):
             await hooks_mod.dispatch_hook("session.start", {})
 
         assert ["fail"] in calls
@@ -298,7 +298,7 @@ class TestDispatchHook:
         """subprocess.run is called with detach and pipe config."""
         hooks_mod._hooks_config = [{"command": ["echo"]}]
 
-        with patch("deepagents_cli.hooks.subprocess.run") as mock_run:
+        with patch("code2workspace_cli.hooks.subprocess.run") as mock_run:
             await hooks_mod.dispatch_hook("session.start", {})
 
         call_kwargs = mock_run.call_args[1]
@@ -341,7 +341,7 @@ class TestDispatchHookFireAndForget:
         """Completed tasks are discarded from the background set."""
         hooks_mod._hooks_config = [{"command": ["echo"]}]
 
-        with patch("deepagents_cli.hooks.subprocess.run"):
+        with patch("code2workspace_cli.hooks.subprocess.run"):
             hooks_mod.dispatch_hook_fire_and_forget("session.start", {})
             task = next(iter(hooks_mod._background_tasks))
             await task

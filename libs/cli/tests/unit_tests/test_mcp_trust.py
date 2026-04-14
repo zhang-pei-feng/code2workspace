@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from deepagents_cli.mcp_trust import (
+from code2workspace_cli.mcp_trust import (
     compute_config_fingerprint,
     is_project_mcp_trusted,
     revoke_project_mcp_trust,

@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING
 from textual.app import App, ComposeResult
 from textual.widgets import Input, Markdown, Static
 
-from deepagents_cli.tool_display import format_tool_display
-from deepagents_cli.widgets.ask_user import AskUserMenu, _QuestionWidget
+from code2workspace_cli.tool_display import format_tool_display
+from code2workspace_cli.widgets.ask_user import AskUserMenu, _QuestionWidget
 
 if TYPE_CHECKING:
-    from deepagents_cli._ask_user_types import AskUserWidgetResult, Question
+    from code2workspace_cli._ask_user_types import AskUserWidgetResult, Question
 
 
 class _AskUserTestApp(App[None]):
@@ -73,7 +73,7 @@ class TestAskUserMenu:
     ) -> None:
         """`_find_menu` should warn when no AskUserMenu ancestor exists."""
         question_widget = _QuestionWidget({"question": "Name?", "type": "text"}, 0)
-        with caplog.at_level("WARNING", logger="deepagents_cli.widgets.ask_user"):
+        with caplog.at_level("WARNING", logger="code2workspace_cli.widgets.ask_user"):
             assert question_widget._find_menu() is None
         assert "Failed to find AskUserMenu ancestor" in caplog.text
 

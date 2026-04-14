@@ -954,9 +954,9 @@ wheels = [
 ]
 
 [[package]]
-name = "deepagents"
+name = "code2workspace"
 version = "0.5.2"
-source = { editable = "../deepagents" }
+source = { editable = "../code2workspace" }
 dependencies = [
     { name = "langchain" },
     { name = "langchain-anthropic" },
@@ -996,12 +996,12 @@ test = [
 ]
 
 [[package]]
-name = "deepagents-cli"
+name = "code2workspace-cli"
 version = "0.0.37"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
-    { name = "deepagents" },
+    { name = "code2workspace" },
     { name = "httpx", extra = ["socks"] },
     { name = "langchain" },
     { name = "langchain-anthropic" },
@@ -1151,9 +1151,9 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.19.0,<1.0.0" },
-    { name = "deepagents", editable = "../deepagents" },
-    { name = "deepagents-cli", extras = ["agentcore", "daytona", "modal", "runloop"], marker = "extra == 'all-sandboxes'" },
-    { name = "deepagents-cli", extras = ["anthropic", "baseten", "bedrock", "cohere", "deepseek", "fireworks", "google-genai", "groq", "huggingface", "ibm", "litellm", "mistralai", "nvidia", "ollama", "openai", "openrouter", "perplexity", "vertexai", "xai"], marker = "extra == 'all-providers'" },
+    { name = "code2workspace", editable = "../code2workspace" },
+    { name = "code2workspace-cli", extras = ["agentcore", "daytona", "modal", "runloop"], marker = "extra == 'all-sandboxes'" },
+    { name = "code2workspace-cli", extras = ["anthropic", "baseten", "bedrock", "cohere", "deepseek", "fireworks", "google-genai", "groq", "huggingface", "ibm", "litellm", "mistralai", "nvidia", "ollama", "openai", "openrouter", "perplexity", "vertexai", "xai"], marker = "extra == 'all-providers'" },
     { name = "httpx", extras = ["socks"], specifier = ">=0.28.1,<1.0.0" },
     { name = "langchain", specifier = ">=1.2.15,<2.0.0" },
     { name = "langchain-agentcore-codeinterpreter", marker = "extra == 'agentcore'", specifier = ">=0.0.1" },
@@ -2478,7 +2478,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bedrock-agentcore" },
     { name = "boto3" },
-    { name = "deepagents" },
+    { name = "code2workspace" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/10/f2/8bafe711f6799baefe9eefce7b7b924bcae2b30246099b61787ad830cb27/langchain_agentcore_codeinterpreter-0.0.1.tar.gz", hash = "sha256:6399952ce45f2762167e769e6cd3ad5c397dd35948f69f9ff798ba7632b1e074", size = 147616, upload-time = "2026-03-20T17:45:13.351Z" }
 wheels = [
@@ -2610,7 +2610,7 @@ version = "0.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "daytona" },
-    { name = "deepagents" },
+    { name = "code2workspace" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/72/5d/5893e3b183afe9fcb74d6836ff0d1a64a9c399b03ebd6281bde365402412/langchain_daytona-0.0.5.tar.gz", hash = "sha256:6b5d2ab0afc0678aa179e536a54732bac3ce6280f9dd9d1faa24cb3ee4b2e843", size = 187252, upload-time = "2026-04-07T17:46:21.107Z" }
 wheels = [
@@ -2772,7 +2772,7 @@ name = "langchain-modal"
 version = "0.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "deepagents" },
+    { name = "code2workspace" },
     { name = "modal" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a4/e2/5ad67f83c30fd131b9dd224a3fadc245881c4746846a9d9102447c20c538/langchain_modal-0.0.3.tar.gz", hash = "sha256:848ecafc796300f3034fb822ff6339830e313626fdfaa9ff73208b053bbf5a59", size = 188235, upload-time = "2026-04-07T18:02:21.975Z" }
@@ -2852,7 +2852,7 @@ name = "langchain-runloop"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "deepagents" },
+    { name = "code2workspace" },
     { name = "runloop-api-client" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/26/c4/4cf238ba20e56fdda1462677f126ee0bab3beaa4633255697db131069280/langchain_runloop-0.0.4.tar.gz", hash = "sha256:a4cdb8c23e7e57e580cc2d2cdc5c833179cc40b1126f6177410fa938b7047f2e", size = 125244, upload-time = "2026-04-07T18:11:48.838Z" }

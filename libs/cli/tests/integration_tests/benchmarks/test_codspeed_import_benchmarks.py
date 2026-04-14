@@ -33,8 +33,8 @@ if TYPE_CHECKING:
 # Module-name prefixes to evict between benchmark iterations so each
 # run simulates a cold-start import.
 _EVICT_PREFIXES = (
-    "deepagents_cli",
-    "deepagents",
+    "code2workspace_cli",
+    "code2workspace",
     "langchain",
     "langchain_core",
     "langchain_anthropic",
@@ -66,7 +66,7 @@ def _clean_module_cache() -> Iterator[None]:
 # Lightweight startup-path modules
 #
 # These are imported during CLI startup and must stay fast.  Regressions
-# here directly impact `deepagents --help` and time-to-first-prompt.
+# here directly impact `code2workspace --help` and time-to-first-prompt.
 # ---------------------------------------------------------------------------
 
 
@@ -78,7 +78,7 @@ class TestStartupPathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli.app
+            import code2workspace_cli.app
 
         benchmark(do_import)
 
@@ -87,7 +87,7 @@ class TestStartupPathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli.main
+            import code2workspace_cli.main
 
         benchmark(do_import)
 
@@ -96,7 +96,7 @@ class TestStartupPathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            from deepagents_cli._cli_context import CLIContext
+            from code2workspace_cli._cli_context import CLIContext
 
         benchmark(do_import)
 
@@ -105,7 +105,7 @@ class TestStartupPathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli._ask_user_types
+            import code2workspace_cli._ask_user_types
 
         benchmark(do_import)
 
@@ -114,7 +114,7 @@ class TestStartupPathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli.textual_adapter
+            import code2workspace_cli.textual_adapter
 
         benchmark(do_import)
 
@@ -123,7 +123,7 @@ class TestStartupPathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli.tool_display
+            import code2workspace_cli.tool_display
 
         benchmark(do_import)
 
@@ -132,7 +132,7 @@ class TestStartupPathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli.config
+            import code2workspace_cli.config
 
         benchmark(do_import)
 
@@ -141,7 +141,7 @@ class TestStartupPathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli.ui
+            import code2workspace_cli.ui
 
         benchmark(do_import)
 
@@ -150,7 +150,7 @@ class TestStartupPathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli.file_ops
+            import code2workspace_cli.file_ops
 
         benchmark(do_import)
 
@@ -171,7 +171,7 @@ class TestRuntimePathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli.configurable_model
+            import code2workspace_cli.configurable_model
 
         benchmark(do_import)
 
@@ -180,6 +180,6 @@ class TestRuntimePathBenchmarks:
 
         def do_import() -> None:
             _evict_modules()
-            import deepagents_cli.ask_user
+            import code2workspace_cli.ask_user
 
         benchmark(do_import)

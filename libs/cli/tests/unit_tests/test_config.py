@@ -7,9 +7,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from deepagents_cli import model_config
-from deepagents_cli._env_vars import SERVER_ENV_PREFIX
-from deepagents_cli.config import (
+from code2workspace_cli import model_config
+from code2workspace_cli._env_vars import SERVER_ENV_PREFIX
+from code2workspace_cli.config import (
     RECOMMENDED_SAFE_SHELL_COMMANDS,
     SHELL_ALLOW_ALL,
     ModelResult,
@@ -28,8 +28,8 @@ from deepagents_cli.config import (
     settings,
     validate_model_capabilities,
 )
-from deepagents_cli.model_config import ModelConfigError, clear_caches
-from deepagents_cli.project_utils import (
+from code2workspace_cli.model_config import ModelConfigError, clear_caches
+from code2workspace_cli.project_utils import (
     ProjectContext,
     find_project_agent_md as _find_project_agent_md,
     find_project_root as _find_project_root,
@@ -124,15 +124,15 @@ class TestProjectContext:
 class TestProjectAgentMdFinding:
     """Test finding project-specific AGENTS.md files."""
 
-    def test_find_agent_md_in_deepagents_dir(self, tmp_path: Path) -> None:
-        """Test finding AGENTS.md in .deepagents/ directory."""
+    def test_find_agent_md_in_code2workspace_dir(self, tmp_path: Path) -> None:
+        """Test finding AGENTS.md in .code2workspace/ directory."""
         project_root = tmp_path / "project"
         project_root.mkdir()
 
-        # Create .deepagents/AGENTS.md
-        deepagents_dir = project_root / ".deepagents"
-        deepagents_dir.mkdir()
-        agent_md = deepagents_dir / "AGENTS.md"
+        # Create .code2workspace/AGENTS.md
+        code2workspace_dir = project_root / ".code2workspace"
+        code2workspace_dir.mkdir()
+        agent_md = code2workspace_dir / "AGENTS.md"
         agent_md.write_text("Project instructions")
 
         result = _find_project_agent_md(project_root)
@@ -144,7 +144,7 @@ class TestProjectAgentMdFinding:
         project_root = tmp_path / "project"
         project_root.mkdir()
 
-        # Create root-level AGENTS.md (no .deepagents/)
+        # Create root-level AGENTS.md (no .code2workspace/)
         agent_md = project_root / "AGENTS.md"
         agent_md.write_text("Project instructions")
 
@@ -158,18 +158,18 @@ class TestProjectAgentMdFinding:
         project_root.mkdir()
 
         # Create both locations
-        deepagents_dir = project_root / ".deepagents"
-        deepagents_dir.mkdir()
-        deepagents_md = deepagents_dir / "AGENTS.md"
-        deepagents_md.write_text("In .deepagents/")
+        code2workspace_dir = project_root / ".code2workspace"
+        code2workspace_dir.mkdir()
+        code2workspace_md = code2workspace_dir / "AGENTS.md"
+        code2workspace_md.write_text("In .code2workspace/")
 
         root_md = project_root / "AGENTS.md"
         root_md.write_text("In root")
 
-        # Should return both, with .deepagents/ first
+        # Should return both, with .code2workspace/ first
         result = _find_project_agent_md(project_root)
         assert len(result) == 2
-        assert result[0] == deepagents_md
+        assert result[0] == code2workspace_md
         assert result[1] == root_md
 
     def test_find_agent_md_not_found(self, tmp_path: Path) -> None:
@@ -191,7 +191,7 @@ class TestProjectAgentMdFinding:
         original_exists = Path.exists
 
         def patched_exists(self: Path) -> bool:
-            if self.name == "AGENTS.md" and ".deepagents" in str(self):
+            if self.name == "AGENTS.md" and ".code2workspace" in str(self):
                 msg = "Permission denied"
                 raise PermissionError(msg)
             return original_exists(self)
@@ -214,10 +214,10 @@ class TestSettingsGetProjectAgentMdPath:
 
     def test_returns_existing_paths(self, tmp_path: Path) -> None:
         """Should return existing AGENTS.md paths from project root."""
-        deepagents_dir = tmp_path / ".deepagents"
-        deepagents_dir.mkdir()
-        deepagents_md = deepagents_dir / "AGENTS.md"
-        deepagents_md.write_text("inner")
+        code2workspace_dir = tmp_path / ".code2workspace"
+        code2workspace_dir.mkdir()
+        code2workspace_md = code2workspace_dir / "AGENTS.md"
+        code2workspace_md.write_text("inner")
 
         root_md = tmp_path / "AGENTS.md"
         root_md.write_text("root")
@@ -226,7 +226,7 @@ class TestSettingsGetProjectAgentMdPath:
         s.project_root = tmp_path
 
         result = s.get_project_agent_md_path()
-        assert result == [deepagents_md, root_md]
+        assert result == [code2workspace_md, root_md]
 
     def test_returns_empty_when_no_agents_md_files(self, tmp_path: Path) -> None:
         """Should return [] when project exists but has no AGENTS.md."""
@@ -240,19 +240,19 @@ class TestNewlineShortcut:
 
     def test_returns_option_enter_on_macos(self) -> None:
         """Should show Option+Enter on darwin."""
-        with patch("deepagents_cli.config.sys.platform", "darwin"):
+        with patch("code2workspace_cli.config.sys.platform", "darwin"):
             assert newline_shortcut() == "Option+Enter"
 
     def test_returns_ctrl_j_on_non_macos(self) -> None:
         """Should show Ctrl+J on non-darwin platforms."""
-        with patch("deepagents_cli.config.sys.platform", "linux"):
+        with patch("code2workspace_cli.config.sys.platform", "linux"):
             assert newline_shortcut() == "Ctrl+J"
 
 
 class TestValidateModelCapabilities:
     """Tests for model capability validation."""
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_without_profile_attribute_warns(self, mock_console: Mock) -> None:
         """Test that models without profile attribute trigger a warning."""
         model = Mock(spec=[])  # No profile attribute
@@ -263,7 +263,7 @@ class TestValidateModelCapabilities:
         assert "No capability profile" in call_args
         assert "test-model" in call_args
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_with_none_profile_warns(self, mock_console: Mock) -> None:
         """Test that models with `profile=None` trigger a warning."""
         model = Mock()
@@ -275,7 +275,7 @@ class TestValidateModelCapabilities:
         call_args = mock_console.print.call_args[0][0]
         assert "No capability profile" in call_args
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_with_tool_calling_false_exits(self, mock_console: Mock) -> None:
         """Test that models with `tool_calling=False` cause `sys.exit(1)`."""
         model = Mock()
@@ -291,7 +291,7 @@ class TestValidateModelCapabilities:
         assert "does not support tool calling" in error_call
         assert "no-tools-model" in error_call
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_with_tool_calling_true_passes(self, mock_console: Mock) -> None:
         """Test that models with `tool_calling=True` pass without messages."""
         model = Mock()
@@ -301,7 +301,7 @@ class TestValidateModelCapabilities:
 
         mock_console.print.assert_not_called()
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_with_tool_calling_none_passes(self, mock_console: Mock) -> None:
         """Test that models with `tool_calling=None` (missing) pass."""
         model = Mock()
@@ -311,7 +311,7 @@ class TestValidateModelCapabilities:
 
         mock_console.print.assert_not_called()
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_with_limited_context_warns(self, mock_console: Mock) -> None:
         """Test that models with <8000 token context trigger a warning."""
         model = Mock()
@@ -325,7 +325,7 @@ class TestValidateModelCapabilities:
         assert "4,096" in call_args
         assert "small-context-model" in call_args
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_with_adequate_context_passes(self, mock_console: Mock) -> None:
         """Confirm that models with >=8000 token context pass silently."""
         model = Mock()
@@ -335,7 +335,7 @@ class TestValidateModelCapabilities:
 
         mock_console.print.assert_not_called()
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_without_max_input_tokens_passes(self, mock_console: Mock) -> None:
         """Test that models without `max_input_tokens` key pass silently."""
         model = Mock()
@@ -345,7 +345,7 @@ class TestValidateModelCapabilities:
 
         mock_console.print.assert_not_called()
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_with_zero_max_input_tokens_passes(self, mock_console: Mock) -> None:
         """Test that models with `max_input_tokens=0` pass (falsy value check)."""
         model = Mock()
@@ -356,7 +356,7 @@ class TestValidateModelCapabilities:
         # Should pass because 0 is falsy, so the condition `if max_input_tokens` fails
         mock_console.print.assert_not_called()
 
-    @patch("deepagents_cli.config.console")
+    @patch("code2workspace_cli.config.console")
     def test_model_with_empty_profile_passes(self, mock_console: Mock) -> None:
         """Test that models with empty profile dict pass silently."""
         model = Mock()
@@ -441,7 +441,7 @@ class TestCreateModelProfileExtraction:
     @pytest.fixture(autouse=True)
     def _bypass_credential_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "deepagents_cli.model_config.has_provider_credentials", lambda _: True
+            "code2workspace_cli.model_config.has_provider_credentials", lambda _: True
         )
 
     @patch("langchain.chat_models.init_chat_model")
@@ -612,7 +612,7 @@ class TestCreateModelProfileOverrides:
     @pytest.fixture(autouse=True)
     def _bypass_credential_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "deepagents_cli.model_config.has_provider_credentials", lambda _: True
+            "code2workspace_cli.model_config.has_provider_credentials", lambda _: True
         )
 
     @patch("langchain.chat_models.init_chat_model")
@@ -756,7 +756,7 @@ max_input_tokens = 4096
         clear_caches()
         with (
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
-            caplog.at_level(logging.WARNING, logger="deepagents_cli.config"),
+            caplog.at_level(logging.WARNING, logger="code2workspace_cli.config"),
         ):
             result = create_model("anthropic:claude-sonnet-4-5")
 
@@ -774,7 +774,7 @@ class TestCreateModelCLIProfileOverrides:
     @pytest.fixture(autouse=True)
     def _bypass_credential_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "deepagents_cli.model_config.has_provider_credentials", lambda _: True
+            "code2workspace_cli.model_config.has_provider_credentials", lambda _: True
         )
 
     @patch("langchain.chat_models.init_chat_model")
@@ -990,8 +990,8 @@ class TestGetLangsmithProjectName:
         env = {
             "LANGSMITH_API_KEY": "",
             "LANGCHAIN_API_KEY": "",
-            "DEEPAGENTS_CLI_LANGSMITH_API_KEY": "",
-            "DEEPAGENTS_CLI_LANGCHAIN_API_KEY": "",
+            "CODE2WORKSPACE_CLI_LANGSMITH_API_KEY": "",
+            "CODE2WORKSPACE_CLI_LANGCHAIN_API_KEY": "",
             "LANGSMITH_TRACING": "true",
         }
         with patch.dict("os.environ", env, clear=False):
@@ -1003,14 +1003,14 @@ class TestGetLangsmithProjectName:
             "LANGSMITH_API_KEY": "lsv2_test",
             "LANGSMITH_TRACING": "",
             "LANGCHAIN_TRACING_V2": "",
-            "DEEPAGENTS_CLI_LANGSMITH_TRACING": "",
-            "DEEPAGENTS_CLI_LANGCHAIN_TRACING_V2": "",
+            "CODE2WORKSPACE_CLI_LANGSMITH_TRACING": "",
+            "CODE2WORKSPACE_CLI_LANGCHAIN_TRACING_V2": "",
         }
         with patch.dict("os.environ", env, clear=False):
             assert get_langsmith_project_name() is None
 
     def test_returns_project_from_settings(self) -> None:
-        """Should prefer settings.deepagents_langchain_project."""
+        """Should prefer settings.code2workspace_langchain_project."""
         env = {
             "LANGSMITH_API_KEY": "lsv2_test",
             "LANGSMITH_TRACING": "true",
@@ -1018,9 +1018,9 @@ class TestGetLangsmithProjectName:
         }
         with (
             patch.dict("os.environ", env, clear=False),
-            patch("deepagents_cli.config.settings") as mock_settings,
+            patch("code2workspace_cli.config.settings") as mock_settings,
         ):
-            mock_settings.deepagents_langchain_project = "settings-project"
+            mock_settings.code2workspace_langchain_project = "settings-project"
             assert get_langsmith_project_name() == "settings-project"
 
     def test_falls_back_to_env_project(self) -> None:
@@ -1032,23 +1032,23 @@ class TestGetLangsmithProjectName:
         }
         with (
             patch.dict("os.environ", env, clear=False),
-            patch("deepagents_cli.config.settings") as mock_settings,
+            patch("code2workspace_cli.config.settings") as mock_settings,
         ):
-            mock_settings.deepagents_langchain_project = None
+            mock_settings.code2workspace_langchain_project = None
             assert get_langsmith_project_name() == "env-project"
 
     def test_falls_back_to_default(self) -> None:
-        """Should fall back to 'deepagents-cli' when no project name configured."""
+        """Should fall back to 'code2workspace-cli' when no project name configured."""
         env = {
             "LANGSMITH_API_KEY": "lsv2_test",
             "LANGSMITH_TRACING": "true",
         }
         with (
             patch.dict("os.environ", env, clear=False),
-            patch("deepagents_cli.config.settings") as mock_settings,
+            patch("code2workspace_cli.config.settings") as mock_settings,
         ):
-            mock_settings.deepagents_langchain_project = None
-            assert get_langsmith_project_name() == "deepagents-cli"
+            mock_settings.code2workspace_langchain_project = None
+            assert get_langsmith_project_name() == "code2workspace-cli"
 
     def test_accepts_langchain_api_key(self) -> None:
         """Should accept LANGCHAIN_API_KEY as alternative to LANGSMITH_API_KEY."""
@@ -1059,10 +1059,10 @@ class TestGetLangsmithProjectName:
         }
         with (
             patch.dict("os.environ", env, clear=False),
-            patch("deepagents_cli.config.settings") as mock_settings,
+            patch("code2workspace_cli.config.settings") as mock_settings,
         ):
-            mock_settings.deepagents_langchain_project = None
-            assert get_langsmith_project_name() == "deepagents-cli"
+            mock_settings.code2workspace_langchain_project = None
+            assert get_langsmith_project_name() == "code2workspace-cli"
 
 
 class TestFetchLangsmithProjectUrl:
@@ -1118,7 +1118,7 @@ class TestFetchLangsmithProjectUrl:
         """Should return None when LangSmith lookup exceeds timeout."""
         with (
             patch(
-                "deepagents_cli.config._LANGSMITH_URL_LOOKUP_TIMEOUT_SECONDS",
+                "code2workspace_cli.config._LANGSMITH_URL_LOOKUP_TIMEOUT_SECONDS",
                 0.01,
             ),
             patch("langsmith.Client") as mock_client_cls,
@@ -1220,7 +1220,7 @@ class TestBuildLangsmithThreadUrl:
 
         with (
             patch(
-                "deepagents_cli.config.get_langsmith_project_name",
+                "code2workspace_cli.config.get_langsmith_project_name",
                 return_value="my-project",
             ),
             patch("langsmith.Client") as mock_client_cls,
@@ -1230,7 +1230,7 @@ class TestBuildLangsmithThreadUrl:
 
         assert (
             result
-            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=deepagents-cli"
+            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=code2workspace-cli"
         )
 
     def test_strips_trailing_slash(self) -> None:
@@ -1241,7 +1241,7 @@ class TestBuildLangsmithThreadUrl:
 
         with (
             patch(
-                "deepagents_cli.config.get_langsmith_project_name",
+                "code2workspace_cli.config.get_langsmith_project_name",
                 return_value="my-project",
             ),
             patch("langsmith.Client") as mock_client_cls,
@@ -1251,13 +1251,13 @@ class TestBuildLangsmithThreadUrl:
 
         assert (
             result
-            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=deepagents-cli"
+            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=code2workspace-cli"
         )
 
     def test_returns_none_when_no_project_name(self) -> None:
         """Should return None when LangSmith project name is not configured."""
         with patch(
-            "deepagents_cli.config.get_langsmith_project_name",
+            "code2workspace_cli.config.get_langsmith_project_name",
             return_value=None,
         ):
             result = build_langsmith_thread_url("thread-123")
@@ -1268,7 +1268,7 @@ class TestBuildLangsmithThreadUrl:
         """Should return None when the project URL cannot be resolved."""
         with (
             patch(
-                "deepagents_cli.config.get_langsmith_project_name",
+                "code2workspace_cli.config.get_langsmith_project_name",
                 return_value="my-project",
             ),
             patch("langsmith.Client") as mock_client_cls,
@@ -1322,7 +1322,7 @@ api_key_env = "TOGETHER_API_KEY"
         assert "base_url" not in kwargs
 
     def test_prefixed_env_var_beats_canonical(self, tmp_path: Path) -> None:
-        """DEEPAGENTS_CLI_ prefixed var overrides canonical in provider kwargs."""
+        """CODE2WORKSPACE_CLI_ prefixed var overrides canonical in provider kwargs."""
         config_path = tmp_path / "config.toml"
         config_path.write_text("""
 [models.providers.fireworks]
@@ -1335,7 +1335,7 @@ api_key_env = "FIREWORKS_API_KEY"
                 "os.environ",
                 {
                     "FIREWORKS_API_KEY": "canonical",
-                    "DEEPAGENTS_CLI_FIREWORKS_API_KEY": "prefixed",
+                    "CODE2WORKSPACE_CLI_FIREWORKS_API_KEY": "prefixed",
                 },
                 clear=False,
             ),
@@ -1470,7 +1470,7 @@ class TestOpenRouterVersionCheck:
         """_get_provider_kwargs raises ImportError for old langchain-openrouter."""
         with (
             patch(
-                "deepagents.profiles._openrouter.pkg_version",
+                "code2workspace.profiles._openrouter.pkg_version",
                 return_value="0.0.1",
             ),
             pytest.raises(ImportError, match="langchain-openrouter>="),
@@ -1479,10 +1479,10 @@ class TestOpenRouterVersionCheck:
 
     def test_accepts_sufficient_version(self) -> None:
         """_get_provider_kwargs succeeds when version meets minimum."""
-        from deepagents.profiles._openrouter import OPENROUTER_MIN_VERSION
+        from code2workspace.profiles._openrouter import OPENROUTER_MIN_VERSION
 
         with patch(
-            "deepagents.profiles._openrouter.pkg_version",
+            "code2workspace.profiles._openrouter.pkg_version",
             return_value=OPENROUTER_MIN_VERSION,
         ):
             kwargs = _get_provider_kwargs("openrouter")
@@ -1491,7 +1491,7 @@ class TestOpenRouterVersionCheck:
 
     def test_skipped_for_other_providers(self) -> None:
         """Version check is not invoked for non-openrouter providers."""
-        with patch("deepagents.profiles._openrouter.check_openrouter_version") as mock:
+        with patch("code2workspace.profiles._openrouter.check_openrouter_version") as mock:
             _get_provider_kwargs("openai")
 
         mock.assert_not_called()
@@ -1508,8 +1508,8 @@ class TestOpenRouterHeaders:
         """Injects app_url, app_title, and app_categories for openrouter."""
         kwargs = _get_provider_kwargs("openrouter")
 
-        assert kwargs["app_url"] == "https://pypi.org/project/deepagents-cli/"
-        assert kwargs["app_title"] == "Deep Agents CLI"
+        assert kwargs["app_url"] == "https://pypi.org/project/code2workspace-cli/"
+        assert kwargs["app_title"] == "Code2Workspace CLI"
         assert kwargs["app_categories"] == ["cli-agent"]
 
     def test_per_model_attribution_overrides_defaults(self, tmp_path: Path) -> None:
@@ -1529,7 +1529,7 @@ app_title = "My Custom App"
 
         assert kwargs["app_title"] == "My Custom App"
         # Built-in app_url should still be present
-        assert kwargs["app_url"] == "https://pypi.org/project/deepagents-cli/"
+        assert kwargs["app_url"] == "https://pypi.org/project/code2workspace-cli/"
 
     def test_per_model_categories_override(self, tmp_path: Path) -> None:
         """Per-model app_categories overrides built-in default."""
@@ -1561,14 +1561,14 @@ class TestCreateModelFromClass:
 
     def test_raises_on_invalid_class_path_format(self) -> None:
         """Raises ModelConfigError when class_path lacks colon."""
-        from deepagents_cli.model_config import ModelConfigError
+        from code2workspace_cli.model_config import ModelConfigError
 
         with pytest.raises(ModelConfigError, match="Invalid class_path"):
             _create_model_from_class("my_package.MyChatModel", "model", "provider", {})
 
     def test_raises_on_import_error(self) -> None:
         """Raises ModelConfigError when module cannot be imported."""
-        from deepagents_cli.model_config import ModelConfigError
+        from code2workspace_cli.model_config import ModelConfigError
 
         with pytest.raises(ModelConfigError, match="Could not import module"):
             _create_model_from_class(
@@ -1577,14 +1577,14 @@ class TestCreateModelFromClass:
 
     def test_raises_when_class_not_found_in_module(self) -> None:
         """Raises ModelConfigError when class doesn't exist in module."""
-        from deepagents_cli.model_config import ModelConfigError
+        from code2workspace_cli.model_config import ModelConfigError
 
         with pytest.raises(ModelConfigError, match="not found in module"):
             _create_model_from_class("os.path:NonExistentClass", "m", "p", {})
 
     def test_raises_when_not_base_chat_model_subclass(self) -> None:
         """Raises ModelConfigError when class is not a BaseChatModel."""
-        from deepagents_cli.model_config import ModelConfigError
+        from code2workspace_cli.model_config import ModelConfigError
 
         # os.path:join is a function, not a BaseChatModel subclass
         with pytest.raises(ModelConfigError, match="not a BaseChatModel subclass"):
@@ -1641,7 +1641,7 @@ class TestCreateModelFromClass:
 
         from langchain_core.language_models import BaseChatModel
 
-        from deepagents_cli.model_config import ModelConfigError
+        from code2workspace_cli.model_config import ModelConfigError
 
         class BadModel(BaseChatModel):
             def __init__(self, **kwargs: object) -> None:
@@ -1687,7 +1687,7 @@ temperature = 0
         with (
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
             patch(
-                "deepagents_cli.config._create_model_from_class",
+                "code2workspace_cli.config._create_model_from_class",
                 return_value=mock_instance,
             ) as mock_factory,
         ):
@@ -1724,7 +1724,7 @@ api_key_env = "FIREWORKS_API_KEY"
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
             patch.dict("os.environ", {"FIREWORKS_API_KEY": "key"}, clear=False),
             patch(
-                "deepagents_cli.config._create_model_via_init",
+                "code2workspace_cli.config._create_model_via_init",
                 return_value=mock_instance,
             ) as mock_init,
         ):
@@ -1740,7 +1740,7 @@ class TestCreateModelExtraKwargs:
     @pytest.fixture(autouse=True)
     def _bypass_credential_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "deepagents_cli.model_config.has_provider_credentials", lambda _: True
+            "code2workspace_cli.model_config.has_provider_credentials", lambda _: True
         )
 
     @patch("langchain.chat_models.init_chat_model")
@@ -1813,7 +1813,7 @@ class TestCreateModelEdgeCaseParsing:
     @pytest.fixture(autouse=True)
     def _bypass_credential_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "deepagents_cli.model_config.has_provider_credentials", lambda _: True
+            "code2workspace_cli.model_config.has_provider_credentials", lambda _: True
         )
 
     @patch("langchain.chat_models.init_chat_model")
@@ -1839,7 +1839,7 @@ class TestCreateModelEdgeCaseParsing:
         with pytest.raises(ModelConfigError, match="model name is required"):
             create_model("anthropic:")
 
-    @patch("deepagents_cli.config._get_default_model_spec")
+    @patch("code2workspace_cli.config._get_default_model_spec")
     @patch("langchain.chat_models.init_chat_model")
     def test_empty_string_uses_default(
         self, mock_init_chat_model: Mock, mock_default: Mock
@@ -2009,7 +2009,7 @@ class TestLazyModuleAttributes:
 
     def test_getattr_returns_settings(self) -> None:
         """Module __getattr__ resolves 'settings' to a Settings instance."""
-        from deepagents_cli.config import _get_settings
+        from code2workspace_cli.config import _get_settings
 
         result = _get_settings()
         assert isinstance(result, Settings)
@@ -2018,21 +2018,21 @@ class TestLazyModuleAttributes:
         """Module __getattr__ resolves 'console' to a Console instance."""
         from rich.console import Console
 
-        from deepagents_cli.config import _get_console
+        from code2workspace_cli.config import _get_console
 
         result = _get_console()
         assert isinstance(result, Console)
 
     def test_getattr_raises_for_unknown(self) -> None:
         """Module __getattr__ raises AttributeError for unknown names."""
-        import deepagents_cli.config as config_mod
+        import code2workspace_cli.config as config_mod
 
         with pytest.raises(AttributeError, match="no attribute"):
             getattr(config_mod, "nonexistent_attr_xyz")  # noqa: B009  # intentional __getattr__ test
 
     def test_ensure_bootstrap_is_idempotent(self) -> None:
         """_ensure_bootstrap is a no-op on second call."""
-        from deepagents_cli.config import _ensure_bootstrap
+        from code2workspace_cli.config import _ensure_bootstrap
 
         # First call already ran (settings was imported above).
         # Calling again should be a harmless no-op.
@@ -2041,8 +2041,8 @@ class TestLazyModuleAttributes:
 
     def test_ensure_bootstrap_marks_done_on_failure(self) -> None:
         """_ensure_bootstrap sets flag even when the try body raises."""
-        import deepagents_cli.config as config_mod
-        from deepagents_cli.config import _ensure_bootstrap
+        import code2workspace_cli.config as config_mod
+        from code2workspace_cli.config import _ensure_bootstrap
 
         # Reset flag so bootstrap will re-enter
         original = config_mod._bootstrap_done
@@ -2050,7 +2050,7 @@ class TestLazyModuleAttributes:
 
         try:
             with patch(
-                "deepagents_cli.config._load_dotenv", side_effect=RuntimeError("boom")
+                "code2workspace_cli.config._load_dotenv", side_effect=RuntimeError("boom")
             ):
                 _ensure_bootstrap()  # should warn, not raise
 
@@ -2061,7 +2061,7 @@ class TestLazyModuleAttributes:
 
     def test_get_settings_returns_same_instance(self) -> None:
         """_get_settings caches in globals — two calls return the same object."""
-        from deepagents_cli.config import _get_settings
+        from code2workspace_cli.config import _get_settings
 
         a = _get_settings()
         b = _get_settings()
@@ -2070,22 +2070,22 @@ class TestLazyModuleAttributes:
     def test_ensure_bootstrap_langsmith_override(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """_ensure_bootstrap copies DEEPAGENTS_CLI_LANGSMITH_PROJECT."""
-        import deepagents_cli.config as config_mod
-        from deepagents_cli.config import _ensure_bootstrap
+        """_ensure_bootstrap copies CODE2WORKSPACE_CLI_LANGSMITH_PROJECT."""
+        import code2workspace_cli.config as config_mod
+        from code2workspace_cli.config import _ensure_bootstrap
 
         original_done = config_mod._bootstrap_done
         original_ls = config_mod._original_langsmith_project
         config_mod._bootstrap_done = False
 
         try:
-            monkeypatch.setenv("DEEPAGENTS_CLI_LANGSMITH_PROJECT", "my-agent-project")
+            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", "my-agent-project")
             monkeypatch.delenv("LANGSMITH_PROJECT", raising=False)
 
             with (
-                patch("deepagents_cli.config._load_dotenv"),
+                patch("code2workspace_cli.config._load_dotenv"),
                 patch(
-                    "deepagents_cli.project_utils.get_server_project_context",
+                    "code2workspace_cli.project_utils.get_server_project_context",
                     return_value=None,
                 ),
             ):
@@ -2103,8 +2103,8 @@ class TestLazyModuleAttributes:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """_ensure_bootstrap captures original LANGSMITH_PROJECT."""
-        import deepagents_cli.config as config_mod
-        from deepagents_cli.config import _ensure_bootstrap
+        import code2workspace_cli.config as config_mod
+        from code2workspace_cli.config import _ensure_bootstrap
 
         original_done = config_mod._bootstrap_done
         original_ls = config_mod._original_langsmith_project
@@ -2112,12 +2112,12 @@ class TestLazyModuleAttributes:
 
         try:
             monkeypatch.setenv("LANGSMITH_PROJECT", "user-project")
-            monkeypatch.setenv("DEEPAGENTS_CLI_LANGSMITH_PROJECT", "agent-project")
+            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", "agent-project")
 
             with (
-                patch("deepagents_cli.config._load_dotenv"),
+                patch("code2workspace_cli.config._load_dotenv"),
                 patch(
-                    "deepagents_cli.project_utils.get_server_project_context",
+                    "code2workspace_cli.project_utils.get_server_project_context",
                     return_value=None,
                 ),
             ):
@@ -2135,24 +2135,24 @@ class TestLazyModuleAttributes:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Prefixed LangSmith vars are copied to canonical names at bootstrap."""
-        import deepagents_cli.config as config_mod
-        from deepagents_cli.config import _ensure_bootstrap
+        import code2workspace_cli.config as config_mod
+        from code2workspace_cli.config import _ensure_bootstrap
 
         original_done = config_mod._bootstrap_done
         original_ls = config_mod._original_langsmith_project
         config_mod._bootstrap_done = False
 
         try:
-            monkeypatch.setenv("DEEPAGENTS_CLI_LANGSMITH_API_KEY", "lsv2_test")
-            monkeypatch.setenv("DEEPAGENTS_CLI_LANGSMITH_TRACING", "true")
+            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_API_KEY", "lsv2_test")
+            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_TRACING", "true")
             monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
             monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
-            monkeypatch.delenv("DEEPAGENTS_CLI_LANGSMITH_PROJECT", raising=False)
+            monkeypatch.delenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", raising=False)
 
             with (
-                patch("deepagents_cli.config._load_dotenv"),
+                patch("code2workspace_cli.config._load_dotenv"),
                 patch(
-                    "deepagents_cli.project_utils.get_server_project_context",
+                    "code2workspace_cli.project_utils.get_server_project_context",
                     return_value=None,
                 ),
             ):
@@ -2170,8 +2170,8 @@ class TestLazyModuleAttributes:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Prefixed value wins when both canonical and prefixed vars are set."""
-        import deepagents_cli.config as config_mod
-        from deepagents_cli.config import _ensure_bootstrap
+        import code2workspace_cli.config as config_mod
+        from code2workspace_cli.config import _ensure_bootstrap
 
         original_done = config_mod._bootstrap_done
         original_ls = config_mod._original_langsmith_project
@@ -2179,13 +2179,13 @@ class TestLazyModuleAttributes:
 
         try:
             monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_original")
-            monkeypatch.setenv("DEEPAGENTS_CLI_LANGSMITH_API_KEY", "lsv2_override")
-            monkeypatch.delenv("DEEPAGENTS_CLI_LANGSMITH_PROJECT", raising=False)
+            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_API_KEY", "lsv2_override")
+            monkeypatch.delenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", raising=False)
 
             with (
-                patch("deepagents_cli.config._load_dotenv"),
+                patch("code2workspace_cli.config._load_dotenv"),
                 patch(
-                    "deepagents_cli.project_utils.get_server_project_context",
+                    "code2workspace_cli.project_utils.get_server_project_context",
                     return_value=None,
                 ),
             ):
@@ -2203,22 +2203,22 @@ class TestLazyModuleAttributes:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Empty prefixed var propagates to canonical (explicit disable)."""
-        import deepagents_cli.config as config_mod
-        from deepagents_cli.config import _ensure_bootstrap
+        import code2workspace_cli.config as config_mod
+        from code2workspace_cli.config import _ensure_bootstrap
 
         original_done = config_mod._bootstrap_done
         original_ls = config_mod._original_langsmith_project
         config_mod._bootstrap_done = False
 
         try:
-            monkeypatch.setenv("DEEPAGENTS_CLI_LANGSMITH_TRACING", "")
+            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_TRACING", "")
             monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
-            monkeypatch.delenv("DEEPAGENTS_CLI_LANGSMITH_PROJECT", raising=False)
+            monkeypatch.delenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", raising=False)
 
             with (
-                patch("deepagents_cli.config._load_dotenv"),
+                patch("code2workspace_cli.config._load_dotenv"),
                 patch(
-                    "deepagents_cli.project_utils.get_server_project_context",
+                    "code2workspace_cli.project_utils.get_server_project_context",
                     return_value=None,
                 ),
             ):
@@ -2238,7 +2238,7 @@ class TestFindDotenvFromStartPath:
 
     def test_finds_env_in_start_dir(self, tmp_path: Path) -> None:
         """Finds .env in the start directory itself."""
-        from deepagents_cli.config import _find_dotenv_from_start_path
+        from code2workspace_cli.config import _find_dotenv_from_start_path
 
         env_file = tmp_path / ".env"
         env_file.write_text("KEY=val")
@@ -2246,7 +2246,7 @@ class TestFindDotenvFromStartPath:
 
     def test_finds_env_in_parent(self, tmp_path: Path) -> None:
         """Finds .env in a parent directory."""
-        from deepagents_cli.config import _find_dotenv_from_start_path
+        from code2workspace_cli.config import _find_dotenv_from_start_path
 
         env_file = tmp_path / ".env"
         env_file.write_text("KEY=val")
@@ -2256,7 +2256,7 @@ class TestFindDotenvFromStartPath:
 
     def test_returns_none_when_no_env(self, tmp_path: Path) -> None:
         """Returns None when no .env exists anywhere."""
-        from deepagents_cli.config import _find_dotenv_from_start_path
+        from code2workspace_cli.config import _find_dotenv_from_start_path
 
         child = tmp_path / "a"
         child.mkdir()
@@ -2268,7 +2268,7 @@ class TestFindDotenvFromStartPath:
 
     def test_continues_past_oserror_on_intermediate_dir(self, tmp_path: Path) -> None:
         """OSError on an intermediate .env candidate doesn't abort search."""
-        from deepagents_cli.config import _find_dotenv_from_start_path
+        from code2workspace_cli.config import _find_dotenv_from_start_path
 
         # Create .env in the grandparent
         env_file = tmp_path / ".env"

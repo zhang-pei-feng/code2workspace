@@ -5,7 +5,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from deepagents_cli.output import write_json
+from code2workspace_cli.output import write_json
 
 
 class TestWriteJson:

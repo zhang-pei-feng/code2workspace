@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from deepagents_cli.server import (
+from code2workspace_cli.server import (
     ServerProcess,
     _find_free_port,
     _port_in_use,
@@ -145,8 +145,8 @@ class TestWaitForServerHealthy:
 
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
-            patch("deepagents_cli.server._HEALTH_POLL_INTERVAL_LOCAL", 0),
-            patch("deepagents_cli.server._HEALTH_POLL_INTERVAL_REMOTE", 0),
+            patch("code2workspace_cli.server._HEALTH_POLL_INTERVAL_LOCAL", 0),
+            patch("code2workspace_cli.server._HEALTH_POLL_INTERVAL_REMOTE", 0),
             pytest.raises(RuntimeError, match="did not become healthy"),
         ):
             await wait_for_server_healthy("http://localhost:2024", timeout=0.01)
@@ -162,8 +162,8 @@ class TestWaitForServerHealthy:
 
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
-            patch("deepagents_cli.server._HEALTH_POLL_INTERVAL_LOCAL", 0),
-            patch("deepagents_cli.server._HEALTH_POLL_INTERVAL_REMOTE", 0),
+            patch("code2workspace_cli.server._HEALTH_POLL_INTERVAL_LOCAL", 0),
+            patch("code2workspace_cli.server._HEALTH_POLL_INTERVAL_REMOTE", 0),
             pytest.raises(RuntimeError, match="last status: 503"),
         ):
             await wait_for_server_healthy("http://localhost:2024", timeout=0.01)
@@ -191,14 +191,14 @@ class TestServerProcess:
         server = ServerProcess(config_dir=config_dir, owns_config_dir=True)
 
         with (
-            patch("deepagents_cli.server._port_in_use", return_value=False),
+            patch("code2workspace_cli.server._port_in_use", return_value=False),
             patch(
-                "deepagents_cli.server.tempfile.NamedTemporaryFile",
+                "code2workspace_cli.server.tempfile.NamedTemporaryFile",
                 return_value=log_file,
             ),
-            patch("deepagents_cli.server.subprocess.Popen", return_value=process),
+            patch("code2workspace_cli.server.subprocess.Popen", return_value=process),
             patch(
-                "deepagents_cli.server.wait_for_server_healthy",
+                "code2workspace_cli.server.wait_for_server_healthy",
                 new=AsyncMock(side_effect=RuntimeError("boom")),
             ),
             pytest.raises(RuntimeError, match="boom"),
@@ -232,27 +232,27 @@ class TestServerProcess:
         server = ServerProcess(config_dir=config_dir, owns_config_dir=False)
 
         with (
-            patch("deepagents_cli.server._port_in_use", return_value=False),
+            patch("code2workspace_cli.server._port_in_use", return_value=False),
             patch(
-                "deepagents_cli.server.tempfile.NamedTemporaryFile",
+                "code2workspace_cli.server.tempfile.NamedTemporaryFile",
                 return_value=log_file,
             ),
-            patch("deepagents_cli.server.subprocess.Popen", return_value=process),
+            patch("code2workspace_cli.server.subprocess.Popen", return_value=process),
             patch(
-                "deepagents_cli.server.wait_for_server_healthy",
+                "code2workspace_cli.server.wait_for_server_healthy",
                 new=AsyncMock(),
             ),
         ):
             await server.start()
             assert server.running
 
-            server.update_env(DEEPAGENTS_CLI_SERVER_MODEL="anthropic:claude-opus-4-6")
+            server.update_env(CODE2WORKSPACE_CLI_SERVER_MODEL="anthropic:claude-opus-4-6")
 
             # Restart: should stop the old process and start a new one
             await server.restart()
 
         # Env override was applied
-        env_key = "DEEPAGENTS_CLI_SERVER_MODEL"
+        env_key = "CODE2WORKSPACE_CLI_SERVER_MODEL"
         assert os.environ.get(env_key) == "anthropic:claude-opus-4-6"
         # Overrides cleared after successful restart
         assert server._env_overrides == {}
@@ -270,19 +270,19 @@ class TestServerProcess:
         server = ServerProcess(config_dir=config_dir, owns_config_dir=False)
         server._process = process  # simulate already started
 
-        old_value = os.environ.get("DEEPAGENTS_CLI_SERVER_MODEL")
+        old_value = os.environ.get("CODE2WORKSPACE_CLI_SERVER_MODEL")
 
         async def failing_start(*, timeout: float = 60) -> None:  # noqa: ARG001, ASYNC109, RUF029
             msg = "restart failed"
             raise RuntimeError(msg)
 
         server.start = failing_start  # type: ignore[assignment]
-        server.update_env(DEEPAGENTS_CLI_SERVER_MODEL="should-be-rolled-back")
+        server.update_env(CODE2WORKSPACE_CLI_SERVER_MODEL="should-be-rolled-back")
 
         with pytest.raises(RuntimeError, match="restart failed"):
             await server.restart()
 
         # Env should be rolled back
-        assert os.environ.get("DEEPAGENTS_CLI_SERVER_MODEL") == old_value
+        assert os.environ.get("CODE2WORKSPACE_CLI_SERVER_MODEL") == old_value
         # Overrides NOT cleared (available for retry)
-        assert "DEEPAGENTS_CLI_SERVER_MODEL" in server._env_overrides
+        assert "CODE2WORKSPACE_CLI_SERVER_MODEL" in server._env_overrides

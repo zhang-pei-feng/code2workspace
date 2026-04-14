@@ -1,4 +1,4 @@
-"""Tests for deepagents_cli.theme module."""
+"""Tests for code2workspace_cli.theme module."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from deepagents_cli import theme
-from deepagents_cli.theme import (
+from code2workspace_cli import theme
+from code2workspace_cli.theme import (
     _BUILTIN_NAMES,
     DARK_COLORS,
     DEFAULT_THEME,
@@ -386,51 +386,51 @@ class TestLoadThemePreference:
     def test_returns_default_when_no_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from deepagents_cli.app import _load_theme_preference
+        from code2workspace_cli.app import _load_theme_preference
 
-        monkeypatch.setattr("deepagents_cli.app.theme.DEFAULT_THEME", "langchain")
+        monkeypatch.setattr("code2workspace_cli.app.theme.DEFAULT_THEME", "langchain")
         missing = tmp_path / "nonexistent" / "config.toml"
-        monkeypatch.setattr("deepagents_cli.model_config.DEFAULT_CONFIG_PATH", missing)
+        monkeypatch.setattr("code2workspace_cli.model_config.DEFAULT_CONFIG_PATH", missing)
         assert _load_theme_preference() == "langchain"
 
     def test_returns_saved_theme(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from deepagents_cli.app import _load_theme_preference
+        from code2workspace_cli.app import _load_theme_preference
 
         config = tmp_path / "config.toml"
         config.write_text('[ui]\ntheme = "langchain-light"\n')
-        monkeypatch.setattr("deepagents_cli.model_config.DEFAULT_CONFIG_PATH", config)
+        monkeypatch.setattr("code2workspace_cli.model_config.DEFAULT_CONFIG_PATH", config)
         assert _load_theme_preference() == "langchain-light"
 
     def test_returns_default_for_unknown_theme(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from deepagents_cli.app import _load_theme_preference
+        from code2workspace_cli.app import _load_theme_preference
 
         config = tmp_path / "config.toml"
         config.write_text('[ui]\ntheme = "nonexistent-theme"\n')
-        monkeypatch.setattr("deepagents_cli.model_config.DEFAULT_CONFIG_PATH", config)
+        monkeypatch.setattr("code2workspace_cli.model_config.DEFAULT_CONFIG_PATH", config)
         assert _load_theme_preference() == DEFAULT_THEME
 
     def test_returns_default_for_corrupt_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from deepagents_cli.app import _load_theme_preference
+        from code2workspace_cli.app import _load_theme_preference
 
         config = tmp_path / "config.toml"
         config.write_text("this is not valid toml [[[")
-        monkeypatch.setattr("deepagents_cli.model_config.DEFAULT_CONFIG_PATH", config)
+        monkeypatch.setattr("code2workspace_cli.model_config.DEFAULT_CONFIG_PATH", config)
         assert _load_theme_preference() == DEFAULT_THEME
 
     def test_returns_default_when_ui_section_missing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from deepagents_cli.app import _load_theme_preference
+        from code2workspace_cli.app import _load_theme_preference
 
         config = tmp_path / "config.toml"
         config.write_text('[model]\nname = "gpt-4"\n')
-        monkeypatch.setattr("deepagents_cli.model_config.DEFAULT_CONFIG_PATH", config)
+        monkeypatch.setattr("code2workspace_cli.model_config.DEFAULT_CONFIG_PATH", config)
         assert _load_theme_preference() == DEFAULT_THEME
 
 
@@ -442,10 +442,10 @@ class TestSaveThemePreference:
     ) -> None:
         import tomllib
 
-        from deepagents_cli.app import save_theme_preference
+        from code2workspace_cli.app import save_theme_preference
 
         config = tmp_path / "config.toml"
-        monkeypatch.setattr("deepagents_cli.model_config.DEFAULT_CONFIG_PATH", config)
+        monkeypatch.setattr("code2workspace_cli.model_config.DEFAULT_CONFIG_PATH", config)
         assert save_theme_preference("langchain-light") is True
         data = tomllib.loads(config.read_text())
         assert data["ui"]["theme"] == "langchain-light"
@@ -455,29 +455,29 @@ class TestSaveThemePreference:
     ) -> None:
         import tomllib
 
-        from deepagents_cli.app import save_theme_preference
+        from code2workspace_cli.app import save_theme_preference
 
         config = tmp_path / "config.toml"
         config.write_text('[model]\nname = "gpt-4"\n')
-        monkeypatch.setattr("deepagents_cli.model_config.DEFAULT_CONFIG_PATH", config)
+        monkeypatch.setattr("code2workspace_cli.model_config.DEFAULT_CONFIG_PATH", config)
         assert save_theme_preference("langchain") is True
         data = tomllib.loads(config.read_text())
         assert data["model"]["name"] == "gpt-4"
         assert data["ui"]["theme"] == "langchain"
 
     def test_rejects_unknown_theme(self) -> None:
-        from deepagents_cli.app import save_theme_preference
+        from code2workspace_cli.app import save_theme_preference
 
         assert save_theme_preference("nonexistent-theme") is False
 
     def test_returns_false_on_write_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from deepagents_cli.app import save_theme_preference
+        from code2workspace_cli.app import save_theme_preference
 
         # Point to a directory that doesn't exist and can't be created
         config = tmp_path / "readonly" / "config.toml"
-        monkeypatch.setattr("deepagents_cli.model_config.DEFAULT_CONFIG_PATH", config)
+        monkeypatch.setattr("code2workspace_cli.model_config.DEFAULT_CONFIG_PATH", config)
         # Make parent read-only so mkdir fails
         (tmp_path / "readonly").mkdir()
         (tmp_path / "readonly").chmod(0o444)
@@ -920,10 +920,10 @@ class TestSaveThemePreferenceOverwrite:
     ) -> None:
         import tomllib
 
-        from deepagents_cli.app import save_theme_preference
+        from code2workspace_cli.app import save_theme_preference
 
         config = tmp_path / "config.toml"
-        monkeypatch.setattr("deepagents_cli.model_config.DEFAULT_CONFIG_PATH", config)
+        monkeypatch.setattr("code2workspace_cli.model_config.DEFAULT_CONFIG_PATH", config)
 
         # Save initial theme
         assert save_theme_preference("langchain") is True
@@ -974,7 +974,7 @@ class TestThemeSelectorScreen:
         from textual.app import App
         from textual.widgets import OptionList
 
-        from deepagents_cli.widgets.theme_selector import ThemeSelectorScreen
+        from code2workspace_cli.widgets.theme_selector import ThemeSelectorScreen
 
         app = App()
         async with app.run_test() as pilot:
@@ -989,7 +989,7 @@ class TestThemeSelectorScreen:
         from textual.app import App
         from textual.widgets import OptionList
 
-        from deepagents_cli.widgets.theme_selector import ThemeSelectorScreen
+        from code2workspace_cli.widgets.theme_selector import ThemeSelectorScreen
 
         app = App()
         async with app.run_test() as pilot:
@@ -1005,7 +1005,7 @@ class TestThemeSelectorScreen:
     async def test_escape_restores_original_theme(self) -> None:
         from textual.app import App
 
-        from deepagents_cli.widgets.theme_selector import ThemeSelectorScreen
+        from code2workspace_cli.widgets.theme_selector import ThemeSelectorScreen
 
         results: list[str | None] = []
 
@@ -1027,7 +1027,7 @@ class TestThemeSelectorScreen:
     async def test_enter_selects_theme(self) -> None:
         from textual.app import App
 
-        from deepagents_cli.widgets.theme_selector import ThemeSelectorScreen
+        from code2workspace_cli.widgets.theme_selector import ThemeSelectorScreen
 
         results: list[str | None] = []
 

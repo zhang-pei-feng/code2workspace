@@ -6,7 +6,7 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.geometry import Size
 
-from deepagents_cli.widgets.status import StatusBar
+from code2workspace_cli.widgets.status import StatusBar
 
 
 class StatusBarApp(App):
@@ -66,7 +66,7 @@ class TestBranchDisplay:
             await pilot.pause()
             display = pilot.app.query_one("#branch-display")
             rendered = str(display.render())
-            from deepagents_cli.config import get_glyphs
+            from code2workspace_cli.config import get_glyphs
 
             assert rendered.startswith(get_glyphs().git_branch)
 
@@ -124,7 +124,7 @@ class TestResizePriority:
     async def test_model_visible_at_narrow_width(self) -> None:
         """Model display should remain visible even at very narrow widths."""
         async with StatusBarApp().run_test(size=(40, 24)) as pilot:
-            from deepagents_cli.widgets.status import ModelLabel
+            from code2workspace_cli.widgets.status import ModelLabel
 
             model = pilot.app.query_one("#model-display", ModelLabel)
             model.provider = "anthropic"

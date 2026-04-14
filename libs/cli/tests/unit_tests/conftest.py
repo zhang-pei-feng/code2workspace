@@ -26,7 +26,7 @@ def _warm_model_caches() -> None:
     their own function-scoped `clear_caches()` fixture which overrides this.
     """
     with contextlib.suppress(Exception):
-        from deepagents_cli.model_config import get_available_models, get_model_profiles
+        from code2workspace_cli.model_config import get_available_models, get_model_profiles
 
         get_available_models()
         get_model_profiles()
@@ -36,7 +36,7 @@ def _warm_model_caches() -> None:
 def _clear_langsmith_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent LangSmith env vars loaded from .env from leaking into tests.
 
-    `dotenv.load_dotenv()` runs at `deepagents_cli.config` import time and
+    `dotenv.load_dotenv()` runs at `code2workspace_cli.config` import time and
     may inject `LANGSMITH_*` variables from a local `.env` file.  These
     cause spurious failures in unit tests that run with `--disable-socket`
     because the LangSmith client attempts real HTTP requests.
@@ -50,11 +50,11 @@ def _clear_langsmith_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LANGSMITH_TRACING",
         "LANGCHAIN_TRACING_V2",
         "LANGSMITH_PROJECT",
-        "DEEPAGENTS_CLI_LANGSMITH_PROJECT",
-        "DEEPAGENTS_CLI_LANGSMITH_API_KEY",
-        "DEEPAGENTS_CLI_LANGCHAIN_API_KEY",
-        "DEEPAGENTS_CLI_LANGSMITH_TRACING",
-        "DEEPAGENTS_CLI_LANGCHAIN_TRACING_V2",
+        "CODE2WORKSPACE_CLI_LANGSMITH_PROJECT",
+        "CODE2WORKSPACE_CLI_LANGSMITH_API_KEY",
+        "CODE2WORKSPACE_CLI_LANGCHAIN_API_KEY",
+        "CODE2WORKSPACE_CLI_LANGSMITH_TRACING",
+        "CODE2WORKSPACE_CLI_LANGCHAIN_TRACING_V2",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -63,14 +63,14 @@ def _clear_langsmith_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def _register_theme_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make app-specific CSS variables available to all test `App` instances.
 
-    Production code defines these in `DeepAgentsApp.get_theme_variable_defaults`
+    Production code defines these in `Code2WorkspaceApp.get_theme_variable_defaults`
     but many tests use lightweight `App[None]` subclasses that lack the override.
     Patching the base class ensures `$mode-bash`, `$mode-command` resolve
     everywhere without requiring each test app to opt in.
     """
     from textual.app import App
 
-    from deepagents_cli.theme import get_css_variable_defaults
+    from code2workspace_cli.theme import get_css_variable_defaults
 
     original = App.get_theme_variable_defaults
     custom = get_css_variable_defaults(dark=True)
@@ -98,7 +98,7 @@ def _provide_app_context() -> Generator[None]:
     from textual.app import App
     from textual.theme import Theme
 
-    from deepagents_cli import theme
+    from code2workspace_cli import theme
 
     app = App()
     c = theme.DARK_COLORS
@@ -131,10 +131,10 @@ def _isolate_history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Redirect ChatInput history to a temp file.
 
     Without this, every test that mounts a `ChatInput` widget writes to the
-    real `~/.deepagents/history.jsonl`, causing duplicate/stale entries that
+    real `~/.code2workspace/history.jsonl`, causing duplicate/stale entries that
     persist across test runs and branch switches.
     """
     monkeypatch.setattr(
-        "deepagents_cli.widgets.chat_input._default_history_path",
+        "code2workspace_cli.widgets.chat_input._default_history_path",
         lambda: tmp_path / "history.jsonl",
     )

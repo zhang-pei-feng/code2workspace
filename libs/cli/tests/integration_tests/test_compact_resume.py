@@ -14,12 +14,12 @@ if TYPE_CHECKING:
 
 def _write_model_config(home_dir: Path) -> None:
     """Write a temp config that points the server subprocess at the test model."""
-    config_dir = home_dir / ".deepagents"
+    config_dir = home_dir / ".code2workspace"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.toml").write_text(
         """
 [models.providers.itest]
-class_path = "deepagents_cli._testing_models:DeterministicIntegrationChatModel"
+class_path = "code2workspace_cli._testing_models:DeterministicIntegrationChatModel"
 models = ["fake"]
 """.strip()
         + "\n"
@@ -37,7 +37,7 @@ def _build_long_prompt(turn: int) -> str:
 
 async def _run_turn(agent, *, thread_id: str, assistant_id: str, prompt: str) -> None:
     """Execute one real remote agent turn and drain the stream to completion."""
-    from deepagents_cli.config import build_stream_config
+    from code2workspace_cli.config import build_stream_config
 
     config = build_stream_config(thread_id, assistant_id)
     stream_input = {"messages": [{"role": "user", "content": prompt}]}
@@ -65,7 +65,7 @@ async def test_compact_resumed_thread_uses_persisted_history(
     """Compacts a resumed thread after restart using SQLite-backed history.
 
     The test seeds a real persisted thread on one server instance, restarts the
-    server, resumes that thread in a fresh `DeepAgentsApp`, and verifies that
+    server, resumes that thread in a fresh `Code2WorkspaceApp`, and verifies that
     `/compact` succeeds even when the resumed history comes from the
     checkpointer rather than live in-memory server state.
     """
@@ -80,22 +80,22 @@ async def test_compact_resumed_thread_uses_persisted_history(
 
     # Keep config and the global sessions DB fully test-local.
     monkeypatch.setenv("HOME", str(home_dir))
-    monkeypatch.setenv("DEEPAGENTS_CLI_NO_UPDATE_CHECK", "1")
+    monkeypatch.setenv("CODE2WORKSPACE_CLI_NO_UPDATE_CHECK", "1")
     monkeypatch.chdir(project_dir)
 
     _write_model_config(home_dir)
 
-    from deepagents.backends.composite import CompositeBackend
-    from deepagents.backends.filesystem import FilesystemBackend
+    from code2workspace.backends.composite import CompositeBackend
+    from code2workspace.backends.filesystem import FilesystemBackend
 
-    from deepagents_cli import model_config
-    from deepagents_cli.app import DeepAgentsApp
-    from deepagents_cli.config import create_model
-    from deepagents_cli.server_manager import server_session
-    from deepagents_cli.sessions import generate_thread_id, thread_exists
-    from deepagents_cli.widgets.messages import AppMessage, ErrorMessage
+    from code2workspace_cli import model_config
+    from code2workspace_cli.app import Code2WorkspaceApp
+    from code2workspace_cli.config import create_model
+    from code2workspace_cli.server_manager import server_session
+    from code2workspace_cli.sessions import generate_thread_id, thread_exists
+    from code2workspace_cli.widgets.messages import AppMessage, ErrorMessage
 
-    config_path = home_dir / ".deepagents" / "config.toml"
+    config_path = home_dir / ".code2workspace" / "config.toml"
     # Some tests import `model_config` earlier in the session, so override the
     # cached default paths explicitly before creating the model.
     monkeypatch.setattr(model_config, "DEFAULT_CONFIG_DIR", config_path.parent)
@@ -152,7 +152,7 @@ async def test_compact_resumed_thread_uses_persisted_history(
             if actual_values:
                 agent.aget_state = AsyncMock(return_value=SimpleNamespace(values={}))  # ty: ignore[invalid-assignment]
 
-            app = DeepAgentsApp(
+            app = Code2WorkspaceApp(
                 agent=agent,  # ty: ignore[invalid-argument-type]
                 assistant_id=assistant_id,
                 backend=compact_backend,
@@ -201,7 +201,7 @@ async def test_compact_resumed_thread_uses_persisted_history(
 
             # The summarization event must be checkpointed so subsequent turns
             # see compacted context instead of the full message history.
-            channel_values = await DeepAgentsApp._read_channel_values_from_checkpointer(
+            channel_values = await Code2WorkspaceApp._read_channel_values_from_checkpointer(
                 thread_id
             )
             summarization_event = channel_values.get("_summarization_event")

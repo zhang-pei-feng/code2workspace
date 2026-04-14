@@ -2,8 +2,8 @@
 
 from types import SimpleNamespace
 
-from deepagents_cli.app import DeepAgentsApp
-from deepagents_cli.token_state import TokenStateMiddleware, TokenTrackingState
+from code2workspace_cli.app import Code2WorkspaceApp
+from code2workspace_cli.token_state import TokenStateMiddleware, TokenTrackingState
 
 
 class TestTokenTrackingState:
@@ -72,7 +72,7 @@ class TestTokenDisplayCallbacks:
             _update_tokens=update_tokens,
         )
 
-        DeepAgentsApp._show_tokens(app, approximate=False)  # type: ignore[arg-type]
+        Code2WorkspaceApp._show_tokens(app, approximate=False)  # type: ignore[arg-type]
 
         assert app._tokens_approximate is True
         assert display_calls == [(1500, True)]
@@ -102,7 +102,7 @@ class TestPersistContextTokens:
         """Happy path: persists the count via `aupdate_state`."""
         from unittest.mock import AsyncMock
 
-        from deepagents_cli.textual_adapter import _persist_context_tokens
+        from code2workspace_cli.textual_adapter import _persist_context_tokens
 
         agent = AsyncMock()
         config = {"configurable": {"thread_id": "t-1"}}
@@ -115,7 +115,7 @@ class TestPersistContextTokens:
         """Failures should be swallowed (non-critical persistence)."""
         from unittest.mock import AsyncMock
 
-        from deepagents_cli.textual_adapter import _persist_context_tokens
+        from code2workspace_cli.textual_adapter import _persist_context_tokens
 
         agent = AsyncMock()
         agent.aupdate_state.side_effect = RuntimeError("checkpointer down")

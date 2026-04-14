@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from deepagents_cli.config import parse_shell_allow_list
-from deepagents_cli.main import apply_stdin_pipe, parse_args
+from code2workspace_cli.config import parse_shell_allow_list
+from code2workspace_cli.main import apply_stdin_pipe, parse_args
 
 MockArgvType = Callable[..., AbstractContextManager[object]]
 
@@ -21,7 +21,7 @@ def mock_argv() -> MockArgvType:
     """Factory fixture to mock sys.argv with given arguments."""
 
     def _mock_argv(*args: str) -> AbstractContextManager[object]:
-        return patch.object(sys, "argv", ["deepagents", *args])
+        return patch.object(sys, "argv", ["code2workspace", *args])
 
     return _mock_argv
 
@@ -150,12 +150,12 @@ class TestNoStreamArgument:
 
     def test_requires_non_interactive(self) -> None:
         """Test --no-stream without -n or piped stdin exits with code 2."""
-        from deepagents_cli.main import cli_main
+        from code2workspace_cli.main import cli_main
 
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
         with (
-            patch.object(sys, "argv", ["deepagents", "--no-stream"]),
+            patch.object(sys, "argv", ["code2workspace", "--no-stream"]),
             patch.object(sys, "stdin", mock_stdin),
             pytest.raises(SystemExit) as exc_info,
         ):
@@ -168,12 +168,12 @@ class TestQuietRequiresNonInteractive:
 
     def test_quiet_without_non_interactive_exits(self) -> None:
         """Test --quiet without -n or piped stdin exits with code 2."""
-        from deepagents_cli.main import cli_main
+        from code2workspace_cli.main import cli_main
 
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
         with (
-            patch.object(sys, "argv", ["deepagents", "-q"]),
+            patch.object(sys, "argv", ["code2workspace", "-q"]),
             patch.object(sys, "stdin", mock_stdin),
             pytest.raises(SystemExit) as exc_info,
         ):
@@ -186,7 +186,7 @@ class TestSkillFlagValidation:
 
     def test_skill_allowed_with_non_interactive(self) -> None:
         """`--skill` should be accepted when `-n` selects headless mode."""
-        from deepagents_cli.main import cli_main
+        from code2workspace_cli.main import cli_main
 
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
@@ -194,12 +194,12 @@ class TestSkillFlagValidation:
             patch.object(
                 sys,
                 "argv",
-                ["deepagents", "--skill", "code-review", "-n", "review this"],
+                ["code2workspace", "--skill", "code-review", "-n", "review this"],
             ),
             patch.object(sys, "stdin", mock_stdin),
-            patch("deepagents_cli.main.check_optional_tools", return_value=[]),
+            patch("code2workspace_cli.main.check_optional_tools", return_value=[]),
             patch(
-                "deepagents_cli.non_interactive.run_non_interactive",
+                "code2workspace_cli.non_interactive.run_non_interactive",
                 new_callable=AsyncMock,
                 return_value=0,
             ) as mock_run,
@@ -211,7 +211,7 @@ class TestSkillFlagValidation:
 
     def test_skill_with_quiet_without_non_interactive_exits_2(self) -> None:
         """`--skill` + `--quiet` without `-n` should exit with code 2."""
-        from deepagents_cli.main import cli_main
+        from code2workspace_cli.main import cli_main
 
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
@@ -219,7 +219,7 @@ class TestSkillFlagValidation:
             patch.object(
                 sys,
                 "argv",
-                ["deepagents", "--skill", "code-review", "-q"],
+                ["code2workspace", "--skill", "code-review", "-q"],
             ),
             patch.object(sys, "stdin", mock_stdin),
             pytest.raises(SystemExit) as exc_info,
@@ -229,7 +229,7 @@ class TestSkillFlagValidation:
 
     def test_skill_with_no_stream_without_non_interactive_exits_2(self) -> None:
         """`--skill` + `--no-stream` without `-n` should exit with code 2."""
-        from deepagents_cli.main import cli_main
+        from code2workspace_cli.main import cli_main
 
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
@@ -237,7 +237,7 @@ class TestSkillFlagValidation:
             patch.object(
                 sys,
                 "argv",
-                ["deepagents", "--skill", "code-review", "--no-stream"],
+                ["code2workspace", "--skill", "code-review", "--no-stream"],
             ),
             patch.object(sys, "stdin", mock_stdin),
             pytest.raises(SystemExit) as exc_info,
@@ -303,12 +303,12 @@ class TestProfileOverrideArgument:
 
     def test_invalid_json_exits(self) -> None:
         """--profile-override with invalid JSON exits with code 1."""
-        from deepagents_cli.main import cli_main
+        from code2workspace_cli.main import cli_main
 
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
         with (
-            patch.object(sys, "argv", ["deepagents", "--profile-override", "{bad"]),
+            patch.object(sys, "argv", ["code2workspace", "--profile-override", "{bad"]),
             patch.object(sys, "stdin", mock_stdin),
             pytest.raises(SystemExit) as exc_info,
         ):
@@ -317,12 +317,12 @@ class TestProfileOverrideArgument:
 
     def test_non_dict_json_exits(self) -> None:
         """--profile-override with JSON array exits with code 1."""
-        from deepagents_cli.main import cli_main
+        from code2workspace_cli.main import cli_main
 
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
         with (
-            patch.object(sys, "argv", ["deepagents", "--profile-override", "[1,2]"]),
+            patch.object(sys, "argv", ["code2workspace", "--profile-override", "[1,2]"]),
             patch.object(sys, "stdin", mock_stdin),
             pytest.raises(SystemExit) as exc_info,
         ):

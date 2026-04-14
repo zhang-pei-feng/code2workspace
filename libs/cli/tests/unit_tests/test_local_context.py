@@ -10,9 +10,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 import pytest
-from deepagents.backends.protocol import ExecuteResponse
+from code2workspace.backends.protocol import ExecuteResponse
 
-from deepagents_cli.local_context import (
+from code2workspace_cli.local_context import (
     _DETECT_SCRIPT_TIMEOUT,
     _TOOL_NAME_DISPLAY_LIMIT,
     DETECT_CONTEXT_SCRIPT,
@@ -32,7 +32,7 @@ from deepagents_cli.local_context import (
     _section_tree,
     build_detect_script,
 )
-from deepagents_cli.mcp_tools import MCPServerInfo, MCPToolInfo
+from code2workspace_cli.mcp_tools import MCPServerInfo, MCPToolInfo
 
 
 class _SyncBackendFake:
@@ -1134,10 +1134,10 @@ class TestSectionFiles:
         assert "__pycache__" not in out
         assert "keep.py" in out
 
-    def test_includes_deepagents(self, tmp_path: Path) -> None:
-        (tmp_path / ".deepagents").mkdir()
+    def test_includes_code2workspace(self, tmp_path: Path) -> None:
+        (tmp_path / ".code2workspace").mkdir()
         out = _run_section(_section_files(), tmp_path)
-        assert ".deepagents" in out
+        assert ".code2workspace" in out
 
 
 class TestSectionTree:

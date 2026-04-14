@@ -8,14 +8,14 @@ import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from deepagents_cli._env_vars import SERVER_ENV_PREFIX
-from deepagents_cli._server_config import ServerConfig
+from code2workspace_cli._env_vars import SERVER_ENV_PREFIX
+from code2workspace_cli._server_config import ServerConfig
 
 
 def _import_fresh_server_graph() -> ModuleType:
-    """Import `deepagents_cli.server_graph` from a clean module state."""
-    sys.modules.pop("deepagents_cli.server_graph", None)
-    return importlib.import_module("deepagents_cli.server_graph")
+    """Import `code2workspace_cli.server_graph` from a clean module state."""
+    sys.modules.pop("code2workspace_cli.server_graph", None)
+    return importlib.import_module("code2workspace_cli.server_graph")
 
 
 def _module_with_attrs(name: str, **attrs: object) -> ModuleType:
@@ -38,7 +38,7 @@ class TestServerGraph:
         mcp_server_info = [SimpleNamespace(name="docs")]
         create_cli_agent = MagicMock(return_value=(graph_obj, object()))
         agent_module = _module_with_attrs(
-            "deepagents_cli.agent",
+            "code2workspace_cli.agent",
             DEFAULT_AGENT_NAME="agent",
             create_cli_agent=create_cli_agent,
             load_async_subagents=MagicMock(return_value=None),
@@ -49,7 +49,7 @@ class TestServerGraph:
             apply_to_settings=MagicMock(),
         )
         config_module = _module_with_attrs(
-            "deepagents_cli.config",
+            "code2workspace_cli.config",
             create_model=MagicMock(return_value=model_result),
             settings=SimpleNamespace(
                 has_tavily=False,
@@ -58,14 +58,14 @@ class TestServerGraph:
         )
 
         tools_module = _module_with_attrs(
-            "deepagents_cli.tools",
+            "code2workspace_cli.tools",
             fetch_url=fetch_tool,
             web_search=object(),
         )
 
         resolve_mcp_tools = AsyncMock(return_value=([mcp_tool], None, mcp_server_info))
         mcp_module = _module_with_attrs(
-            "deepagents_cli.mcp_tools",
+            "code2workspace_cli.mcp_tools",
             resolve_and_load_mcp_tools=resolve_mcp_tools,
         )
 
@@ -82,14 +82,14 @@ class TestServerGraph:
             patch.dict(
                 sys.modules,
                 {
-                    "deepagents_cli.agent": agent_module,
-                    "deepagents_cli.config": config_module,
-                    "deepagents_cli.tools": tools_module,
-                    "deepagents_cli.mcp_tools": mcp_module,
+                    "code2workspace_cli.agent": agent_module,
+                    "code2workspace_cli.config": config_module,
+                    "code2workspace_cli.tools": tools_module,
+                    "code2workspace_cli.mcp_tools": mcp_module,
                 },
             ),
             patch(
-                "deepagents_cli.project_utils.get_server_project_context",
+                "code2workspace_cli.project_utils.get_server_project_context",
                 return_value=None,
             ),
         ):

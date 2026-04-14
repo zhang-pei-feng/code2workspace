@@ -2,7 +2,7 @@
 
 import pytest
 
-from deepagents_cli.config import (
+from code2workspace_cli.config import (
     SHELL_ALLOW_ALL,
     contains_dangerous_patterns,
     is_shell_command_allowed,

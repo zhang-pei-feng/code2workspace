@@ -7,24 +7,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from deepagents_cli.app import DeepAgentsApp
-from deepagents_cli.command_registry import SLASH_COMMANDS
-from deepagents_cli.config import settings
-from deepagents_cli.offload import (
+from code2workspace_cli.app import Code2WorkspaceApp
+from code2workspace_cli.command_registry import SLASH_COMMANDS
+from code2workspace_cli.config import settings
+from code2workspace_cli.offload import (
     OffloadModelError,
     OffloadResult,
     OffloadThresholdNotMet,
     format_offload_limit,
     offload_messages_to_backend,
 )
-from deepagents_cli.textual_adapter import format_token_count
-from deepagents_cli.widgets.messages import AppMessage, ErrorMessage
+from code2workspace_cli.textual_adapter import format_token_count
+from code2workspace_cli.widgets.messages import AppMessage, ErrorMessage
 
 # Patch target for perform_offload (business logic)
-_PERFORM_OFFLOAD_PATH = "deepagents_cli.offload.perform_offload"
+_PERFORM_OFFLOAD_PATH = "code2workspace_cli.offload.perform_offload"
 
 # Patch targets for lower-level offload_messages_to_backend tests
-_GET_BUFFER_STRING_PATH = "deepagents_cli.offload.get_buffer_string"
+_GET_BUFFER_STRING_PATH = "code2workspace_cli.offload.get_buffer_string"
 
 
 def _make_messages(n: int) -> list[MagicMock]:
@@ -87,7 +87,7 @@ def _make_threshold_not_met(
 
 
 def _setup_offload_app(
-    app: DeepAgentsApp,
+    app: Code2WorkspaceApp,
     n_messages: int = 10,
     *,
     prior_event: dict[str, Any] | None = None,
@@ -140,7 +140,7 @@ class TestOffloadGuards:
 
     async def test_no_agent_shows_error(self) -> None:
         """Should show error when there is no active agent."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             app._agent = None
@@ -154,7 +154,7 @@ class TestOffloadGuards:
 
     async def test_agent_running_shows_error(self) -> None:
         """Should show error when agent is currently running."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             app._agent = MagicMock()
@@ -172,7 +172,7 @@ class TestOffloadGuards:
 
     async def test_cutoff_zero_shows_not_enough(self) -> None:
         """Should show info when perform_offload returns threshold not met."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app, n_messages=3)
@@ -193,7 +193,7 @@ class TestOffloadGuards:
 
     async def test_empty_state_shows_error(self) -> None:
         """Should show error when state has no values."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             app._agent = MagicMock()
@@ -213,7 +213,7 @@ class TestOffloadGuards:
 
     async def test_state_read_failure_shows_error(self) -> None:
         """Should show error when reading state raises an exception."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             app._agent = MagicMock()
@@ -237,7 +237,7 @@ class TestOffloadSuccess:
 
     async def test_successful_offload_sets_event(self) -> None:
         """Should set _summarization_event with cutoff and summary message."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -267,7 +267,7 @@ class TestOffloadSuccess:
 
     async def test_offload_shows_feedback_message(self) -> None:
         """Should display feedback with message count and token change."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -287,7 +287,7 @@ class TestOffloadSuccess:
 
     async def test_offload_updates_context_tokens(self) -> None:
         """Should update _context_tokens after offload."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -305,7 +305,7 @@ class TestOffloadSuccess:
 
     async def test_no_ui_clear_reload(self) -> None:
         """Should NOT clear/reload UI since messages stay in state."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -337,7 +337,7 @@ class TestOffloadEdgeCases:
 
     async def test_cutoff_zero_does_not_update_state(self) -> None:
         """When perform_offload returns threshold-not-met, no state update."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app, n_messages=6)
@@ -359,7 +359,7 @@ class TestOffloadEdgeCases:
 
     async def test_cutoff_zero_overhead_dominated(self) -> None:
         """Show overhead message when context exceeds limit."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app, n_messages=3)
@@ -382,7 +382,7 @@ class TestOffloadEdgeCases:
 
     async def test_cutoff_one_offloads_single_message(self) -> None:
         """With cutoff=1, event should have cutoff_index=1."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app, n_messages=7)
@@ -408,7 +408,7 @@ class TestOffloadEdgeCases:
 
     async def test_perform_offload_called_with_correct_args(self) -> None:
         """Should pass correct args from app state to perform_offload."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             messages = _setup_offload_app(app, n_messages=10)
@@ -451,7 +451,7 @@ class TestReOffload:
         The actual cutoff calculation is in offload.py; here we verify
         the UI layer forwards state correctly and applies the returned event.
         """
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
 
@@ -497,7 +497,7 @@ class TestAgentRunningGuard:
 
     async def test_agent_running_set_during_offload(self) -> None:
         """Should set _agent_running=True during offload and reset after."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -523,7 +523,7 @@ class TestAgentRunningGuard:
 
     async def test_agent_running_reset_after_failure(self) -> None:
         """Should reset _agent_running=False even when offload fails."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -544,7 +544,7 @@ class TestOffloadErrorHandling:
 
     async def test_offload_failure_proceeds_without_path(self) -> None:
         """Should display warning when offload_warning is set."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -574,7 +574,7 @@ class TestOffloadErrorHandling:
 
     async def test_summary_generation_failure_shows_error(self) -> None:
         """Should show error and leave state untouched when perform_offload raises."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -595,7 +595,7 @@ class TestOffloadErrorHandling:
 
     async def test_state_update_failure_shows_error(self) -> None:
         """Should show error when aupdate_state raises."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -618,7 +618,7 @@ class TestOffloadErrorHandling:
 
     async def test_spinner_hidden_after_failure(self) -> None:
         """Should hide spinner even when offload fails."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -647,7 +647,7 @@ class TestCreateModelFailure:
 
     async def test_create_model_failure_shows_error(self) -> None:
         """Should show error when perform_offload raises OffloadModelError."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app)
@@ -844,7 +844,7 @@ class TestOffloadRouting:
 
     async def test_offload_routed_from_handle_command(self) -> None:
         """'/offload' should be correctly routed through _handle_command."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             app._agent = None
@@ -858,7 +858,7 @@ class TestOffloadRouting:
 
     async def test_compact_alias_routed_from_handle_command(self) -> None:
         """'/compact' should still route through _handle_command for backward compat."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             app._agent = None
@@ -876,9 +876,9 @@ class TestOffloadRemoteFallback:
 
     async def test_resumed_remote_thread_uses_checkpointer_state(self) -> None:
         """Should offload using checkpoint fallback when remote state is empty."""
-        from deepagents_cli.remote_client import RemoteAgent
+        from code2workspace_cli.remote_client import RemoteAgent
 
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
 
@@ -912,7 +912,7 @@ class TestOffloadRemoteFallback:
 
             with (
                 patch.object(
-                    DeepAgentsApp,
+                    Code2WorkspaceApp,
                     "_read_channel_values_from_checkpointer",
                     return_value={
                         "messages": messages,
@@ -1004,7 +1004,7 @@ class TestOffloadProfileOverride:
 
     async def test_offload_passes_context_limit_to_perform_offload(self) -> None:
         """Settings.model_context_limit should be forwarded to perform_offload."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app, n_messages=5)
@@ -1027,7 +1027,7 @@ class TestOffloadProfileOverride:
 
     async def test_offload_passes_matching_context_limit(self) -> None:
         """When override matches native profile value, same value is forwarded."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app, n_messages=5)
@@ -1050,7 +1050,7 @@ class TestOffloadProfileOverride:
 
     async def test_offload_override_triggers_offload(self) -> None:
         """With a small override, perform_offload returns OffloadResult."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app, n_messages=8)
@@ -1079,7 +1079,7 @@ class TestOffloadProfileOverride:
 
     async def test_offload_override_none_passes_none(self) -> None:
         """When model_context_limit is None, None is forwarded to perform_offload."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app, n_messages=5)
@@ -1102,7 +1102,7 @@ class TestOffloadProfileOverride:
 
     async def test_offload_passes_profile_overrides(self) -> None:
         """Profile overrides from _profile_override should be forwarded."""
-        app = DeepAgentsApp()
+        app = Code2WorkspaceApp()
         async with app.run_test() as pilot:
             await pilot.pause()
             _setup_offload_app(app, n_messages=5)
@@ -1127,13 +1127,13 @@ class TestOffloadProfileOverride:
 # ---------------------------------------------------------------------------
 # Patch targets for perform_offload direct tests
 # ---------------------------------------------------------------------------
-_CREATE_MODEL_PATH = "deepagents_cli.offload.create_model"
+_CREATE_MODEL_PATH = "code2workspace_cli.offload.create_model"
 _COMPUTE_DEFAULTS_PATH = (
-    "deepagents.middleware.summarization.compute_summarization_defaults"
+    "code2workspace.middleware.summarization.compute_summarization_defaults"
 )
-_MW_CLASS_PATH = "deepagents.middleware.summarization.SummarizationMiddleware"
-_TOKEN_COUNT_PATH = "deepagents_cli.offload.count_tokens_approximately"
-_OFFLOAD_BACKEND_PATH = "deepagents_cli.offload.offload_messages_to_backend"
+_MW_CLASS_PATH = "code2workspace.middleware.summarization.SummarizationMiddleware"
+_TOKEN_COUNT_PATH = "code2workspace_cli.offload.count_tokens_approximately"
+_OFFLOAD_BACKEND_PATH = "code2workspace_cli.offload.offload_messages_to_backend"
 
 
 def _mock_perform_deps(
@@ -1171,7 +1171,7 @@ class TestPerformOffload:
 
     async def test_success_returns_offload_result(self) -> None:
         """Happy path returns OffloadResult with correct fields."""
-        from deepagents_cli.offload import perform_offload
+        from code2workspace_cli.offload import perform_offload
 
         model_result, mock_mw = _mock_perform_deps(cutoff=3)
         messages = _make_messages(10)
@@ -1201,7 +1201,7 @@ class TestPerformOffload:
 
     async def test_cutoff_zero_returns_threshold_not_met(self) -> None:
         """When cutoff is 0, returns OffloadThresholdNotMet."""
-        from deepagents_cli.offload import perform_offload
+        from code2workspace_cli.offload import perform_offload
 
         model_result, mock_mw = _mock_perform_deps(cutoff=0)
 
@@ -1229,7 +1229,7 @@ class TestPerformOffload:
 
     async def test_model_creation_failure_raises_offload_model_error(self) -> None:
         """When create_model fails, OffloadModelError is raised."""
-        from deepagents_cli.offload import OffloadModelError, perform_offload
+        from code2workspace_cli.offload import OffloadModelError, perform_offload
 
         with (
             patch(_CREATE_MODEL_PATH, side_effect=ValueError("bad key")),
@@ -1248,7 +1248,7 @@ class TestPerformOffload:
 
     async def test_context_limit_patches_model_profile(self) -> None:
         """When context_limit differs from native, profile is patched."""
-        from deepagents_cli.offload import perform_offload
+        from code2workspace_cli.offload import perform_offload
 
         model_result, mock_mw = _mock_perform_deps(cutoff=0)
         model = model_result.model
@@ -1275,7 +1275,7 @@ class TestPerformOffload:
 
     async def test_context_limit_none_skips_patching(self) -> None:
         """When context_limit is None, profile is not modified."""
-        from deepagents_cli.offload import perform_offload
+        from code2workspace_cli.offload import perform_offload
 
         model_result, mock_mw = _mock_perform_deps(cutoff=0)
         original_profile = {"max_input_tokens": 200_000}
@@ -1302,7 +1302,7 @@ class TestPerformOffload:
 
     async def test_no_model_profile_creates_new_dict(self) -> None:
         """When model has no profile dict, a new one is created."""
-        from deepagents_cli.offload import perform_offload
+        from code2workspace_cli.offload import perform_offload
 
         model_result, mock_mw = _mock_perform_deps(cutoff=0)
         model_result.model.profile = None
@@ -1328,7 +1328,7 @@ class TestPerformOffload:
 
     async def test_backend_none_uses_filesystem_backend(self) -> None:
         """When backend is None, FilesystemBackend is used."""
-        from deepagents_cli.offload import perform_offload
+        from code2workspace_cli.offload import perform_offload
 
         model_result, mock_mw = _mock_perform_deps(cutoff=0)
 
@@ -1337,7 +1337,7 @@ class TestPerformOffload:
             patch(_COMPUTE_DEFAULTS_PATH, return_value={"keep": ("fraction", 0.1)}),
             patch(_MW_CLASS_PATH, return_value=mock_mw) as mw_cls,
             patch(_TOKEN_COUNT_PATH, return_value=50),
-            patch("deepagents.backends.filesystem.FilesystemBackend") as mock_fs,
+            patch("code2workspace.backends.filesystem.FilesystemBackend") as mock_fs,
         ):
             await perform_offload(
                 messages=_make_messages(5),
@@ -1357,7 +1357,7 @@ class TestPerformOffload:
 
     async def test_backend_write_failure_sets_offload_warning(self) -> None:
         """When backend write fails, offload_warning is set on result."""
-        from deepagents_cli.offload import perform_offload
+        from code2workspace_cli.offload import perform_offload
 
         model_result, mock_mw = _mock_perform_deps(cutoff=3)
 

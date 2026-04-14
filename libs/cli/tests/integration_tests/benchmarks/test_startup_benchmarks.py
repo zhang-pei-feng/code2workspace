@@ -19,7 +19,7 @@ If a test fails
     when it shouldn't be. Move the offending import inside the function that
     needs it (see `main.cli_main` for examples of deferred imports).
 - **Timing failure** — an import or CLI command exceeded its threshold.
-    Profile with `python -X importtime -c "import deepagents_cli.main"`
+    Profile with `python -X importtime -c "import code2workspace_cli.main"`
     to find the slow import.
 - **Deferred-import failure** — a heavy module was *not* loaded when it
     should have been. The deferred import is likely wired incorrectly; check
@@ -44,10 +44,10 @@ import pytest
 HEAVY_MODULES = frozenset(
     {
         # SDK — importing these pulls in large dependency trees
-        "deepagents",
-        "deepagents._models",
-        "deepagents.backends",
-        "deepagents.backends.utils",
+        "code2workspace",
+        "code2workspace._models",
+        "code2workspace.backends",
+        "code2workspace.backends.utils",
         # langchain / langgraph stack
         "langchain",
         "langchain.chat_models",
@@ -59,15 +59,15 @@ HEAVY_MODULES = frozenset(
         "langchain_anthropic",
         "langgraph",
         # CLI runtime modules (deferred to agent.py)
-        "deepagents_cli.agent",
-        "deepagents_cli.sessions",
-        "deepagents_cli.integrations.sandbox_factory",
-        "deepagents_cli.tools",
+        "code2workspace_cli.agent",
+        "code2workspace_cli.sessions",
+        "code2workspace_cli.integrations.sandbox_factory",
+        "code2workspace_cli.tools",
         # Deferred from config.py module level to lazy local imports
         "dotenv",
         "dotenv.main",
-        "deepagents_cli.model_config",
-        "deepagents_cli.project_utils",
+        "code2workspace_cli.model_config",
+        "code2workspace_cli.project_utils",
     }
 )
 
@@ -131,7 +131,7 @@ pytestmark = pytest.mark.benchmark
 class TestImportIsolation:
     """Guard that lightweight entry points don't pull in the heavy stack.
 
-    Without deferred imports, `deepagents --help` takes 3+ seconds because
+    Without deferred imports, `code2workspace --help` takes 3+ seconds because
     langchain, agent, and sessions all load eagerly. These tests catch any
     accidental top-level import that would re-introduce that latency.
     """
@@ -139,16 +139,16 @@ class TestImportIsolation:
     @pytest.mark.parametrize(
         "import_stmt",
         [
-            "from deepagents_cli.main import parse_args",
-            "from deepagents_cli.main import check_cli_dependencies",
-            "from deepagents_cli.config import is_ascii_mode",
-            "import deepagents_cli.ui",
-            "import deepagents_cli.skills.commands",
-            "from deepagents_cli._cli_context import CLIContext",
-            "import deepagents_cli._ask_user_types",
-            "import deepagents_cli.textual_adapter",
-            "import deepagents_cli.tool_display",
-            "import deepagents_cli.file_ops",
+            "from code2workspace_cli.main import parse_args",
+            "from code2workspace_cli.main import check_cli_dependencies",
+            "from code2workspace_cli.config import is_ascii_mode",
+            "import code2workspace_cli.ui",
+            "import code2workspace_cli.skills.commands",
+            "from code2workspace_cli._cli_context import CLIContext",
+            "import code2workspace_cli._ask_user_types",
+            "import code2workspace_cli.textual_adapter",
+            "import code2workspace_cli.tool_display",
+            "import code2workspace_cli.file_ops",
         ],
         ids=[
             "main.parse_args",
@@ -194,7 +194,7 @@ class TestCLIStartupTime:
 
     @staticmethod
     def _time_cli_command(args: str) -> float:
-        """Return wall-clock seconds to run `python -m deepagents_cli <args>`.
+        """Return wall-clock seconds to run `python -m code2workspace_cli <args>`.
 
         Args:
             args: CLI arguments string (e.g., `"--help"`).
@@ -206,7 +206,7 @@ class TestCLIStartupTime:
             import time, subprocess, sys
             start = time.perf_counter()
             subprocess.run(
-                [sys.executable, "-m", "deepagents_cli", {args!r}],
+                [sys.executable, "-m", "code2workspace_cli", {args!r}],
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -219,19 +219,19 @@ class TestCLIStartupTime:
         return float(result.stdout.strip())
 
     def test_help_under_threshold(self) -> None:
-        """`deepagents --help` should complete well under 1 s.
+        """`code2workspace --help` should complete well under 1 s.
 
         Catches regressions where a heavy import is accidentally re-added at
         module level.
         """
         elapsed = self._time_cli_command("--help")
-        assert elapsed < 1, f"`deepagents --help` took {elapsed:.2f}s — expected < 1s"
+        assert elapsed < 1, f"`code2workspace --help` took {elapsed:.2f}s — expected < 1s"
 
     def test_version_under_threshold(self) -> None:
-        """`deepagents --version` should complete well under 1 s."""
+        """`code2workspace --version` should complete well under 1 s."""
         elapsed = self._time_cli_command("--version")
         assert elapsed < 1, (
-            f"`deepagents --version` took {elapsed:.2f}s — expected < 1s"
+            f"`code2workspace --version` took {elapsed:.2f}s — expected < 1s"
         )
 
 
@@ -253,11 +253,11 @@ class TestImportTiming:
     @pytest.mark.parametrize(
         "module",
         [
-            "deepagents_cli.main",
-            "deepagents_cli.ui",
-            "deepagents_cli.config",
-            "deepagents_cli.skills.commands",
-            "deepagents_cli.tool_display",
+            "code2workspace_cli.main",
+            "code2workspace_cli.ui",
+            "code2workspace_cli.config",
+            "code2workspace_cli.skills.commands",
+            "code2workspace_cli.tool_display",
         ],
         ids=[
             "main",
@@ -304,24 +304,24 @@ class TestDeferredImportsWork:
     """
 
     def test_agent_import_loads_langchain(self) -> None:
-        """Importing ``deepagents_cli.agent`` should pull in langchain."""
-        loaded = _get_loaded_modules("import deepagents_cli.agent")
+        """Importing ``code2workspace_cli.agent`` should pull in langchain."""
+        loaded = _get_loaded_modules("import code2workspace_cli.agent")
         langchain_modules = {m for m in loaded if m.startswith("langchain")}
         assert langchain_modules, (
-            "`deepagents_cli.agent` should transitively load `langchain` modules"
+            "`code2workspace_cli.agent` should transitively load `langchain` modules"
         )
 
     def test_sessions_import_available(self) -> None:
-        """`deepagents_cli.sessions` should be importable."""
-        result = _run_python("import deepagents_cli.sessions")
+        """`code2workspace_cli.sessions` should be importable."""
+        result = _run_python("import code2workspace_cli.sessions")
         assert result.returncode == 0, (
-            f"Cannot import `deepagents_cli.sessions`:\n{result.stderr}"
+            f"Cannot import `code2workspace_cli.sessions`:\n{result.stderr}"
         )
 
     def test_configurable_model_middleware_loads_langchain(self) -> None:
         """Accessing `ConfigurableModelMiddleware` should trigger langchain import."""
         loaded = _get_loaded_modules(
-            "from deepagents_cli.configurable_model import ConfigurableModelMiddleware"
+            "from code2workspace_cli.configurable_model import ConfigurableModelMiddleware"
         )
         langchain_modules = {m for m in loaded if m.startswith("langchain")}
         assert langchain_modules, (
@@ -331,7 +331,7 @@ class TestDeferredImportsWork:
     def test_ask_user_middleware_loads_langchain(self) -> None:
         """Accessing `AskUserMiddleware` should trigger langchain import."""
         loaded = _get_loaded_modules(
-            "from deepagents_cli.ask_user import AskUserMiddleware"
+            "from code2workspace_cli.ask_user import AskUserMiddleware"
         )
         langchain_modules = {m for m in loaded if m.startswith("langchain")}
         assert langchain_modules, (

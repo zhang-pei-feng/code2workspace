@@ -8,9 +8,9 @@ from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 
-from deepagents_cli._cli_context import CLIContext
-from deepagents_cli.agent import build_model_identity_section
-from deepagents_cli.configurable_model import (
+from code2workspace_cli._cli_context import CLIContext
+from code2workspace_cli.agent import build_model_identity_section
+from code2workspace_cli.configurable_model import (
     ConfigurableModelMiddleware,
     _is_anthropic_model,
 )
@@ -68,7 +68,7 @@ def _make_model_result(
     )
 
 
-_PATCH_CREATE = "deepagents_cli.config.create_model"
+_PATCH_CREATE = "code2workspace_cli.config.create_model"
 
 _mw = ConfigurableModelMiddleware()
 
@@ -205,7 +205,7 @@ class TestModelSwap:
 
     def test_create_model_error_falls_back_to_original(self) -> None:
         """ModelConfigError falls back to original model instead of crashing."""
-        from deepagents_cli.model_config import ModelConfigError
+        from code2workspace_cli.model_config import ModelConfigError
 
         original = _make_model("claude-sonnet-4-6")
         request = _make_request(
@@ -240,7 +240,7 @@ class TestAnthropicSettingsStripped:
         with (
             patch(_PATCH_CREATE, return_value=_make_model_result(override)),
             patch(
-                "deepagents_cli.configurable_model._is_anthropic_model",
+                "code2workspace_cli.configurable_model._is_anthropic_model",
                 return_value=False,
             ),
         ):
@@ -261,7 +261,7 @@ class TestAnthropicSettingsStripped:
         with (
             patch(_PATCH_CREATE, return_value=_make_model_result(override)),
             patch(
-                "deepagents_cli.configurable_model._is_anthropic_model",
+                "code2workspace_cli.configurable_model._is_anthropic_model",
                 return_value=True,
             ),
         ):
@@ -288,7 +288,7 @@ class TestAnthropicSettingsStripped:
         with (
             patch(_PATCH_CREATE, return_value=_make_model_result(override)),
             patch(
-                "deepagents_cli.configurable_model._is_anthropic_model",
+                "code2workspace_cli.configurable_model._is_anthropic_model",
                 return_value=False,
             ),
         ):
@@ -314,7 +314,7 @@ class TestAnthropicSettingsStripped:
         with (
             patch(_PATCH_CREATE, return_value=_make_model_result(override)),
             patch(
-                "deepagents_cli.configurable_model._is_anthropic_model",
+                "code2workspace_cli.configurable_model._is_anthropic_model",
                 return_value=False,
             ),
         ):
@@ -340,7 +340,7 @@ class TestAnthropicSettingsStripped:
         with (
             patch(_PATCH_CREATE, return_value=_make_model_result(override)),
             patch(
-                "deepagents_cli.configurable_model._is_anthropic_model",
+                "code2workspace_cli.configurable_model._is_anthropic_model",
                 return_value=False,
             ),
         ):
@@ -364,7 +364,7 @@ class TestAnthropicSettingsStripped:
         with (
             patch(_PATCH_CREATE, return_value=_make_model_result(override)),
             patch(
-                "deepagents_cli.configurable_model._is_anthropic_model",
+                "code2workspace_cli.configurable_model._is_anthropic_model",
                 return_value=False,
             ),
         ):

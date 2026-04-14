@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from deepagents_cli.mcp_tools import (
+from code2workspace_cli.mcp_tools import (
     MCPServerInfo,
     MCPSessionManager,
     MCPToolInfo,
@@ -23,7 +23,7 @@ from deepagents_cli.mcp_tools import (
     merge_mcp_configs,
     resolve_and_load_mcp_tools,
 )
-from deepagents_cli.project_utils import ProjectContext
+from code2workspace_cli.project_utils import ProjectContext
 
 # Test Fixtures
 
@@ -454,9 +454,9 @@ class TestGetMCPTools:
     def _bypass_health_checks(self) -> Generator[None]:
         """Bypass pre-flight health checks for all tests in this class."""
         with (
-            patch("deepagents_cli.mcp_tools._check_stdio_server"),
+            patch("code2workspace_cli.mcp_tools._check_stdio_server"),
             patch(
-                "deepagents_cli.mcp_tools._check_remote_server",
+                "code2workspace_cli.mcp_tools._check_remote_server",
                 new_callable=AsyncMock,
             ),
         ):
@@ -971,7 +971,7 @@ class TestDiscoverMcpConfigs:
         project = tmp_path / "project"
         monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
         monkeypatch.setattr(
-            "deepagents_cli.project_utils.find_project_root",
+            "code2workspace_cli.project_utils.find_project_root",
             lambda _start_path=None: project,
         )
         (tmp_path / "home").mkdir()
@@ -981,9 +981,9 @@ class TestDiscoverMcpConfigs:
     def test_user_level_only(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Only ~/.deepagents/.mcp.json exists."""
+        """Only ~/.code2workspace/.mcp.json exists."""
         home = tmp_path / "home"
-        user_dir = home / ".deepagents"
+        user_dir = home / ".code2workspace"
         user_dir.mkdir(parents=True)
         cfg = user_dir / ".mcp.json"
         cfg.write_text('{"mcpServers": {}}')
@@ -993,7 +993,7 @@ class TestDiscoverMcpConfigs:
 
         monkeypatch.setattr(Path, "home", lambda: home)
         monkeypatch.setattr(
-            "deepagents_cli.project_utils.find_project_root",
+            "code2workspace_cli.project_utils.find_project_root",
             lambda _start_path=None: project,
         )
         result = discover_mcp_configs()
@@ -1012,27 +1012,27 @@ class TestDiscoverMcpConfigs:
 
         monkeypatch.setattr(Path, "home", lambda: home)
         monkeypatch.setattr(
-            "deepagents_cli.project_utils.find_project_root",
+            "code2workspace_cli.project_utils.find_project_root",
             lambda _start_path=None: project,
         )
         result = discover_mcp_configs()
         assert result == [cfg]
 
-    def test_project_deepagents_subdir_only(
+    def test_project_code2workspace_subdir_only(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Only <project>/.deepagents/.mcp.json exists."""
+        """Only <project>/.code2workspace/.mcp.json exists."""
         home = tmp_path / "home"
         home.mkdir()
         project = tmp_path / "project"
-        subdir = project / ".deepagents"
+        subdir = project / ".code2workspace"
         subdir.mkdir(parents=True)
         cfg = subdir / ".mcp.json"
         cfg.write_text('{"mcpServers": {}}')
 
         monkeypatch.setattr(Path, "home", lambda: home)
         monkeypatch.setattr(
-            "deepagents_cli.project_utils.find_project_root",
+            "code2workspace_cli.project_utils.find_project_root",
             lambda _start_path=None: project,
         )
         result = discover_mcp_configs()
@@ -1043,13 +1043,13 @@ class TestDiscoverMcpConfigs:
     ) -> None:
         """All three config locations exist, returned in precedence order."""
         home = tmp_path / "home"
-        user_dir = home / ".deepagents"
+        user_dir = home / ".code2workspace"
         user_dir.mkdir(parents=True)
         user_cfg = user_dir / ".mcp.json"
         user_cfg.write_text('{"mcpServers": {}}')
 
         project = tmp_path / "project"
-        proj_subdir = project / ".deepagents"
+        proj_subdir = project / ".code2workspace"
         proj_subdir.mkdir(parents=True)
         proj_sub_cfg = proj_subdir / ".mcp.json"
         proj_sub_cfg.write_text('{"mcpServers": {}}')
@@ -1059,7 +1059,7 @@ class TestDiscoverMcpConfigs:
 
         monkeypatch.setattr(Path, "home", lambda: home)
         monkeypatch.setattr(
-            "deepagents_cli.project_utils.find_project_root",
+            "code2workspace_cli.project_utils.find_project_root",
             lambda _start_path=None: project,
         )
         result = discover_mcp_configs()
@@ -1073,7 +1073,7 @@ class TestDiscoverMcpConfigs:
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
         monkeypatch.setattr(
-            "deepagents_cli.project_utils.find_project_root",
+            "code2workspace_cli.project_utils.find_project_root",
             lambda _start_path=None: None,
         )
         monkeypatch.chdir(tmp_path)
@@ -1157,8 +1157,8 @@ class TestResolveAndLoadMcpTools:
         assert manager is None
         assert infos == []
 
-    @patch("deepagents_cli.mcp_tools._load_tools_from_config")
-    @patch("deepagents_cli.mcp_tools.discover_mcp_configs")
+    @patch("code2workspace_cli.mcp_tools._load_tools_from_config")
+    @patch("code2workspace_cli.mcp_tools.discover_mcp_configs")
     async def test_explicit_path_merges_with_discovery(
         self,
         mock_discover: MagicMock,
@@ -1193,8 +1193,8 @@ class TestResolveAndLoadMcpTools:
         assert mock_load.call_args.kwargs["best_effort"] is False
         assert mock_load.call_args.kwargs["tool_load_timeout"] is None
 
-    @patch("deepagents_cli.mcp_tools._load_tools_from_config")
-    @patch("deepagents_cli.mcp_tools.discover_mcp_configs")
+    @patch("code2workspace_cli.mcp_tools._load_tools_from_config")
+    @patch("code2workspace_cli.mcp_tools.discover_mcp_configs")
     async def test_auto_discovery_merges_and_loads(
         self, mock_discover: MagicMock, mock_load: AsyncMock, tmp_path: Path
     ) -> None:
@@ -1221,8 +1221,8 @@ class TestResolveAndLoadMcpTools:
         assert mock_load.call_args.kwargs["best_effort"] is False
         assert mock_load.call_args.kwargs["tool_load_timeout"] is None
 
-    @patch("deepagents_cli.mcp_tools._load_tools_from_config")
-    @patch("deepagents_cli.mcp_tools.discover_mcp_configs")
+    @patch("code2workspace_cli.mcp_tools._load_tools_from_config")
+    @patch("code2workspace_cli.mcp_tools.discover_mcp_configs")
     async def test_persistent_sessions_flag_is_forwarded(
         self, mock_discover: MagicMock, mock_load: AsyncMock, tmp_path: Path
     ) -> None:
@@ -1241,7 +1241,7 @@ class TestResolveAndLoadMcpTools:
         assert mock_load.call_args.kwargs["best_effort"] is False
         assert mock_load.call_args.kwargs["tool_load_timeout"] is None
 
-    @patch("deepagents_cli.mcp_tools.discover_mcp_configs")
+    @patch("code2workspace_cli.mcp_tools.discover_mcp_configs")
     async def test_auto_discovery_no_configs_returns_empty(
         self, mock_discover: MagicMock
     ) -> None:
@@ -1266,14 +1266,14 @@ class TestResolveAndLoadMcpTools:
         with pytest.raises(json.JSONDecodeError):
             await resolve_and_load_mcp_tools(explicit_config_path=str(bad))
 
-    @patch("deepagents_cli.mcp_tools.discover_mcp_configs")
+    @patch("code2workspace_cli.mcp_tools.discover_mcp_configs")
     async def test_no_mcp_skips_discovery(self, mock_discover: MagicMock) -> None:
         """no_mcp=True should not call discover_mcp_configs."""
         await resolve_and_load_mcp_tools(no_mcp=True)
         mock_discover.assert_not_called()
 
-    @patch("deepagents_cli.mcp_tools._load_tools_from_config")
-    @patch("deepagents_cli.mcp_trust.is_project_mcp_trusted")
+    @patch("code2workspace_cli.mcp_tools._load_tools_from_config")
+    @patch("code2workspace_cli.mcp_trust.is_project_mcp_trusted")
     async def test_project_context_drives_trust_root(
         self,
         mock_is_trusted: MagicMock,
@@ -1310,7 +1310,7 @@ class TestResolveAndLoadMcpTools:
         assert mock_is_trusted.call_args.args[0] == str(project_root.resolve())
         mock_load.assert_awaited_once()
 
-    @patch("deepagents_cli.mcp_tools._load_tools_from_config")
+    @patch("code2workspace_cli.mcp_tools._load_tools_from_config")
     async def test_project_context_normalizes_relative_explicit_path(
         self,
         mock_load: AsyncMock,
@@ -1345,8 +1345,8 @@ class TestResolveAndLoadMcpTools:
         merged = mock_load.call_args.args[0]
         assert "fs" in merged["mcpServers"]
 
-    @patch("deepagents_cli.mcp_tools._load_tools_from_config")
-    @patch("deepagents_cli.mcp_tools.discover_mcp_configs")
+    @patch("code2workspace_cli.mcp_tools._load_tools_from_config")
+    @patch("code2workspace_cli.mcp_tools.discover_mcp_configs")
     async def test_trust_false_filters_project_stdio(
         self,
         mock_discover: MagicMock,
@@ -1375,8 +1375,8 @@ class TestResolveAndLoadMcpTools:
         assert "pwn" not in merged["mcpServers"]
         assert "remote" in merged["mcpServers"]
 
-    @patch("deepagents_cli.mcp_tools._load_tools_from_config")
-    @patch("deepagents_cli.mcp_tools.discover_mcp_configs")
+    @patch("code2workspace_cli.mcp_tools._load_tools_from_config")
+    @patch("code2workspace_cli.mcp_tools.discover_mcp_configs")
     async def test_trust_true_allows_project_stdio(
         self,
         mock_discover: MagicMock,
@@ -1402,14 +1402,14 @@ class TestClassifyDiscoveredConfigs:
     """Tests for classify_discovered_configs."""
 
     def test_user_config_classified(self) -> None:
-        """Paths under ~/.deepagents/ are classified as user."""
-        user_path = Path.home() / ".deepagents" / ".mcp.json"
+        """Paths under ~/.code2workspace/ are classified as user."""
+        user_path = Path.home() / ".code2workspace" / ".mcp.json"
         user, project = classify_discovered_configs([user_path])
         assert user == [user_path]
         assert project == []
 
     def test_project_config_classified(self, tmp_path: Path) -> None:
-        """Paths outside ~/.deepagents/ are classified as project."""
+        """Paths outside ~/.code2workspace/ are classified as project."""
         project_path = tmp_path / ".mcp.json"
         project_path.touch()
         user, project = classify_discovered_configs([project_path])
@@ -1418,7 +1418,7 @@ class TestClassifyDiscoveredConfigs:
 
     def test_mixed_classification(self, tmp_path: Path) -> None:
         """Mixed paths are split correctly."""
-        user_path = Path.home() / ".deepagents" / ".mcp.json"
+        user_path = Path.home() / ".code2workspace" / ".mcp.json"
         project_path = tmp_path / ".mcp.json"
         project_path.touch()
         user, project = classify_discovered_configs([user_path, project_path])
@@ -1497,7 +1497,7 @@ class TestCheckStdioServer:
     def test_command_not_found(self) -> None:
         """Raises RuntimeError with server name and command when missing."""
         with (
-            patch("deepagents_cli.mcp_tools.shutil.which", return_value=None),
+            patch("code2workspace_cli.mcp_tools.shutil.which", return_value=None),
             pytest.raises(
                 RuntimeError,
                 match="MCP server 'test-server': command 'nonexistent' not found",
@@ -1508,7 +1508,7 @@ class TestCheckStdioServer:
     def test_command_exists(self) -> None:
         """No error when command exists on PATH."""
         with patch(
-            "deepagents_cli.mcp_tools.shutil.which", return_value="/usr/bin/npx"
+            "code2workspace_cli.mcp_tools.shutil.which", return_value="/usr/bin/npx"
         ):
             _check_stdio_server("test-server", {"command": "npx"})
 
@@ -1616,7 +1616,7 @@ class TestHealthCheckIntegration:
         mock_client_class.return_value = mock_client
 
         with (
-            patch("deepagents_cli.mcp_tools.shutil.which", return_value=None),
+            patch("code2workspace_cli.mcp_tools.shutil.which", return_value=None),
             pytest.raises(RuntimeError, match="Pre-flight health check"),
         ):
             await get_mcp_tools(path)
@@ -1671,7 +1671,7 @@ class TestHealthCheckIntegration:
         mock_client_class.return_value = mock_client
 
         with (
-            patch("deepagents_cli.mcp_tools.shutil.which", return_value=None),
+            patch("code2workspace_cli.mcp_tools.shutil.which", return_value=None),
             pytest.raises(RuntimeError) as exc_info,
         ):
             await get_mcp_tools(path)
@@ -1707,7 +1707,7 @@ class TestHealthCheckIntegration:
         mock_http.__aexit__ = AsyncMock(return_value=False)
 
         with (
-            patch("deepagents_cli.mcp_tools.shutil.which", return_value=None),
+            patch("code2workspace_cli.mcp_tools.shutil.which", return_value=None),
             patch("httpx.AsyncClient", return_value=mock_http),
             pytest.raises(RuntimeError) as exc_info,
         ):
@@ -1726,9 +1726,9 @@ class TestToolOrdering:
     def _bypass_health_checks(self) -> Generator[None]:
         """Bypass pre-flight health checks for all tests in this class."""
         with (
-            patch("deepagents_cli.mcp_tools._check_stdio_server"),
+            patch("code2workspace_cli.mcp_tools._check_stdio_server"),
             patch(
-                "deepagents_cli.mcp_tools._check_remote_server",
+                "code2workspace_cli.mcp_tools._check_remote_server",
                 new_callable=AsyncMock,
             ),
         ):

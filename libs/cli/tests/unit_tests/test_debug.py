@@ -6,12 +6,12 @@ import logging
 import os
 from unittest.mock import patch
 
-from deepagents_cli._debug import configure_debug_logging
+from code2workspace_cli._debug import configure_debug_logging
 
 
 class TestConfigureDebugLogging:
     def test_noop_when_env_unset(self) -> None:
-        """No handlers should be added when DEEPAGENTS_CLI_DEBUG is unset."""
+        """No handlers should be added when CODE2WORKSPACE_CLI_DEBUG is unset."""
         logger = logging.getLogger("test.debug.noop")
         original_count = len(logger.handlers)
         with patch.dict(os.environ, {}, clear=True):
@@ -23,7 +23,7 @@ class TestConfigureDebugLogging:
         log_file = tmp_path / "debug.log"
         with patch.dict(
             os.environ,
-            {"DEEPAGENTS_CLI_DEBUG": "1", "DEEPAGENTS_CLI_DEBUG_FILE": str(log_file)},
+            {"CODE2WORKSPACE_CLI_DEBUG": "1", "CODE2WORKSPACE_CLI_DEBUG_FILE": str(log_file)},
         ):
             configure_debug_logging(logger)
         assert any(isinstance(h, logging.FileHandler) for h in logger.handlers)
@@ -39,7 +39,7 @@ class TestConfigureDebugLogging:
         log_file = tmp_path / "custom.log"
         with patch.dict(
             os.environ,
-            {"DEEPAGENTS_CLI_DEBUG": "1", "DEEPAGENTS_CLI_DEBUG_FILE": str(log_file)},
+            {"CODE2WORKSPACE_CLI_DEBUG": "1", "CODE2WORKSPACE_CLI_DEBUG_FILE": str(log_file)},
         ):
             configure_debug_logging(logger)
         file_handlers = [
@@ -59,8 +59,8 @@ class TestConfigureDebugLogging:
         with patch.dict(
             os.environ,
             {
-                "DEEPAGENTS_CLI_DEBUG": "1",
-                "DEEPAGENTS_CLI_DEBUG_FILE": "/nonexistent_dir/debug.log",
+                "CODE2WORKSPACE_CLI_DEBUG": "1",
+                "CODE2WORKSPACE_CLI_DEBUG_FILE": "/nonexistent_dir/debug.log",
             },
         ):
             configure_debug_logging(logger)

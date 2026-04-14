@@ -16,9 +16,9 @@ from langgraph.types import Command
 from pydantic import ValidationError
 from rich.console import Console
 
-from deepagents_cli import config as config_module
-from deepagents_cli.config import build_stream_config
-from deepagents_cli.textual_adapter import (
+from code2workspace_cli import config as config_module
+from code2workspace_cli.config import build_stream_config
+from code2workspace_cli.textual_adapter import (
     ModelStats,
     SessionStats,
     TextualUIAdapter,
@@ -29,7 +29,7 @@ from deepagents_cli.textual_adapter import (
     format_token_count,
     print_usage_table,
 )
-from deepagents_cli.widgets.messages import SummarizationMessage
+from code2workspace_cli.widgets.messages import SummarizationMessage
 
 
 async def _mock_mount(widget: object) -> None:
@@ -175,7 +175,7 @@ class TestInterruptCleanup:
         turn_stats = SessionStats()
         config = {"configurable": {"thread_id": "t-1"}}
 
-        with patch("deepagents_cli.textual_adapter.time.monotonic", return_value=101.0):
+        with patch("code2workspace_cli.textual_adapter.time.monotonic", return_value=101.0):
             await _handle_interrupt_cleanup(
                 adapter=adapter,
                 agent=agent,
@@ -245,7 +245,7 @@ class TestBuildStreamConfig:
     def test_git_branch_included_when_available(self) -> None:
         """Git branch should be included in metadata when in a git repo."""
         with patch(
-            "deepagents_cli.config._get_git_branch",
+            "code2workspace_cli.config._get_git_branch",
             return_value="feature-branch",
         ):
             config = build_stream_config("t-git", assistant_id="agent")
@@ -254,7 +254,7 @@ class TestBuildStreamConfig:
     def test_git_branch_absent_when_not_in_repo(self) -> None:
         """Git branch should be absent when not in a git repo."""
         with patch(
-            "deepagents_cli.config._get_git_branch",
+            "code2workspace_cli.config._get_git_branch",
             return_value=None,
         ):
             config = build_stream_config("t-nogit", assistant_id="agent")
@@ -288,43 +288,43 @@ class TestBuildStreamConfig:
 
     def test_versions_contains_cli_version(self) -> None:
         """CLI version should always be present in metadata.versions."""
-        from deepagents_cli._version import __version__
+        from code2workspace_cli._version import __version__
 
         config = build_stream_config("t-ver", assistant_id=None)
-        assert config["metadata"]["versions"]["deepagents-cli"] == __version__
+        assert config["metadata"]["versions"]["code2workspace-cli"] == __version__
 
     def test_versions_contains_sdk_version_when_installed(self) -> None:
-        """SDK version should be in versions when deepagents is installed."""
+        """SDK version should be in versions when code2workspace is installed."""
         with patch(
             "importlib.metadata.version",
             return_value="0.5.0",
         ):
             config = build_stream_config("t-sdk", assistant_id=None)
-        assert config["metadata"]["versions"]["deepagents"] == "0.5.0"
+        assert config["metadata"]["versions"]["code2workspace"] == "0.5.0"
 
     def test_versions_omits_sdk_when_not_installed(self) -> None:
-        """SDK version key should be absent when deepagents is not installed."""
+        """SDK version key should be absent when code2workspace is not installed."""
         from importlib.metadata import PackageNotFoundError
 
         with patch(
             "importlib.metadata.version",
-            side_effect=PackageNotFoundError("deepagents"),
+            side_effect=PackageNotFoundError("code2workspace"),
         ):
             config = build_stream_config("t-nosdk", assistant_id=None)
-        assert "deepagents" not in config["metadata"]["versions"]
-        from deepagents_cli._version import __version__
+        assert "code2workspace" not in config["metadata"]["versions"]
+        from code2workspace_cli._version import __version__
 
-        assert config["metadata"]["versions"]["deepagents-cli"] == __version__
+        assert config["metadata"]["versions"]["code2workspace-cli"] == __version__
 
     def test_user_id_included_when_set(self) -> None:
-        """DEEPAGENTS_CLI_USER_ID should appear in metadata when set."""
-        with patch.dict("os.environ", {"DEEPAGENTS_CLI_USER_ID": "mason"}):
+        """CODE2WORKSPACE_CLI_USER_ID should appear in metadata when set."""
+        with patch.dict("os.environ", {"CODE2WORKSPACE_CLI_USER_ID": "mason"}):
             config = build_stream_config("t-uid", assistant_id=None)
         assert config["metadata"]["user_id"] == "mason"
 
     def test_user_id_absent_when_unset(self) -> None:
         """user_id should be absent from metadata when env var is not set."""
-        with patch.dict("os.environ", {"DEEPAGENTS_CLI_USER_ID": ""}):
+        with patch.dict("os.environ", {"CODE2WORKSPACE_CLI_USER_ID": ""}):
             config = build_stream_config("t-nouid", assistant_id=None)
         assert "user_id" not in config["metadata"]
 
@@ -342,7 +342,7 @@ class TestGetGitBranch:
 
         with (
             patch(
-                "deepagents_cli.config.Path.cwd",
+                "code2workspace_cli.config.Path.cwd",
                 return_value=Path("/tmp/repo"),
             ),
             patch("subprocess.run", return_value=result) as mock_run,
@@ -363,7 +363,7 @@ class TestGetGitBranchOSError:
     def test_returns_none_on_cwd_oserror(self) -> None:
         """_get_git_branch should return None when cwd is inaccessible."""
         with patch(
-            "deepagents_cli.config.Path.cwd",
+            "code2workspace_cli.config.Path.cwd",
             side_effect=OSError("deleted"),
         ):
             assert config_module._get_git_branch() is None
@@ -379,7 +379,7 @@ class TestBuildStreamConfigOSError:
     def test_cwd_absent_on_oserror(self) -> None:
         """Cwd should be absent from metadata when Path.cwd() raises."""
         with patch(
-            "deepagents_cli.config.Path.cwd",
+            "code2workspace_cli.config.Path.cwd",
             side_effect=OSError("deleted"),
         ):
             config = build_stream_config("t-err", assistant_id="agent")

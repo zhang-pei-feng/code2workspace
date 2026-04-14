@@ -3,7 +3,7 @@
 import requests
 import responses
 
-from deepagents_cli.tools import fetch_url
+from code2workspace_cli.tools import fetch_url
 
 
 @responses.activate

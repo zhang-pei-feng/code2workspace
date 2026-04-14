@@ -4,12 +4,12 @@ import pytest
 
 
 def test_imports() -> None:
-    """Test importing deepagents modules."""
-    from deepagents_cli import (
+    """Test importing code2workspace modules."""
+    from code2workspace_cli import (
         agent,
         integrations,
     )
-    from deepagents_cli.main import cli_main
+    from code2workspace_cli.main import cli_main
 
 
 class TestLazyPackageGetattr:
@@ -17,13 +17,13 @@ class TestLazyPackageGetattr:
 
     def test_cli_main_via_package(self) -> None:
         """Package-level __getattr__ resolves cli_main lazily."""
-        from deepagents_cli import cli_main
+        from code2workspace_cli import cli_main
 
         assert callable(cli_main)
 
     def test_unknown_attr_raises(self) -> None:
         """Accessing an unknown attribute raises AttributeError."""
-        import deepagents_cli
+        import code2workspace_cli
 
         with pytest.raises(AttributeError, match="has no attribute"):
-            getattr(deepagents_cli, "nonexistent_xyz")  # noqa: B009
+            getattr(code2workspace_cli, "nonexistent_xyz")  # noqa: B009

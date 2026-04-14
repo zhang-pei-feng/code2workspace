@@ -2,10 +2,10 @@
 
 These tests ensure that:
 
-1. Every `DEEPAGENTS_CLI_*` constant in `_env_vars.py` has a matching
+1. Every `CODE2WORKSPACE_CLI_*` constant in `_env_vars.py` has a matching
    value used somewhere in source code (no stale entries).
 2. No source file outside `_env_vars.py` uses a bare string literal like
-   `"DEEPAGENTS_CLI_FOO"` -- it must import the constant instead.
+   `"CODE2WORKSPACE_CLI_FOO"` -- it must import the constant instead.
 """
 
 from __future__ import annotations
@@ -13,15 +13,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import deepagents_cli._env_vars as _mod
+import code2workspace_cli._env_vars as _mod
 
-_SRC_DIR = Path(__file__).resolve().parents[2] / "deepagents_cli"
+_SRC_DIR = Path(__file__).resolve().parents[2] / "code2workspace_cli"
 _REGISTRY_FILE = _SRC_DIR / "_env_vars.py"
 
-# Matches a full DEEPAGENTS_CLI_* env var name inside quote characters.
+# Matches a full CODE2WORKSPACE_CLI_* env var name inside quote characters.
 # The [A-Z] after the prefix avoids matching the bare prefix constant
-# (_ENV_PREFIX = "DEEPAGENTS_CLI_") in model_config.py.
-_ENV_VAR_RE = re.compile(r"""["'](DEEPAGENTS_CLI_[A-Z][A-Z0-9_]+)["']""")
+# (_ENV_PREFIX = "CODE2WORKSPACE_CLI_") in model_config.py.
+_ENV_VAR_RE = re.compile(r"""["'](CODE2WORKSPACE_CLI_[A-Z][A-Z0-9_]+)["']""")
 
 
 def _public_constants() -> list[str]:
@@ -31,17 +31,17 @@ def _public_constants() -> list[str]:
         for k, v in vars(_mod).items()
         if isinstance(v, str)
         and not k.startswith("_")
-        and v.startswith("DEEPAGENTS_CLI_")
+        and v.startswith("CODE2WORKSPACE_CLI_")
     ]
 
 
 def _registered_values() -> set[str]:
-    """Collect all `DEEPAGENTS_CLI_*` string values from `_env_vars`."""
+    """Collect all `CODE2WORKSPACE_CLI_*` string values from `_env_vars`."""
     return {getattr(_mod, k) for k in _public_constants()}
 
 
 def _collect_bare_literals(*, include_registry: bool = False) -> dict[str, set[str]]:
-    """Map source files to bare `DEEPAGENTS_CLI_*` string literals found.
+    """Map source files to bare `CODE2WORKSPACE_CLI_*` string literals found.
 
     Args:
         include_registry: When `True`, also scan `_env_vars.py`.
@@ -66,8 +66,8 @@ class TestEnvVarRegistryDrift:
         """Source files must import constants, not use raw string literals."""
         hits = _collect_bare_literals()
         assert not hits, (
-            "Bare DEEPAGENTS_CLI_* string literals found in source "
-            "(import from deepagents_cli._env_vars instead):\n"
+            "Bare CODE2WORKSPACE_CLI_* string literals found in source "
+            "(import from code2workspace_cli._env_vars instead):\n"
             + "\n".join(f"  {f}: {sorted(v)}" for f, v in sorted(hits.items()))
         )
 
@@ -78,7 +78,7 @@ class TestEnvVarRegistryDrift:
         stale = registered - in_registry_file
         assert not stale, (
             f"Constants whose values don't appear in _env_vars.py: {stale}. "
-            "Remove stale entries from deepagents_cli/_env_vars.py."
+            "Remove stale entries from code2workspace_cli/_env_vars.py."
         )
 
     def test_registry_constants_are_sorted(self) -> None:

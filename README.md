@@ -1,17 +1,17 @@
 # code2workspace
 
-`code2workspace` is the trimmed core of `deepagents`, repurposed as the base repository for a graduation project about turning GitHub repositories into runnable workspaces.
+`code2workspace` is the development repository for a graduation project about turning GitHub repositories into runnable workspaces with an agent built on LangGraph and LangChain.
 
-This repository currently keeps the parts that matter for that direction:
+This repository currently keeps two core packages:
 
-- `libs/deepagents`: the core agent runtime
+- `libs/code2workspace`: the core runtime and middleware stack
 - `libs/cli`: the terminal interface and non-interactive task runner
 
-The original example projects, release automation, ACP package, evals package, REPL package, and partner integration packages have been removed from this repo snapshot so the codebase stays small enough to evolve into a focused research project.
+The original example projects, release automation, ACP package, evals package, REPL package, and partner integration packages were removed so the codebase stays focused on the graduation-project direction.
 
 ## Current status
 
-- Base runtime preserved from `deepagents`
+- LangGraph + LangChain based agent runtime preserved and renamed for this project
 - MCP startup fixes from local development are included
 - CLI and non-interactive task execution remain usable
 - Repository intentionally reduced to core modules only
@@ -21,13 +21,13 @@ The original example projects, release automation, ACP package, evals package, R
 From the repository root:
 
 ```bash
-uv run --project libs/cli deepagents
+uv run --project libs/cli code2workspace
 ```
 
 Or run a single task:
 
 ```bash
-uv run --project libs/cli deepagents -n "Reply with OK only." -q
+uv run --project libs/cli code2workspace -n "Reply with OK only." -q
 ```
 
 ## Near-term direction

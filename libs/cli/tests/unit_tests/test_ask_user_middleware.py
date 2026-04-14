@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from langchain_core.messages import SystemMessage, ToolMessage
 
-from deepagents_cli.ask_user import (
+from code2workspace_cli.ask_user import (
     AskUserMiddleware,
     _parse_answers,
     _validate_questions,

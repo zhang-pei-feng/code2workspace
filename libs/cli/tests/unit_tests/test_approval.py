@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from deepagents_cli.config import get_glyphs
-from deepagents_cli.widgets.approval import (
+from code2workspace_cli.config import get_glyphs
+from code2workspace_cli.widgets.approval import (
     _SHELL_COMMAND_TRUNCATE_LENGTH,
     ApprovalMenu,
 )

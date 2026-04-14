@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from deepagents_cli._env_vars import SERVER_ENV_PREFIX
-from deepagents_cli._server_config import (
+from code2workspace_cli._env_vars import SERVER_ENV_PREFIX
+from code2workspace_cli._server_config import (
     ServerConfig,
     _normalize_path,
     _read_env_bool,
@@ -149,7 +149,7 @@ class TestNormalizePath:
     def test_raises_on_unresolvable_path(self) -> None:
         with (
             patch(
-                "deepagents_cli._server_config.Path.expanduser",
+                "code2workspace_cli._server_config.Path.expanduser",
                 side_effect=OSError("perm"),
             ),
             pytest.raises(ValueError, match="Could not resolve"),
@@ -159,7 +159,7 @@ class TestNormalizePath:
     def test_label_appears_in_error_message(self) -> None:
         with (
             patch(
-                "deepagents_cli._server_config.Path.expanduser",
+                "code2workspace_cli._server_config.Path.expanduser",
                 side_effect=OSError("perm"),
             ),
             pytest.raises(ValueError, match="sandbox setup"),

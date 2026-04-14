@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from deepagents_cli.server import (
+from code2workspace_cli.server import (
     _build_server_cmd,
     _build_server_env,
     _scoped_env_overrides,

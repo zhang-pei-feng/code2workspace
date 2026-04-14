@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from deepagents_cli.command_registry import (
+from code2workspace_cli.command_registry import (
     ALL_CLASSIFIED,
     ALWAYS_IMMEDIATE,
     BYPASS_WHEN_CONNECTING,
@@ -121,7 +121,7 @@ class TestHelpBodyDrift:
     def test_help_body_lists_all_commands(self) -> None:
         """Every command in COMMANDS must appear in the /help body."""
         app_src = (
-            Path(__file__).resolve().parents[2] / "deepagents_cli" / "app.py"
+            Path(__file__).resolve().parents[2] / "code2workspace_cli" / "app.py"
         ).read_text()
 
         # Isolate the "Commands: ..." section (before "Interactive Features")

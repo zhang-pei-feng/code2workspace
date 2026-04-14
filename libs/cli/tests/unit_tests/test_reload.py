@@ -8,27 +8,27 @@ from unittest.mock import MagicMock, call
 import dotenv as _dotenv_module
 import pytest
 
-from deepagents_cli.command_registry import SLASH_COMMANDS
-from deepagents_cli.config import Settings
+from code2workspace_cli.command_registry import SLASH_COMMANDS
+from code2workspace_cli.config import Settings
 
 # Capture before any monkeypatching replaces it on the module.
 _real_load_dotenv = _dotenv_module.load_dotenv
 
 _RELOAD_ENV_KEYS = (
     "OPENAI_API_KEY",
-    "DEEPAGENTS_CLI_OPENAI_API_KEY",
+    "CODE2WORKSPACE_CLI_OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
-    "DEEPAGENTS_CLI_ANTHROPIC_API_KEY",
+    "CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY",
     "GOOGLE_API_KEY",
-    "DEEPAGENTS_CLI_GOOGLE_API_KEY",
+    "CODE2WORKSPACE_CLI_GOOGLE_API_KEY",
     "NVIDIA_API_KEY",
-    "DEEPAGENTS_CLI_NVIDIA_API_KEY",
+    "CODE2WORKSPACE_CLI_NVIDIA_API_KEY",
     "TAVILY_API_KEY",
-    "DEEPAGENTS_CLI_TAVILY_API_KEY",
+    "CODE2WORKSPACE_CLI_TAVILY_API_KEY",
     "GOOGLE_CLOUD_PROJECT",
-    "DEEPAGENTS_CLI_GOOGLE_CLOUD_PROJECT",
-    "DEEPAGENTS_CLI_LANGSMITH_PROJECT",
-    "DEEPAGENTS_CLI_SHELL_ALLOW_LIST",
+    "CODE2WORKSPACE_CLI_GOOGLE_CLOUD_PROJECT",
+    "CODE2WORKSPACE_CLI_LANGSMITH_PROJECT",
+    "CODE2WORKSPACE_CLI_SHELL_ALLOW_LIST",
 )
 
 
@@ -56,7 +56,7 @@ class TestReloadFromEnvironment:
         )
         # Point global dotenv to a nonexistent path so it's never loaded
         monkeypatch.setattr(
-            "deepagents_cli.config._GLOBAL_DOTENV_PATH",
+            "code2workspace_cli.config._GLOBAL_DOTENV_PATH",
             tmp_path / "nonexistent" / ".env",
         )
 
@@ -143,11 +143,11 @@ class TestReloadFromEnvironment:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """Reload should update parsed shell allow-list values."""
-        monkeypatch.setenv("DEEPAGENTS_CLI_SHELL_ALLOW_LIST", "ls,cat")
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_SHELL_ALLOW_LIST", "ls,cat")
         settings = Settings.from_environment(start_path=tmp_path)
         assert settings.shell_allow_list == ["ls", "cat"]
 
-        monkeypatch.setenv("DEEPAGENTS_CLI_SHELL_ALLOW_LIST", "ls,grep")
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_SHELL_ALLOW_LIST", "ls,grep")
         changes = settings.reload_from_environment(start_path=tmp_path)
 
         assert settings.shell_allow_list == ["ls", "grep"]
@@ -177,7 +177,7 @@ class TestReloadFromEnvironment:
         global_env = tmp_path / "global" / ".env"
         global_env.parent.mkdir()
         global_env.write_text("OPENAI_API_KEY=sk-global\n")
-        monkeypatch.setattr("deepagents_cli.config._GLOBAL_DOTENV_PATH", global_env)
+        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", global_env)
 
         project_env = tmp_path / ".env"
         project_env.write_text("ANTHROPIC_API_KEY=sk-project\n")
@@ -207,7 +207,7 @@ class TestReloadFromEnvironment:
         broken = MagicMock()
         msg = "permission denied"
         broken.is_file.side_effect = OSError(msg)
-        monkeypatch.setattr("deepagents_cli.config._GLOBAL_DOTENV_PATH", broken)
+        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", broken)
 
         # Should not raise — project .env still loads
         project_env = tmp_path / ".env"
@@ -216,7 +216,7 @@ class TestReloadFromEnvironment:
         mock_load = MagicMock(return_value=True)
         monkeypatch.setattr("dotenv.load_dotenv", mock_load)
 
-        with caplog.at_level(logging.WARNING, logger="deepagents_cli.config"):
+        with caplog.at_level(logging.WARNING, logger="code2workspace_cli.config"):
             settings.reload_from_environment(start_path=tmp_path)
 
         assert any("Could not read global dotenv" in r.message for r in caplog.records)
@@ -227,13 +227,13 @@ class TestReloadFromEnvironment:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """Project `.env` should always beat global `.env`."""
-        from deepagents_cli.config import _load_dotenv
+        from code2workspace_cli.config import _load_dotenv
 
         global_dir = tmp_path / "global"
         global_dir.mkdir()
         global_env = global_dir / ".env"
         global_env.write_text("TEST_PRECEDENCE_KEY=global-value\n")
-        monkeypatch.setattr("deepagents_cli.config._GLOBAL_DOTENV_PATH", global_env)
+        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", global_env)
 
         project_env = tmp_path / ".env"
         project_env.write_text("TEST_PRECEDENCE_KEY=project-value\n")
@@ -254,11 +254,11 @@ class TestReloadFromEnvironment:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """Shell-exported vars should beat project `.env`."""
-        from deepagents_cli.config import _load_dotenv
+        from code2workspace_cli.config import _load_dotenv
 
         # No global dotenv
         monkeypatch.setattr(
-            "deepagents_cli.config._GLOBAL_DOTENV_PATH",
+            "code2workspace_cli.config._GLOBAL_DOTENV_PATH",
             tmp_path / "nonexistent" / ".env",
         )
 
@@ -280,14 +280,14 @@ class TestReloadFromEnvironment:
     def test_shell_env_beats_global_dotenv(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Shell-exported vars should beat global `~/.deepagents/.env`."""
-        from deepagents_cli.config import _load_dotenv
+        """Shell-exported vars should beat global `~/.code2workspace/.env`."""
+        from code2workspace_cli.config import _load_dotenv
 
         global_dir = tmp_path / "global"
         global_dir.mkdir()
         global_env = global_dir / ".env"
         global_env.write_text("TEST_BOOT_KEY=global-value\n")
-        monkeypatch.setattr("deepagents_cli.config._GLOBAL_DOTENV_PATH", global_env)
+        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", global_env)
 
         # Simulate a shell-exported variable (e.g., from $ZDOTDIR/.env)
         monkeypatch.setenv("TEST_BOOT_KEY", "shell-value")
@@ -298,7 +298,7 @@ class TestReloadFromEnvironment:
         )
         # No project .env
         monkeypatch.setattr(
-            "deepagents_cli.config._find_dotenv_from_start_path",
+            "code2workspace_cli.config._find_dotenv_from_start_path",
             lambda _: None,
         )
 
@@ -311,13 +311,13 @@ class TestReloadFromEnvironment:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """Global `.env` values should apply when no project `.env` exists."""
-        from deepagents_cli.config import _load_dotenv
+        from code2workspace_cli.config import _load_dotenv
 
         global_dir = tmp_path / "global"
         global_dir.mkdir()
         global_env = global_dir / ".env"
         global_env.write_text("TEST_GLOBAL_ONLY=global-value\n")
-        monkeypatch.setattr("deepagents_cli.config._GLOBAL_DOTENV_PATH", global_env)
+        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", global_env)
 
         monkeypatch.setattr(
             "dotenv.load_dotenv",
@@ -327,7 +327,7 @@ class TestReloadFromEnvironment:
 
         # No .env in isolated dir; global is the only source
         monkeypatch.setattr(
-            "deepagents_cli.config._find_dotenv_from_start_path",
+            "code2workspace_cli.config._find_dotenv_from_start_path",
             lambda _: None,
         )
         isolated = tmp_path / "no_project_env"
@@ -350,7 +350,7 @@ class TestReloadFromEnvironment:
         global_env = tmp_path / "global" / ".env"
         global_env.parent.mkdir()
         global_env.write_text("KEY=val\n")
-        monkeypatch.setattr("deepagents_cli.config._GLOBAL_DOTENV_PATH", global_env)
+        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", global_env)
 
         project_env = tmp_path / ".env"
         project_env.write_text("OPENAI_API_KEY=sk-ok\n")
@@ -368,7 +368,7 @@ class TestReloadFromEnvironment:
 
         monkeypatch.setattr("dotenv.load_dotenv", _fail_on_global)
 
-        with caplog.at_level(logging.WARNING, logger="deepagents_cli.config"):
+        with caplog.at_level(logging.WARNING, logger="code2workspace_cli.config"):
             settings.reload_from_environment(start_path=tmp_path)
 
         assert call_count == 2
@@ -382,7 +382,7 @@ class TestReloadFromEnvironment:
 
         monkeypatch.setenv("OPENAI_API_KEY", "sk-new")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")
-        monkeypatch.setenv("DEEPAGENTS_CLI_SHELL_ALLOW_LIST", "ls")
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_SHELL_ALLOW_LIST", "ls")
         changes = settings.reload_from_environment(start_path=tmp_path)
 
         assert len(changes) == 3
@@ -392,11 +392,11 @@ class TestReloadFromEnvironment:
     def test_prefixed_env_var_beats_canonical(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """DEEPAGENTS_CLI_ prefixed var should override canonical on reload."""
+        """CODE2WORKSPACE_CLI_ prefixed var should override canonical on reload."""
         settings = Settings.from_environment(start_path=tmp_path)
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-canonical")
-        monkeypatch.setenv("DEEPAGENTS_CLI_ANTHROPIC_API_KEY", "sk-override")
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", "sk-override")
         settings.reload_from_environment(start_path=tmp_path)
 
         assert settings.anthropic_api_key == "sk-override"
@@ -404,9 +404,9 @@ class TestReloadFromEnvironment:
     def test_from_environment_uses_prefixed_var(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Settings.from_environment should honour the DEEPAGENTS_CLI_ prefix."""
+        """Settings.from_environment should honour the CODE2WORKSPACE_CLI_ prefix."""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-canonical")
-        monkeypatch.setenv("DEEPAGENTS_CLI_OPENAI_API_KEY", "sk-override")
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_OPENAI_API_KEY", "sk-override")
 
         settings = Settings.from_environment(start_path=tmp_path)
 
@@ -436,7 +436,7 @@ class TestReloadErrorPaths:
             _fake_load_dotenv,
         )
         monkeypatch.setattr(
-            "deepagents_cli.config._GLOBAL_DOTENV_PATH",
+            "code2workspace_cli.config._GLOBAL_DOTENV_PATH",
             tmp_path / "nonexistent" / ".env",
         )
 
@@ -444,11 +444,11 @@ class TestReloadErrorPaths:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """Malformed shell allow-list should fall back to previous value."""
-        monkeypatch.setenv("DEEPAGENTS_CLI_SHELL_ALLOW_LIST", "ls,cat")
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_SHELL_ALLOW_LIST", "ls,cat")
         settings = Settings.from_environment(start_path=tmp_path)
         assert settings.shell_allow_list == ["ls", "cat"]
 
-        monkeypatch.setenv("DEEPAGENTS_CLI_SHELL_ALLOW_LIST", "all,ls")
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_SHELL_ALLOW_LIST", "all,ls")
         changes = settings.reload_from_environment(start_path=tmp_path)
 
         assert settings.shell_allow_list == ["ls", "cat"]
@@ -466,7 +466,7 @@ class TestReloadErrorPaths:
             raise FileNotFoundError(msg)
 
         monkeypatch.setattr(
-            "deepagents_cli.project_utils.find_project_root", _raise_oserror
+            "code2workspace_cli.project_utils.find_project_root", _raise_oserror
         )
         changes = settings.reload_from_environment(start_path=tmp_path)
 
@@ -478,12 +478,12 @@ class TestReloadErrorPaths:
     ) -> None:
         """Settings should remain consistent when one field fails to reload."""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-original")
-        monkeypatch.setenv("DEEPAGENTS_CLI_SHELL_ALLOW_LIST", "ls")
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_SHELL_ALLOW_LIST", "ls")
         settings = Settings.from_environment(start_path=tmp_path)
 
         # Change API key (succeeds) + break shell allow-list (falls back)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-updated")
-        monkeypatch.setenv("DEEPAGENTS_CLI_SHELL_ALLOW_LIST", "all,ls")
+        monkeypatch.setenv("CODE2WORKSPACE_CLI_SHELL_ALLOW_LIST", "all,ls")
         changes = settings.reload_from_environment(start_path=tmp_path)
 
         assert settings.openai_api_key == "sk-updated"

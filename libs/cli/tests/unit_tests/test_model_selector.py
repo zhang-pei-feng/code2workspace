@@ -8,8 +8,8 @@ from textual.containers import Container
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
-from deepagents_cli.model_config import ModelProfileEntry
-from deepagents_cli.widgets.model_selector import ModelSelectorScreen
+from code2workspace_cli.model_config import ModelProfileEntry
+from code2workspace_cli.widgets.model_selector import ModelSelectorScreen
 
 
 class ModelSelectorTestApp(App):
@@ -38,7 +38,7 @@ class ModelSelectorTestApp(App):
 
 
 class AppWithEscapeBinding(App):
-    """Test app that has a conflicting escape binding like DeepAgentsApp.
+    """Test app that has a conflicting escape binding like Code2WorkspaceApp.
 
     This reproduces the real-world scenario where the app binds escape
     to action_interrupt, which would intercept escape before the modal.
@@ -116,7 +116,7 @@ class TestModelSelectorEscapeKey:
     async def test_escape_with_conflicting_app_binding(self) -> None:
         """ESC should dismiss modal even when app has its own escape binding.
 
-        This test reproduces the bug where DeepAgentsApp's escape binding
+        This test reproduces the bug where Code2WorkspaceApp's escape binding
         for action_interrupt would intercept escape before the modal could
         handle it, causing the modal to not close.
         """
@@ -691,7 +691,7 @@ class TestFormatOptionLabel:
             has_creds=True,
             status="deprecated",
         )
-        from deepagents_cli.theme import DARK_COLORS
+        from code2workspace_cli.theme import DARK_COLORS
 
         assert "(deprecated)" in label.plain
         assert DARK_COLORS.error in label.markup
@@ -717,7 +717,7 @@ class TestFormatOptionLabel:
             status="beta",
         )
         assert "(deprecated)" not in label.plain
-        from deepagents_cli.theme import DARK_COLORS
+        from code2workspace_cli.theme import DARK_COLORS
 
         assert "(beta)" in label.plain
         assert DARK_COLORS.warning in label.markup
@@ -785,8 +785,8 @@ class TestModelDetailFooter:
 
     def test_format_footer_full_profile(self) -> None:
         """Full profile renders token counts, modalities, and capabilities."""
-        from deepagents_cli.config import UNICODE_GLYPHS
-        from deepagents_cli.model_config import ModelProfileEntry
+        from code2workspace_cli.config import UNICODE_GLYPHS
+        from code2workspace_cli.model_config import ModelProfileEntry
 
         entry = ModelProfileEntry(
             profile={
@@ -814,15 +814,15 @@ class TestModelDetailFooter:
 
     def test_format_footer_no_profile(self) -> None:
         """None profile shows 'Model profile not available'."""
-        from deepagents_cli.config import UNICODE_GLYPHS
+        from code2workspace_cli.config import UNICODE_GLYPHS
 
         result = ModelSelectorScreen._format_footer(None, UNICODE_GLYPHS)
         assert "Model profile not available :(" in str(result)
 
     def test_format_footer_overridden_fields(self) -> None:
         """Overridden fields show yellow * marker and override legend."""
-        from deepagents_cli.config import UNICODE_GLYPHS
-        from deepagents_cli.model_config import ModelProfileEntry
+        from code2workspace_cli.config import UNICODE_GLYPHS
+        from code2workspace_cli.model_config import ModelProfileEntry
 
         entry = ModelProfileEntry(
             profile={
@@ -836,14 +836,14 @@ class TestModelDetailFooter:
         text = str(result)
         assert "*" in text
         assert "= override" in text
-        from deepagents_cli.theme import DARK_COLORS
+        from code2workspace_cli.theme import DARK_COLORS
 
         assert DARK_COLORS.warning in result.markup
 
     def test_format_footer_partial_profile(self) -> None:
         """Profile with only token counts still renders without crash."""
-        from deepagents_cli.config import UNICODE_GLYPHS
-        from deepagents_cli.model_config import ModelProfileEntry
+        from code2workspace_cli.config import UNICODE_GLYPHS
+        from code2workspace_cli.model_config import ModelProfileEntry
 
         entry = ModelProfileEntry(
             profile={"max_input_tokens": 4096},
@@ -857,8 +857,8 @@ class TestModelDetailFooter:
 
     def test_format_footer_empty_profile(self) -> None:
         """Empty profile dict shows 'Model profile not available'."""
-        from deepagents_cli.config import UNICODE_GLYPHS
-        from deepagents_cli.model_config import ModelProfileEntry
+        from code2workspace_cli.config import UNICODE_GLYPHS
+        from code2workspace_cli.model_config import ModelProfileEntry
 
         entry = ModelProfileEntry(
             profile={},
@@ -869,8 +869,8 @@ class TestModelDetailFooter:
 
     def test_format_footer_override_on_non_displayed_key(self) -> None:
         """Override on a non-displayed key should not show legend."""
-        from deepagents_cli.config import UNICODE_GLYPHS
-        from deepagents_cli.model_config import ModelProfileEntry
+        from code2workspace_cli.config import UNICODE_GLYPHS
+        from code2workspace_cli.model_config import ModelProfileEntry
 
         entry = ModelProfileEntry(
             profile={"max_input_tokens": 4096, "supports_thinking": True},
@@ -881,8 +881,8 @@ class TestModelDetailFooter:
 
     def test_format_footer_non_numeric_tokens(self) -> None:
         """Non-numeric token values render gracefully instead of crashing."""
-        from deepagents_cli.config import UNICODE_GLYPHS
-        from deepagents_cli.model_config import ModelProfileEntry
+        from code2workspace_cli.config import UNICODE_GLYPHS
+        from code2workspace_cli.model_config import ModelProfileEntry
 
         entry = ModelProfileEntry(
             profile={"max_input_tokens": "unlimited", "max_output_tokens": 64000},

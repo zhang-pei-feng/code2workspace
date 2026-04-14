@@ -2,7 +2,7 @@
 
 import pytest
 
-from deepagents_cli.unicode_security import (
+from code2workspace_cli.unicode_security import (
     CONFUSABLES,
     UnicodeIssue,
     UrlSafetyResult,

@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from deepagents_cli.command_registry import SLASH_COMMANDS
-from deepagents_cli.widgets.autocomplete import (
+from code2workspace_cli.command_registry import SLASH_COMMANDS
+from code2workspace_cli.widgets.autocomplete import (
     MAX_SUGGESTIONS,
     CompletionController,
     FuzzyFileController,

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from deepagents_cli._version import __version__
+from code2workspace_cli._version import __version__
 
 
 def test_version_matches_pyproject() -> None:
@@ -33,26 +33,26 @@ def test_version_matches_pyproject() -> None:
 def test_cli_version_flag() -> None:
     """Verify that `--version` flag outputs the correct version."""
     result = subprocess.run(
-        [sys.executable, "-m", "deepagents_cli.main", "--version"],
+        [sys.executable, "-m", "code2workspace_cli.main", "--version"],
         capture_output=True,
         text=True,
         check=False,
     )
     # argparse exits with 0 for --version
     assert result.returncode == 0
-    assert f"deepagents-cli {__version__}" in result.stdout
-    sdk_version = pkg_version("deepagents")
-    assert f"deepagents (SDK) {sdk_version}" in result.stdout
+    assert f"code2workspace-cli {__version__}" in result.stdout
+    sdk_version = pkg_version("code2workspace")
+    assert f"code2workspace (SDK) {sdk_version}" in result.stdout
 
 
 async def test_version_slash_command_message_format() -> None:
     """Verify the `/version` slash command outputs both CLI and SDK versions."""
-    from deepagents_cli.app import DeepAgentsApp
-    from deepagents_cli.widgets.messages import AppMessage
+    from code2workspace_cli.app import Code2WorkspaceApp
+    from code2workspace_cli.widgets.messages import AppMessage
 
-    sdk_version = pkg_version("deepagents")
+    sdk_version = pkg_version("code2workspace")
 
-    app = DeepAgentsApp()
+    app = Code2WorkspaceApp()
     async with app.run_test() as pilot:
         await pilot.pause()
         await app._handle_command("/version")
@@ -60,23 +60,23 @@ async def test_version_slash_command_message_format() -> None:
 
         app_msgs = app.query(AppMessage)
         content = str(app_msgs[-1]._content)
-        assert f"deepagents-cli version: {__version__}" in content
-        assert f"deepagents (SDK) version: {sdk_version}" in content
+        assert f"code2workspace-cli version: {__version__}" in content
+        assert f"code2workspace (SDK) version: {sdk_version}" in content
 
 
 async def test_version_slash_command_sdk_unavailable() -> None:
     """Verify `/version` shows 'unknown' when SDK package metadata is missing."""
     from importlib.metadata import PackageNotFoundError
 
-    from deepagents_cli.app import DeepAgentsApp
-    from deepagents_cli.widgets.messages import AppMessage
+    from code2workspace_cli.app import Code2WorkspaceApp
+    from code2workspace_cli.widgets.messages import AppMessage
 
     def patched_version(name: str) -> str:
-        if name == "deepagents":
+        if name == "code2workspace":
             raise PackageNotFoundError(name)
         return pkg_version(name)
 
-    app = DeepAgentsApp()
+    app = Code2WorkspaceApp()
     async with app.run_test() as pilot:
         await pilot.pause()
         with patch("importlib.metadata.version", side_effect=patched_version):
@@ -85,32 +85,32 @@ async def test_version_slash_command_sdk_unavailable() -> None:
 
         app_msgs = app.query(AppMessage)
         content = str(app_msgs[-1]._content)
-        assert f"deepagents-cli version: {__version__}" in content
-        assert "deepagents (SDK) version: unknown" in content
+        assert f"code2workspace-cli version: {__version__}" in content
+        assert "code2workspace (SDK) version: unknown" in content
 
 
 async def test_version_slash_command_cli_version_unavailable() -> None:
     """Verify `/version` shows 'unknown' when CLI _version module is missing."""
-    from deepagents_cli.app import DeepAgentsApp
-    from deepagents_cli.widgets.messages import AppMessage
+    from code2workspace_cli.app import Code2WorkspaceApp
+    from code2workspace_cli.widgets.messages import AppMessage
 
-    app = DeepAgentsApp()
+    app = Code2WorkspaceApp()
     async with app.run_test() as pilot:
         await pilot.pause()
         # Setting a module to None in sys.modules causes ImportError on import
-        with patch.dict(sys.modules, {"deepagents_cli._version": None}):
+        with patch.dict(sys.modules, {"code2workspace_cli._version": None}):
             await app._handle_command("/version")
         await pilot.pause()
 
         app_msgs = app.query(AppMessage)
         content = str(app_msgs[-1]._content)
-        assert "deepagents-cli version: unknown" in content
+        assert "code2workspace-cli version: unknown" in content
 
 
 def test_help_mentions_version_flag() -> None:
     """Verify that the CLI help text mentions `--version` and SDK."""
     result = subprocess.run(
-        [sys.executable, "-m", "deepagents_cli.main", "help"],
+        [sys.executable, "-m", "code2workspace_cli.main", "help"],
         capture_output=True,
         text=True,
         check=False,
@@ -125,7 +125,7 @@ def test_help_mentions_version_flag() -> None:
 def test_cli_help_flag() -> None:
     """Verify that `--help` flag shows help and exits with code 0."""
     result = subprocess.run(
-        [sys.executable, "-m", "deepagents_cli.main", "--help"],
+        [sys.executable, "-m", "code2workspace_cli.main", "--help"],
         capture_output=True,
         text=True,
         check=False,
@@ -140,7 +140,7 @@ def test_cli_help_flag() -> None:
 def test_cli_help_flag_short() -> None:
     """Verify that `-h` flag shows help and exits with code 0."""
     result = subprocess.run(
-        [sys.executable, "-m", "deepagents_cli.main", "-h"],
+        [sys.executable, "-m", "code2workspace_cli.main", "-h"],
         capture_output=True,
         text=True,
         check=False,
@@ -155,7 +155,7 @@ def test_cli_help_flag_short() -> None:
 def test_help_excludes_interactive_features() -> None:
     """Verify that `--help` does not contain Interactive Features section."""
     result = subprocess.run(
-        [sys.executable, "-m", "deepagents_cli.main", "--help"],
+        [sys.executable, "-m", "code2workspace_cli.main", "--help"],
         capture_output=True,
         text=True,
         check=False,

@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from rich.console import Console
 
-from deepagents_cli.main import parse_args
-from deepagents_cli.ui import (
+from code2workspace_cli.main import parse_args
+from code2workspace_cli.ui import (
     show_agents_help,
     show_help,
     show_list_help,
@@ -40,39 +40,39 @@ class TestHelpScreenExamples:
     def _render(fn: object) -> str:
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=200)
-        with patch("deepagents_cli.ui.console", test_console):
+        with patch("code2workspace_cli.ui.console", test_console):
             fn()  # type: ignore[operator]
         return buf.getvalue()
 
     def test_list_help_has_examples(self) -> None:
         text = self._render(show_list_help)
         assert "Examples:" in text
-        assert "deepagents list" in text
-        assert "deepagents list --json" in text
+        assert "code2workspace list" in text
+        assert "code2workspace list --json" in text
 
     def test_skills_list_help_has_examples(self) -> None:
         text = self._render(show_skills_list_help)
         assert "Examples:" in text
-        assert "deepagents skills list --project" in text
-        assert "deepagents skills list --json" in text
+        assert "code2workspace skills list --project" in text
+        assert "code2workspace skills list --json" in text
 
     def test_skills_info_help_has_examples(self) -> None:
         text = self._render(show_skills_info_help)
         assert "Examples:" in text
-        assert "deepagents skills info web-research" in text
-        assert "deepagents skills info my-skill --project" in text
+        assert "code2workspace skills info web-research" in text
+        assert "code2workspace skills info my-skill --project" in text
 
     def test_agents_help_has_examples(self) -> None:
         text = self._render(show_agents_help)
         assert "Examples:" in text
-        assert "deepagents agents list" in text
-        assert "deepagents agents reset --agent coder" in text
+        assert "code2workspace agents list" in text
+        assert "code2workspace agents reset --agent coder" in text
 
     def test_update_help_has_examples(self) -> None:
         text = self._render(show_update_help)
         assert "Examples:" in text
-        assert "deepagents update" in text
-        assert "deepagents update --json" in text
+        assert "code2workspace update" in text
+        assert "code2workspace update --json" in text
 
     def test_reset_help_has_dry_run(self) -> None:
         text = self._render(show_reset_help)
@@ -93,11 +93,11 @@ class TestHelpScreenExamples:
 
 
 class TestResetDryRun:
-    """Tests for deepagents reset --dry-run."""
+    """Tests for code2workspace reset --dry-run."""
 
     def test_dry_run_text_no_mutation(self, tmp_path: Path) -> None:
         """--dry-run should not remove the agent directory."""
-        from deepagents_cli.agent import reset_agent
+        from code2workspace_cli.agent import reset_agent
 
         agent_dir = tmp_path / "coder"
         agent_dir.mkdir()
@@ -106,14 +106,14 @@ class TestResetDryRun:
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=200)
         with (
-            patch("deepagents_cli.agent.settings") as mock_settings,
-            patch("deepagents_cli.agent.console", test_console),
+            patch("code2workspace_cli.agent.settings") as mock_settings,
+            patch("code2workspace_cli.agent.console", test_console),
             patch(
-                "deepagents_cli.agent.get_default_coding_instructions",
+                "code2workspace_cli.agent.get_default_coding_instructions",
                 return_value="default",
             ),
         ):
-            mock_settings.user_deepagents_dir = tmp_path
+            mock_settings.user_code2workspace_dir = tmp_path
             reset_agent("coder", dry_run=True)
 
         assert agent_dir.exists()
@@ -124,7 +124,7 @@ class TestResetDryRun:
 
     def test_dry_run_json(self, tmp_path: Path) -> None:
         """--dry-run --json should include dry_run: true."""
-        from deepagents_cli.agent import reset_agent
+        from code2workspace_cli.agent import reset_agent
 
         agent_dir = tmp_path / "coder"
         agent_dir.mkdir()
@@ -132,15 +132,15 @@ class TestResetDryRun:
 
         stdout_buf = io.StringIO()
         with (
-            patch("deepagents_cli.agent.settings") as mock_settings,
-            patch("deepagents_cli.agent.console"),
+            patch("code2workspace_cli.agent.settings") as mock_settings,
+            patch("code2workspace_cli.agent.console"),
             patch(
-                "deepagents_cli.agent.get_default_coding_instructions",
+                "code2workspace_cli.agent.get_default_coding_instructions",
                 return_value="default",
             ),
             patch("sys.stdout", stdout_buf),
         ):
-            mock_settings.user_deepagents_dir = tmp_path
+            mock_settings.user_code2workspace_dir = tmp_path
             reset_agent("coder", dry_run=True, output_format="json")
 
         result = json.loads(stdout_buf.getvalue())
@@ -154,11 +154,11 @@ class TestResetDryRun:
 
 
 class TestThreadsDeleteDryRun:
-    """Tests for deepagents threads delete --dry-run."""
+    """Tests for code2workspace threads delete --dry-run."""
 
     def test_dry_run_text_existing(self) -> None:
         """--dry-run should report what would happen for existing thread."""
-        from deepagents_cli import sessions
+        from code2workspace_cli import sessions
 
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=200)
@@ -169,7 +169,7 @@ class TestThreadsDeleteDryRun:
                 new_callable=AsyncMock,
                 return_value=True,
             ),
-            patch("deepagents_cli.config.console", test_console),
+            patch("code2workspace_cli.config.console", test_console),
         ):
             asyncio.run(sessions.delete_thread_command("abc123", dry_run=True))
 
@@ -179,7 +179,7 @@ class TestThreadsDeleteDryRun:
 
     def test_dry_run_text_missing(self) -> None:
         """--dry-run should report not found for missing thread."""
-        from deepagents_cli import sessions
+        from code2workspace_cli import sessions
 
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=200)
@@ -190,7 +190,7 @@ class TestThreadsDeleteDryRun:
                 new_callable=AsyncMock,
                 return_value=False,
             ),
-            patch("deepagents_cli.config.console", test_console),
+            patch("code2workspace_cli.config.console", test_console),
         ):
             asyncio.run(sessions.delete_thread_command("missing", dry_run=True))
 
@@ -200,7 +200,7 @@ class TestThreadsDeleteDryRun:
 
     def test_dry_run_json(self) -> None:
         """--dry-run --json should include dry_run: true."""
-        from deepagents_cli import sessions
+        from code2workspace_cli import sessions
 
         stdout_buf = io.StringIO()
         with (
@@ -231,23 +231,23 @@ class TestAgentsSubcommand:
     """Tests for the agents resource subcommand."""
 
     def test_agents_list_parses(self) -> None:
-        """Running `deepagents agents list` should parse correctly."""
-        with patch.object(sys, "argv", ["deepagents", "agents", "list"]):
+        """Running `code2workspace agents list` should parse correctly."""
+        with patch.object(sys, "argv", ["code2workspace", "agents", "list"]):
             args = parse_args()
         assert args.command == "agents"
         assert args.agents_command == "list"
 
     def test_agents_ls_alias(self) -> None:
-        """Running `deepagents agents ls` should parse as list."""
-        with patch.object(sys, "argv", ["deepagents", "agents", "ls"]):
+        """Running `code2workspace agents ls` should parse as list."""
+        with patch.object(sys, "argv", ["code2workspace", "agents", "ls"]):
             args = parse_args()
         assert args.command == "agents"
         assert args.agents_command == "ls"
 
     def test_agents_reset_parses(self) -> None:
-        """Running `deepagents agents reset --agent coder` should parse."""
+        """Running `code2workspace agents reset --agent coder` should parse."""
         with patch.object(
-            sys, "argv", ["deepagents", "agents", "reset", "--agent", "coder"]
+            sys, "argv", ["code2workspace", "agents", "reset", "--agent", "coder"]
         ):
             args = parse_args()
         assert args.command == "agents"
@@ -255,12 +255,12 @@ class TestAgentsSubcommand:
         assert args.agent == "coder"
 
     def test_agents_reset_with_target(self) -> None:
-        """Running `deepagents agents reset --agent coder --target researcher`."""
+        """Running `code2workspace agents reset --agent coder --target researcher`."""
         with patch.object(
             sys,
             "argv",
             [
-                "deepagents",
+                "code2workspace",
                 "agents",
                 "reset",
                 "--agent",
@@ -273,22 +273,22 @@ class TestAgentsSubcommand:
         assert args.source_agent == "researcher"
 
     def test_agents_reset_dry_run(self) -> None:
-        """Running `deepagents agents reset --agent coder --dry-run`."""
+        """Running `code2workspace agents reset --agent coder --dry-run`."""
         with patch.object(
             sys,
             "argv",
-            ["deepagents", "agents", "reset", "--agent", "coder", "--dry-run"],
+            ["code2workspace", "agents", "reset", "--agent", "coder", "--dry-run"],
         ):
             args = parse_args()
         assert args.dry_run is True
 
     def test_agents_help_exits_clean(self) -> None:
-        """Running `deepagents agents -h` should show help and exit 0."""
+        """Running `code2workspace agents -h` should show help and exit 0."""
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=120)
         with (
-            patch.object(sys, "argv", ["deepagents", "agents", "-h"]),
-            patch("deepagents_cli.ui.console", test_console),
+            patch.object(sys, "argv", ["code2workspace", "agents", "-h"]),
+            patch("code2workspace_cli.ui.console", test_console),
             pytest.raises(SystemExit) as exc_info,
         ):
             parse_args()
@@ -296,9 +296,9 @@ class TestAgentsSubcommand:
         assert "agents" in buf.getvalue().lower()
 
     def test_top_level_list_rejected(self) -> None:
-        """Top-level `deepagents list` should error — use `agents list` instead."""
+        """Top-level `code2workspace list` should error — use `agents list` instead."""
         with (
-            patch.object(sys, "argv", ["deepagents", "list"]),
+            patch.object(sys, "argv", ["code2workspace", "list"]),
             pytest.raises(SystemExit) as exc_info,
         ):
             parse_args()
@@ -314,18 +314,18 @@ class TestUpdateSubcommand:
     """Tests for the update subcommand."""
 
     def test_update_parses(self) -> None:
-        """Running `deepagents update` should parse as command='update'."""
-        with patch.object(sys, "argv", ["deepagents", "update"]):
+        """Running `code2workspace update` should parse as command='update'."""
+        with patch.object(sys, "argv", ["code2workspace", "update"]):
             args = parse_args()
         assert args.command == "update"
 
     def test_update_help_exits_clean(self) -> None:
-        """Running `deepagents update -h` should show help and exit 0."""
+        """Running `code2workspace update -h` should show help and exit 0."""
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=120)
         with (
-            patch.object(sys, "argv", ["deepagents", "update", "-h"]),
-            patch("deepagents_cli.ui.console", test_console),
+            patch.object(sys, "argv", ["code2workspace", "update", "-h"]),
+            patch("code2workspace_cli.ui.console", test_console),
             pytest.raises(SystemExit) as exc_info,
         ):
             parse_args()
@@ -343,7 +343,7 @@ class TestSkillsCreateIdempotency:
 
     def test_already_exists_text_no_error(self, tmp_path: Path) -> None:
         """Re-creating an existing skill should print informational msg, not error."""
-        from deepagents_cli.skills.commands import _create
+        from code2workspace_cli.skills.commands import _create
 
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
@@ -355,8 +355,8 @@ class TestSkillsCreateIdempotency:
         mock_settings.project_root = None
         mock_settings.ensure_user_skills_dir.return_value = tmp_path
         with (
-            patch("deepagents_cli.config.Settings") as settings_cls,
-            patch("deepagents_cli.config.console", test_console),
+            patch("code2workspace_cli.config.Settings") as settings_cls,
+            patch("code2workspace_cli.config.console", test_console),
         ):
             settings_cls.from_environment.return_value = mock_settings
             _create("my-skill", "agent")
@@ -367,7 +367,7 @@ class TestSkillsCreateIdempotency:
 
     def test_already_exists_json(self, tmp_path: Path) -> None:
         """Re-creating an existing skill in JSON mode returns already_existed."""
-        from deepagents_cli.skills.commands import _create
+        from code2workspace_cli.skills.commands import _create
 
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
@@ -378,8 +378,8 @@ class TestSkillsCreateIdempotency:
         mock_settings.project_root = None
         mock_settings.ensure_user_skills_dir.return_value = tmp_path
         with (
-            patch("deepagents_cli.config.Settings") as settings_cls,
-            patch("deepagents_cli.config.console"),
+            patch("code2workspace_cli.config.Settings") as settings_cls,
+            patch("code2workspace_cli.config.console"),
             patch("sys.stdout", stdout_buf),
         ):
             settings_cls.from_environment.return_value = mock_settings
@@ -394,7 +394,7 @@ class TestThreadsDeleteIdempotency:
 
     def test_not_found_not_red(self) -> None:
         """Not-found message should not contain Error prefix."""
-        from deepagents_cli import sessions
+        from code2workspace_cli import sessions
 
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=200)
@@ -405,7 +405,7 @@ class TestThreadsDeleteIdempotency:
                 new_callable=AsyncMock,
                 return_value=False,
             ),
-            patch("deepagents_cli.config.console", test_console),
+            patch("code2workspace_cli.config.console", test_console),
         ):
             asyncio.run(sessions.delete_thread_command("missing"))
 
@@ -424,19 +424,19 @@ class TestStdinFlag:
 
     def test_stdin_flag_parses(self) -> None:
         """Verify --stdin sets stdin=True."""
-        with patch.object(sys, "argv", ["deepagents", "--stdin"]):
+        with patch.object(sys, "argv", ["code2workspace", "--stdin"]):
             args = parse_args()
         assert args.stdin is True
 
     def test_stdin_default_false(self) -> None:
         """Verify stdin defaults to False."""
-        with patch.object(sys, "argv", ["deepagents"]):
+        with patch.object(sys, "argv", ["code2workspace"]):
             args = parse_args()
         assert args.stdin is False
 
     def test_stdin_with_tty_errors(self) -> None:
         """--stdin with a TTY should error."""
-        from deepagents_cli.main import apply_stdin_pipe
+        from code2workspace_cli.main import apply_stdin_pipe
 
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
@@ -446,7 +446,7 @@ class TestStdinFlag:
 
         with (
             patch.object(sys, "stdin", mock_stdin),
-            patch("deepagents_cli.config.console"),
+            patch("code2workspace_cli.config.console"),
             pytest.raises(SystemExit) as exc_info,
         ):
             apply_stdin_pipe(args)
@@ -455,7 +455,7 @@ class TestStdinFlag:
 
     def test_stdin_omitted_preserves_auto_detect(self) -> None:
         """Omitting --stdin with TTY should return without error."""
-        from deepagents_cli.main import apply_stdin_pipe
+        from code2workspace_cli.main import apply_stdin_pipe
 
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
@@ -482,17 +482,17 @@ class TestErrorMessageHints:
 
     def test_no_mcp_conflict_has_hint(self) -> None:
         """--no-mcp + --mcp-config error should include usage examples."""
-        from deepagents_cli.main import cli_main
+        from code2workspace_cli.main import cli_main
 
         stderr_buf = io.StringIO()
         with (
             patch.object(
                 sys,
                 "argv",
-                ["deepagents", "--no-mcp", "--mcp-config", "/some/path"],
+                ["code2workspace", "--no-mcp", "--mcp-config", "/some/path"],
             ),
-            patch("deepagents_cli.main.check_cli_dependencies"),
-            patch("deepagents_cli.main.apply_stdin_pipe"),
+            patch("code2workspace_cli.main.check_cli_dependencies"),
+            patch("code2workspace_cli.main.apply_stdin_pipe"),
             patch("sys.stderr", stderr_buf),
             pytest.raises(SystemExit) as exc_info,
         ):
@@ -504,37 +504,37 @@ class TestErrorMessageHints:
 
     def test_quiet_without_n_has_hint(self) -> None:
         """--quiet without -n error should include usage example."""
-        from deepagents_cli.main import cli_main
+        from code2workspace_cli.main import cli_main
 
         stderr_buf = io.StringIO()
         with (
-            patch.object(sys, "argv", ["deepagents", "--quiet"]),
-            patch("deepagents_cli.main.check_cli_dependencies"),
-            patch("deepagents_cli.main.apply_stdin_pipe"),
+            patch.object(sys, "argv", ["code2workspace", "--quiet"]),
+            patch("code2workspace_cli.main.check_cli_dependencies"),
+            patch("code2workspace_cli.main.apply_stdin_pipe"),
             patch("sys.stderr", stderr_buf),
             pytest.raises(SystemExit),
         ):
             cli_main()
 
         output = stderr_buf.getvalue()
-        assert "deepagents -n" in output
+        assert "code2workspace -n" in output
 
     def test_reset_source_not_found_has_hint(self, tmp_path: Path) -> None:
         """Reset with missing source agent should suggest agents list."""
-        from deepagents_cli.agent import reset_agent
+        from code2workspace_cli.agent import reset_agent
 
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=200)
         with (  # separate to satisfy PT012
-            patch("deepagents_cli.agent.settings") as mock_settings,
-            patch("deepagents_cli.agent.console", test_console),
+            patch("code2workspace_cli.agent.settings") as mock_settings,
+            patch("code2workspace_cli.agent.console", test_console),
         ):
-            mock_settings.user_deepagents_dir = tmp_path
+            mock_settings.user_code2workspace_dir = tmp_path
             with pytest.raises(SystemExit):
                 reset_agent("coder", "nonexistent")
 
         output = buf.getvalue()
-        assert "deepagents agents list" in output
+        assert "code2workspace agents list" in output
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +549,7 @@ class TestHelpScreenDriftExtended:
         """show_help should mention the agents subcommand."""
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=200)
-        with patch("deepagents_cli.ui.console", test_console):
+        with patch("code2workspace_cli.ui.console", test_console):
             show_help()
         assert "agents" in buf.getvalue()
 
@@ -557,7 +557,7 @@ class TestHelpScreenDriftExtended:
         """show_help should mention the update subcommand."""
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=200)
-        with patch("deepagents_cli.ui.console", test_console):
+        with patch("code2workspace_cli.ui.console", test_console):
             show_help()
         assert "update" in buf.getvalue()
 
@@ -565,7 +565,7 @@ class TestHelpScreenDriftExtended:
         """show_help should mention --stdin."""
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=200)
-        with patch("deepagents_cli.ui.console", test_console):
+        with patch("code2workspace_cli.ui.console", test_console):
             show_help()
         assert "--stdin" in buf.getvalue()
 
@@ -573,7 +573,7 @@ class TestHelpScreenDriftExtended:
         """Every top-level --flag in argparse must appear in show_help()."""
         stderr_buf = io.StringIO()
         with (
-            patch.object(sys, "argv", ["deepagents", "--_x_"]),
+            patch.object(sys, "argv", ["code2workspace", "--_x_"]),
             patch("sys.stderr", stderr_buf),
             pytest.raises(SystemExit),
         ):
@@ -582,7 +582,7 @@ class TestHelpScreenDriftExtended:
 
         help_buf = io.StringIO()
         test_console = Console(file=help_buf, highlight=False, width=200)
-        with patch("deepagents_cli.ui.console", test_console):
+        with patch("code2workspace_cli.ui.console", test_console):
             show_help()
         help_text = help_buf.getvalue()
 

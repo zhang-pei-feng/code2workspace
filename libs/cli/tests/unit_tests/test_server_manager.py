@@ -11,10 +11,10 @@ if TYPE_CHECKING:
 
 import pytest
 
-from deepagents_cli._env_vars import SERVER_ENV_PREFIX
-from deepagents_cli._server_config import ServerConfig
-from deepagents_cli.project_utils import ProjectContext
-from deepagents_cli.server_manager import (
+from code2workspace_cli._env_vars import SERVER_ENV_PREFIX
+from code2workspace_cli._server_config import ServerConfig
+from code2workspace_cli.project_utils import ProjectContext
+from code2workspace_cli.server_manager import (
     _apply_server_config,
     _write_pyproject,
     server_session,
@@ -152,17 +152,17 @@ class TestStartServerAndGetAgent:
         with (
             patch.dict(os.environ, {}, clear=False),
             patch(
-                "deepagents_cli.server_manager.tempfile.mkdtemp",
+                "code2workspace_cli.server_manager.tempfile.mkdtemp",
                 return_value=str(work_dir),
             ),
-            patch("deepagents_cli.server_manager.shutil.copy2"),
-            patch("deepagents_cli.server_manager._write_checkpointer"),
-            patch("deepagents_cli.server_manager._write_pyproject"),
+            patch("code2workspace_cli.server_manager.shutil.copy2"),
+            patch("code2workspace_cli.server_manager._write_checkpointer"),
+            patch("code2workspace_cli.server_manager._write_pyproject"),
             patch(
-                "deepagents_cli.server.generate_langgraph_json"
+                "code2workspace_cli.server.generate_langgraph_json"
             ) as mock_generate_langgraph_json,
-            patch("deepagents_cli.server.ServerProcess", return_value=mock_server),
-            patch("deepagents_cli.remote_client.RemoteAgent", return_value=mock_agent),
+            patch("code2workspace_cli.server.ServerProcess", return_value=mock_server),
+            patch("code2workspace_cli.remote_client.RemoteAgent", return_value=mock_agent),
         ):
             agent, server, manager = await start_server_and_get_agent(
                 assistant_id="agent",
@@ -183,7 +183,7 @@ class TestStartServerAndGetAgent:
         """Relative refs must appear verbatim in the generated config."""
         import json
 
-        from deepagents_cli.server import generate_langgraph_json
+        from code2workspace_cli.server import generate_langgraph_json
 
         generate_langgraph_json(
             tmp_path,
@@ -201,12 +201,12 @@ class TestWritePyproject:
     def test_runtime_pyproject_relies_on_cli_dependency_only(
         self, tmp_path: Path
     ) -> None:
-        """The runtime should inherit `langgraph-cli` from `deepagents-cli`."""
+        """The runtime should inherit `langgraph-cli` from `code2workspace-cli`."""
         _write_pyproject(tmp_path)
 
         content = (tmp_path / "pyproject.toml").read_text()
 
-        assert '"deepagents-cli @ file://' in content
+        assert '"code2workspace-cli @ file://' in content
         assert "langgraph-cli[inmem]" not in content
 
 
@@ -220,7 +220,7 @@ class TestServerSession:
         mock_server.stop = MagicMock()
 
         with patch(
-            "deepagents_cli.server_manager.start_server_and_get_agent",
+            "code2workspace_cli.server_manager.start_server_and_get_agent",
             new_callable=AsyncMock,
             return_value=(mock_agent, mock_server, None),
         ):
@@ -234,7 +234,7 @@ class TestServerSession:
         mock_server.stop = MagicMock()
 
         with patch(
-            "deepagents_cli.server_manager.start_server_and_get_agent",
+            "code2workspace_cli.server_manager.start_server_and_get_agent",
             new_callable=AsyncMock,
             return_value=(MagicMock(), mock_server, None),
         ):
@@ -250,7 +250,7 @@ class TestServerSession:
 
         with (  # noqa: PT012
             patch(
-                "deepagents_cli.server_manager.start_server_and_get_agent",
+                "code2workspace_cli.server_manager.start_server_and_get_agent",
                 new_callable=AsyncMock,
                 return_value=(MagicMock(), mock_server, None),
             ),
@@ -269,7 +269,7 @@ class TestServerSession:
         mock_mcp = AsyncMock()
 
         with patch(
-            "deepagents_cli.server_manager.start_server_and_get_agent",
+            "code2workspace_cli.server_manager.start_server_and_get_agent",
             new_callable=AsyncMock,
             return_value=(MagicMock(), mock_server, mock_mcp),
         ):

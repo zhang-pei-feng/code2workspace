@@ -1,4 +1,4 @@
-# Deep Agents CLI Tests
+# Code2Workspace CLI Tests
 
 ## API Keys
 

@@ -6,7 +6,7 @@ from rich.style import Style
 from textual.content import Content
 from textual.style import Style as TStyle
 
-from deepagents_cli.widgets.welcome import (
+from code2workspace_cli.widgets.welcome import (
     _TIPS,
     WelcomeBanner,
     build_connecting_footer,
@@ -52,14 +52,14 @@ def _make_banner(
     Returns:
         A `WelcomeBanner` instance ready for testing.
     """
-    import deepagents_cli.config as _cfg
+    import code2workspace_cli.config as _cfg
 
     env = {}
     if project_name:
         env["LANGSMITH_API_KEY"] = "fake-key"
         env["LANGSMITH_TRACING"] = "true"
         env["LANGSMITH_PROJECT"] = project_name
-        env["DEEPAGENTS_CLI_LANGSMITH_PROJECT"] = project_name
+        env["CODE2WORKSPACE_CLI_LANGSMITH_PROJECT"] = project_name
 
     # Temporarily clear the cached settings singleton so _get_settings()
     # re-creates it from the patched env vars inside the context manager.
@@ -106,7 +106,7 @@ class TestBuildBannerThreadLink:
         thread_id_end = thread_id_start + len("99999")
         links = _extract_links(banner, thread_id_start, thread_id_end)
         assert links, "Expected a link style on the thread ID text"
-        assert links[0] == f"{project_url}/t/99999?utm_source=deepagents-cli"
+        assert links[0] == f"{project_url}/t/99999?utm_source=code2workspace-cli"
 
     def test_no_thread_line_when_thread_id_is_none(self) -> None:
         """Banner should not contain a thread line when `thread_id` is `None`."""
@@ -149,7 +149,7 @@ class TestBuildBannerThreadLink:
         thread_id_end = thread_id_start + len("77777")
         links = _extract_links(banner, thread_id_start, thread_id_end)
         assert links
-        assert links[0] == f"{project_url}/t/77777?utm_source=deepagents-cli"
+        assert links[0] == f"{project_url}/t/77777?utm_source=code2workspace-cli"
 
 
 class TestUpdateThreadId:
@@ -185,7 +185,7 @@ class TestUpdateThreadId:
         thread_end = thread_start + len("new_id")
         links = _extract_links(banner, thread_start, thread_end)
         assert links
-        assert links[0] == f"{project_url}/t/new_id?utm_source=deepagents-cli"
+        assert links[0] == f"{project_url}/t/new_id?utm_source=code2workspace-cli"
 
 
 class TestBuildBannerEditableInstall:
@@ -196,28 +196,28 @@ class TestBuildBannerEditableInstall:
         with (
             patch.dict("os.environ", {}, clear=True),
             patch(
-                "deepagents_cli.widgets.welcome._is_editable_install",
+                "code2workspace_cli.widgets.welcome._is_editable_install",
                 return_value=True,
             ),
             patch(
-                "deepagents_cli.widgets.welcome._get_editable_install_path",
-                return_value="~/dev/deepagents",
+                "code2workspace_cli.widgets.welcome._get_editable_install_path",
+                return_value="~/dev/code2workspace",
             ),
         ):
             widget = WelcomeBanner()
             banner = widget._build_banner()
-        assert "Installed from: ~/dev/deepagents" in banner.plain
+        assert "Installed from: ~/dev/code2workspace" in banner.plain
 
     def test_build_banner_without_editable_install(self) -> None:
         """Banner should not include install path for non-editable installs."""
         with (
             patch.dict("os.environ", {}, clear=True),
             patch(
-                "deepagents_cli.widgets.welcome._is_editable_install",
+                "code2workspace_cli.widgets.welcome._is_editable_install",
                 return_value=False,
             ),
             patch(
-                "deepagents_cli.widgets.welcome._get_editable_install_path",
+                "code2workspace_cli.widgets.welcome._get_editable_install_path",
                 return_value=None,
             ),
         ):
@@ -244,7 +244,7 @@ class TestAutoLinksDisabled:
         assert WelcomeBanner.auto_links is False
 
 
-_WEBBROWSER_OPEN = "deepagents_cli.widgets._links.webbrowser.open"
+_WEBBROWSER_OPEN = "code2workspace_cli.widgets._links.webbrowser.open"
 
 
 class TestOnClickOpensLink:

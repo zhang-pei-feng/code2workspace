@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
-from deepagents_cli import sessions
-from deepagents_cli.app import TextualSessionState
-from deepagents_cli.sessions import get_thread_limit
+from code2workspace_cli import sessions
+from code2workspace_cli.app import TextualSessionState
+from code2workspace_cli.sessions import get_thread_limit
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -916,7 +916,7 @@ class TestPrewarmThreadMessageCounts:
 
     async def test_prewarm_respects_visible_thread_columns(self) -> None:
         """Prewarm should only fetch checkpoint fields for visible columns."""
-        from deepagents_cli.model_config import ThreadConfig
+        from code2workspace_cli.model_config import ThreadConfig
 
         threads: list[sessions.ThreadInfo] = [
             {
@@ -934,7 +934,7 @@ class TestPrewarmThreadMessageCounts:
                 return_value=threads,
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_config",
+                "code2workspace_cli.model_config.load_thread_config",
                 return_value=ThreadConfig(
                     columns={
                         "thread_id": False,
@@ -1017,7 +1017,7 @@ class TestPrewarmThreadMessageCounts:
         """Unexpected prewarm failures should be visible at warning level."""
         with (
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("unexpected type mismatch"),
             ),
@@ -1334,20 +1334,20 @@ class TestListThreadsCommandConfigDefaults:
         """sort_by=None falls back to config value."""
         with (
             patch(
-                "deepagents_cli.model_config.load_thread_sort_order",
+                "code2workspace_cli.model_config.load_thread_sort_order",
                 return_value="created_at",
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_relative_time",
+                "code2workspace_cli.model_config.load_thread_relative_time",
                 return_value=False,
             ),
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=[self._THREAD],
             ) as mock_list,
-            patch("deepagents_cli.sessions.format_timestamp", side_effect=str),
-            patch("deepagents_cli.config.console"),
+            patch("code2workspace_cli.sessions.format_timestamp", side_effect=str),
+            patch("code2workspace_cli.config.console"),
         ):
             asyncio.run(sessions.list_threads_command())
             mock_list.assert_called_once()
@@ -1357,20 +1357,20 @@ class TestListThreadsCommandConfigDefaults:
         """Explicit sort_by overrides config."""
         with (
             patch(
-                "deepagents_cli.model_config.load_thread_sort_order",
+                "code2workspace_cli.model_config.load_thread_sort_order",
                 return_value="created_at",
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_relative_time",
+                "code2workspace_cli.model_config.load_thread_relative_time",
                 return_value=False,
             ),
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=[self._THREAD],
             ) as mock_list,
-            patch("deepagents_cli.sessions.format_timestamp", side_effect=str),
-            patch("deepagents_cli.config.console"),
+            patch("code2workspace_cli.sessions.format_timestamp", side_effect=str),
+            patch("code2workspace_cli.config.console"),
         ):
             asyncio.run(sessions.list_threads_command(sort_by="updated"))
             mock_list.assert_called_once()
@@ -1380,24 +1380,24 @@ class TestListThreadsCommandConfigDefaults:
         """relative=None falls back to config value."""
         with (
             patch(
-                "deepagents_cli.model_config.load_thread_sort_order",
+                "code2workspace_cli.model_config.load_thread_sort_order",
                 return_value="updated_at",
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_relative_time",
+                "code2workspace_cli.model_config.load_thread_relative_time",
                 return_value=True,
             ),
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=[self._THREAD],
             ),
             patch(
-                "deepagents_cli.sessions.format_relative_timestamp",
+                "code2workspace_cli.sessions.format_relative_timestamp",
                 side_effect=str,
             ) as mock_rel,
-            patch("deepagents_cli.sessions.format_timestamp") as mock_abs,
-            patch("deepagents_cli.config.console"),
+            patch("code2workspace_cli.sessions.format_timestamp") as mock_abs,
+            patch("code2workspace_cli.config.console"),
         ):
             asyncio.run(sessions.list_threads_command())
             assert mock_rel.call_count > 0
@@ -1407,26 +1407,26 @@ class TestListThreadsCommandConfigDefaults:
         """Explicit relative=False overrides config True."""
         with (
             patch(
-                "deepagents_cli.model_config.load_thread_sort_order",
+                "code2workspace_cli.model_config.load_thread_sort_order",
                 return_value="updated_at",
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_relative_time",
+                "code2workspace_cli.model_config.load_thread_relative_time",
                 return_value=True,
             ),
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=[self._THREAD],
             ),
             patch(
-                "deepagents_cli.sessions.format_relative_timestamp",
+                "code2workspace_cli.sessions.format_relative_timestamp",
             ) as mock_rel,
             patch(
-                "deepagents_cli.sessions.format_timestamp",
+                "code2workspace_cli.sessions.format_timestamp",
                 side_effect=str,
             ) as mock_abs,
-            patch("deepagents_cli.config.console"),
+            patch("code2workspace_cli.config.console"),
         ):
             asyncio.run(sessions.list_threads_command(relative=False))
             assert mock_abs.call_count > 0
@@ -1436,20 +1436,20 @@ class TestListThreadsCommandConfigDefaults:
         """Branch parameter is passed through to list_threads."""
         with (
             patch(
-                "deepagents_cli.model_config.load_thread_sort_order",
+                "code2workspace_cli.model_config.load_thread_sort_order",
                 return_value="updated_at",
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_relative_time",
+                "code2workspace_cli.model_config.load_thread_relative_time",
                 return_value=False,
             ),
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=[self._THREAD],
             ) as mock_list,
-            patch("deepagents_cli.sessions.format_timestamp", side_effect=str),
-            patch("deepagents_cli.config.console"),
+            patch("code2workspace_cli.sessions.format_timestamp", side_effect=str),
+            patch("code2workspace_cli.config.console"),
         ):
             asyncio.run(sessions.list_threads_command(branch="main"))
             mock_list.assert_called_once()
@@ -1459,24 +1459,24 @@ class TestListThreadsCommandConfigDefaults:
         """verbose=True triggers populate_thread_checkpoint_details."""
         with (
             patch(
-                "deepagents_cli.model_config.load_thread_sort_order",
+                "code2workspace_cli.model_config.load_thread_sort_order",
                 return_value="updated_at",
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_relative_time",
+                "code2workspace_cli.model_config.load_thread_relative_time",
                 return_value=False,
             ),
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=[{**self._THREAD, "git_branch": "main"}],
             ),
             patch(
-                "deepagents_cli.sessions.populate_thread_checkpoint_details",
+                "code2workspace_cli.sessions.populate_thread_checkpoint_details",
                 new_callable=AsyncMock,
             ) as mock_populate,
-            patch("deepagents_cli.sessions.format_timestamp", side_effect=str),
-            patch("deepagents_cli.config.console"),
+            patch("code2workspace_cli.sessions.format_timestamp", side_effect=str),
+            patch("code2workspace_cli.config.console"),
         ):
             asyncio.run(sessions.list_threads_command(verbose=True))
             mock_populate.assert_called_once()
@@ -1504,15 +1504,15 @@ class TestListThreadsCommandJson:
         buf = io.StringIO()
         with (
             patch(
-                "deepagents_cli.model_config.load_thread_sort_order",
+                "code2workspace_cli.model_config.load_thread_sort_order",
                 return_value="updated_at",
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_relative_time",
+                "code2workspace_cli.model_config.load_thread_relative_time",
                 return_value=False,
             ),
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=[self._THREAD],
             ),
@@ -1533,15 +1533,15 @@ class TestListThreadsCommandJson:
         buf = io.StringIO()
         with (
             patch(
-                "deepagents_cli.model_config.load_thread_sort_order",
+                "code2workspace_cli.model_config.load_thread_sort_order",
                 return_value="updated_at",
             ),
             patch(
-                "deepagents_cli.model_config.load_thread_relative_time",
+                "code2workspace_cli.model_config.load_thread_relative_time",
                 return_value=False,
             ),
             patch(
-                "deepagents_cli.sessions.list_threads",
+                "code2workspace_cli.sessions.list_threads",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
@@ -1563,7 +1563,7 @@ class TestDeleteThreadCommandJson:
         buf = io.StringIO()
         with (
             patch(
-                "deepagents_cli.sessions.delete_thread",
+                "code2workspace_cli.sessions.delete_thread",
                 new_callable=AsyncMock,
                 return_value=True,
             ),
@@ -1583,7 +1583,7 @@ class TestDeleteThreadCommandJson:
         buf = io.StringIO()
         with (
             patch(
-                "deepagents_cli.sessions.delete_thread",
+                "code2workspace_cli.sessions.delete_thread",
                 new_callable=AsyncMock,
                 return_value=False,
             ),
