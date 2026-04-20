@@ -7,9 +7,9 @@ This is the fastest engineering snapshot for the repository.
 - Last consolidated update: 2026-04-20
 - Repository scope: focused on `libs/code2workspace`, `libs/cli`, the web
   control plane, one-shot repo experiments, and harness work
-- Current verified baseline: non-interactive CLI works, the web control plane
-  is usable, and the `spades` Docker + WDL path has reached a real successful
-  baseline
+- Current verified baseline: non-interactive CLI works, interactive TUI startup
+  reaches a usable prompt again, the web control plane is usable, and the
+  `spades` Docker + WDL path has reached a real successful baseline
 - Additional positive baseline: `v-pipe` now also completes end to end with
   matching direct-container and WDL output evidence
 - Local model setup: OpenAI-compatible gateway on `http://127.0.0.1:8080/v1`
@@ -113,8 +113,9 @@ uv run --project libs/cli code2workspace -n "Reply with OK only." -q --no-mcp
 ```
 
 - Expected result: `OK`
-- The interactive TUI currently is not healthy for normal day-to-day use and
-  should be treated as a separate repair item.
+- The interactive TUI startup path now reaches the normal ready prompt again
+  after the deferred-startup message-routing hotfix in
+  `libs/cli/code2workspace_cli/app.py`.
 - Repo-tracked config lives at `.code2workspace/config.toml`.
 - Repo-tracked `.env` is intentionally committed for now during local
   development.
@@ -126,15 +127,12 @@ Remaining gaps:
 - decide whether tracked `.env` should become `.env.example` before publication
 - revisit `use_responses_api = true` only if the local gateway later supports
   the full tool-calling flow cleanly
-- repair the interactive TUI before treating the terminal product surface as
-  fully usable again
 
 ## Main Blockers
 
 - heavy scientific repositories are expensive and slow to converge on cold
   Docker layers
 - browser session state and CLI/TUI runtime state are still split
-- the interactive TUI currently cannot be relied on for normal use
 - gateway compatibility with the ideal Responses API path is incomplete
 - the inherited runtime is usable, but the repo-specific `code2workspace`
   pipeline still needs more implementation depth
@@ -178,6 +176,13 @@ Remaining gaps:
   asset-matrix artifacts.
 - Sharpened the heavy-repo timeout taxonomy and added stronger positive control
   evidence from `v-pipe`.
+
+### 2026-04-21
+
+- Restored the basic interactive TUI startup path by fixing stale Textual
+  message handler names after the app-class rename to `Code2WorkspaceApp`.
+- Added regression coverage for both direct handler calls and real
+  `post_message(...)` dispatch of deferred startup events.
 
 ## Read Next
 

@@ -188,8 +188,6 @@ Acceptance:
   `use_responses_api = false` for the working baseline
 - the web workspace has its own session store instead of sharing the CLI/TUI
   source of truth
-- the interactive TUI is currently not in a normal usable state and needs a
-  dedicated repair pass
 - the target bioinformatics repositories are too expensive to brute-force early
 - tracked `.env` is useful for local progress but unsuitable for publication
 

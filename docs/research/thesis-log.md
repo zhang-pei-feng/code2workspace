@@ -23,6 +23,26 @@ harness-style iteration.
 
 ## Chronology
 
+### 2026-04-21
+
+- Repaired a concrete interactive terminal regression in the current CLI:
+  - the TUI was no longer advancing past `Connecting to local server...`
+    even though the local LangGraph server had already become healthy
+  - root cause was not server startup failure, but stale Textual message
+    handler names left behind after the app class rename to
+    `Code2WorkspaceApp`
+  - after aligning the handler names with the class name, the TUI again
+    reaches the normal ready prompt
+- This is useful thesis evidence because it distinguishes two different failure
+  classes in agent tooling:
+  - execution-path failures caused by model/tool/runtime behavior
+  - UI orchestration failures caused by event wiring after architectural
+    refactors
+- Regression coverage was added for both direct handler execution and actual
+  `post_message(...)` dispatch of startup events, which improves confidence that
+  future CLI/TUI renames will not silently strand the interface in a
+  pre-session state
+
 ### 2026-04-19
 
 - Searched the current server for previously saved thesis-style reference

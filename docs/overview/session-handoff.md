@@ -29,8 +29,8 @@ tweaks.
   outcomes instead of queue-killing crashes.
 - the web UI is green enough for control-plane use; keep it simple and do not
   overbuild chat UX yet.
-- the interactive TUI should currently be treated as broken for normal use and
-  needs a later repair pass.
+- the interactive TUI startup hotfix is in; it now reaches the ready prompt
+  again, so treat it as usable unless a deeper interaction bug is reproduced.
 
 ## Before Changing Experiment Surfaces
 

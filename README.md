@@ -36,8 +36,8 @@ lives under `docs/`.
 ## Current Progress
 
 - Non-interactive CLI execution is usable with the current local gateway setup.
-- The interactive TUI is currently not in a healthy usable state and needs a
-  dedicated follow-up repair pass.
+- The interactive TUI startup path is working again after the deferred-startup
+  message-routing hotfix.
 - The web control plane is stable enough for session management, run
   inspection, and one-shot task submission.
 - The one-shot runner has already produced real Docker/WDL success evidence on

@@ -26,7 +26,7 @@ code2workspace/
 - Keep changes focused on `libs/code2workspace` and `libs/cli`.
 - Keep new work aligned with the web / oneshot / harness roadmap unless the plan is intentionally changed.
 - Preserve current CLI and non-interactive behavior unless the task explicitly changes it.
-- Do not assume the interactive TUI is currently healthy; the stable terminal path for now is the non-interactive runner, and TUI repair remains future work.
+- Basic interactive TUI startup is working again; when changing terminal behavior, still verify both the interactive TUI path and the non-interactive runner path explicitly.
 - Prefer small, testable changes over broad refactors.
 - Add or update tests when changing behavior.
 - Avoid re-introducing removed modules such as examples, ACP, evals, REPL, or partner packages unless the project plan explicitly requires them.

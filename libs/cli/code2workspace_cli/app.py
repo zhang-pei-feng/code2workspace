@@ -982,7 +982,7 @@ class Code2WorkspaceApp(App):
         # This check must come first because _lc_thread_id and _agent are
         # always set (even for brand-new sessions), so an elif after the
         # thread-history branch would never execute.
-        # When connecting, defer until on_workspace_agents_app_server_ready fires.
+        # When connecting, defer until on_code2workspace_app_server_ready fires.
         # NOTE: _schedule_initial_submission() has a side effect (queues a
         # task via call_after_refresh); short-circuit ensures it only runs
         # when not connecting — the deferred path handles the connecting case.
@@ -1272,7 +1272,7 @@ class Code2WorkspaceApp(App):
             )
         )
 
-    def on_workspace_agents_app_server_ready(self, event: ServerReady) -> None:
+    def on_code2workspace_app_server_ready(self, event: ServerReady) -> None:
         """Handle successful background server startup."""
         self._connecting = False
         self._agent = event.agent
@@ -1322,7 +1322,7 @@ class Code2WorkspaceApp(App):
                 lambda: asyncio.create_task(self._process_next_from_queue())
             )
 
-    def on_workspace_agents_app_server_start_failed(self, event: ServerStartFailed) -> None:
+    def on_code2workspace_app_server_start_failed(self, event: ServerStartFailed) -> None:
         """Handle background server startup failure."""
         self._connecting = False
         self._server_startup_error = f"{type(event.error).__name__}: {event.error}"
@@ -2259,7 +2259,7 @@ class Code2WorkspaceApp(App):
 
         # If agent/shell is running or server is still starting up, enqueue
         # instead of processing. Messages queued during connection are drained
-        # once the server is ready (see on_workspace_agents_app_server_ready).
+        # once the server is ready (see on_code2workspace_app_server_ready).
         if self._agent_running or self._shell_running or self._connecting:
             if mode == "command" and self._can_bypass_queue(value.lower().strip()):
                 await self._process_message(value, mode)

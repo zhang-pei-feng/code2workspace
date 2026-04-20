@@ -121,7 +121,7 @@ class TestInitialPromptOnMount:
 
         app._invoke_skill = capture  # type: ignore[assignment]
 
-        app.on_workspace_agents_app_server_ready(
+        app.on_code2workspace_app_server_ready(
             app.ServerReady(
                 agent=MagicMock(),
                 server_proc=None,
@@ -2997,7 +2997,7 @@ class TestDeferredActions:
             )
             app._connecting = True
 
-            app.on_workspace_agents_app_server_start_failed(
+            app.on_code2workspace_app_server_start_failed(
                 Code2WorkspaceApp.ServerStartFailed(error=RuntimeError("test"))
             )
 
@@ -3010,12 +3010,61 @@ class TestDeferredActions:
             await pilot.pause()
             app._connecting = True
 
-            app.on_workspace_agents_app_server_start_failed(
+            app.on_code2workspace_app_server_start_failed(
                 Code2WorkspaceApp.ServerStartFailed(error=RuntimeError("exit code 3"))
             )
 
             assert app._server_startup_error == "RuntimeError: exit code 3"
             assert app._connecting is False
+
+    async def test_server_ready_message_dispatch_clears_connecting(self) -> None:
+        """Posted ServerReady messages should hit the app handler automatically."""
+        app = Code2WorkspaceApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            mock_agent = MagicMock()
+            mock_server_proc = MagicMock()
+            app._connecting = True
+            app.query_one = MagicMock(side_effect=NoMatches("welcome-banner"))  # type: ignore[assignment]
+
+            app.post_message(
+                Code2WorkspaceApp.ServerReady(
+                    agent=mock_agent,
+                    server_proc=mock_server_proc,
+                    mcp_server_info=[],
+                )
+            )
+            await pilot.pause()
+
+            assert app._connecting is False
+            assert app._agent is mock_agent
+            assert app._server_proc is mock_server_proc
+
+    async def test_server_failure_message_dispatch_updates_error(self) -> None:
+        """Posted ServerStartFailed messages should hit the app handler automatically."""
+        app = Code2WorkspaceApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            async def action() -> None:
+                pass
+
+            app._deferred_actions.append(
+                DeferredAction(kind="model_switch", execute=action)
+            )
+            app._connecting = True
+            app.query_one = MagicMock(side_effect=NoMatches("welcome-banner"))  # type: ignore[assignment]
+
+            app.post_message(
+                Code2WorkspaceApp.ServerStartFailed(
+                    error=RuntimeError("dispatch failure")
+                )
+            )
+            await pilot.pause()
+
+            assert app._connecting is False
+            assert app._server_startup_error == "RuntimeError: dispatch failure"
+            assert len(app._deferred_actions) == 0
 
     async def test_failing_deferred_action_does_not_block_others(self) -> None:
         """A failing deferred action should not prevent subsequent ones."""
