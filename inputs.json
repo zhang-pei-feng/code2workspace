@@ -1,6 +1,0 @@
-{
-  "spades_workflow.threads": 2,
-  "spades_workflow.output_dir": "spades_test",
-  "spades_workflow.left_reads": "/opt/spades/share/spades/test_dataset/ecoli_1K_1.fq.gz",
-  "spades_workflow.right_reads": "/opt/spades/share/spades/test_dataset/ecoli_1K_2.fq.gz"
-}

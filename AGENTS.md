@@ -19,12 +19,14 @@ code2workspace/
 
 ## Working rules
 
-- Read `SESSION_BRIEF.md` first for the shortest handoff.
-- Read `DEVELOPMENT_LOG.md` for the latest repository status, verified setup, and recent decisions.
-- Read `PROJECT_ROADMAP.md` for the active implementation target.
+- Read `docs/overview/session-handoff.md` first for the shortest handoff.
+- Read `docs/overview/current-status.md` for the latest repository status, verified setup, and recent decisions.
+- Read `docs/overview/roadmap.md` for the active implementation target.
+- Read `docs/research/thesis-log.md` when work should stay aligned with thesis traceability.
 - Keep changes focused on `libs/code2workspace` and `libs/cli`.
 - Keep new work aligned with the web / oneshot / harness roadmap unless the plan is intentionally changed.
 - Preserve current CLI and non-interactive behavior unless the task explicitly changes it.
+- Do not assume the interactive TUI is currently healthy; the stable terminal path for now is the non-interactive runner, and TUI repair remains future work.
 - Prefer small, testable changes over broad refactors.
 - Add or update tests when changing behavior.
 - Avoid re-introducing removed modules such as examples, ACP, evals, REPL, or partner packages unless the project plan explicitly requires them.

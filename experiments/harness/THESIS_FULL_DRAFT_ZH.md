@@ -813,7 +813,7 @@ flowchart TD
 [14] `apps/webapp/api.py`、`apps/webapp/store.py`、`apps/webapp/runner.py`（本文 Web 控制面实现依据）.  
 [15] `experiments/harness/code2workspace_harness/core.py`、`runner.py`、`patching.py`、`agent.py`（本文 harness 实现依据）.  
 [16] `results/oneshot/spades/BASELINE_NOTES.md`（本文核心案例依据）.  
-[17] `THESIS_LOG.md`、`PROJECT_ROADMAP.md`（本文研究追踪依据）.  
+[17] `docs/research/thesis-log.md`、`docs/overview/roadmap.md`（本文研究追踪依据）.  
 
 ---
 

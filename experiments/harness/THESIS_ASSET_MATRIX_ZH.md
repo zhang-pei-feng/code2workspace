@@ -40,7 +40,7 @@
 | 表 4-1 | 基线方法与 harness 框架对比 | 第四章 | 方法论对比 | 当前草稿 | 已就绪 | 直接沿用 |
 | 表 4-2 | completion judgment 证据项说明 | 第四章 | 解释判定项 | `completion.py` | 已就绪 | 直接沿用 |
 | 表 4-3 | baseline 与 candidate 数据结构说明 | 第四章 | 解释核心模型 | `core.py` | 已就绪 | 直接沿用 |
-| 表 5-1 | 仓库任务列表与难度特征 | 第五章 | 介绍对象 | `PROJECT_ROADMAP.md`、run 结果 | 已就绪 | 直接沿用 |
+| 表 5-1 | 仓库任务列表与难度特征 | 第五章 | 介绍对象 | `docs/overview/roadmap.md`、run 结果 | 已就绪 | 直接沿用 |
 | 表 5-2 | one-shot 结果总表 | 第五章 | 总览 baseline | `results/oneshot/*/summary.json` | 已就绪 | 直接沿用 |
 | 表 5-3 | SWE-bench Lite 子集结果表 | 第五章 | 通用软件工程能力验证 | 待补 P1 | 待补实验后生成 | 补实验后填写 |
 | 表 5-4 | `spades` 演化时间线 | 第五章 | 核心案例证据 | `BASELINE_NOTES.md` | 已就绪 | 直接沿用 |

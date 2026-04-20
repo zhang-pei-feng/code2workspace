@@ -334,8 +334,8 @@
 
 | 现有文件 | 适合用于论文的部分 | 对应章节 |
 | --- | --- | --- |
-| `PROJECT_ROADMAP.md` | 项目目标与阶段规划 | 第 1 章、第 3 章 |
-| `THESIS_LOG.md` | 开发时间线与研究轨迹 | 第 1 章、第 5 章 |
+| `docs/overview/roadmap.md` | 项目目标与阶段规划 | 第 1 章、第 3 章 |
+| `docs/research/thesis-log.md` | 开发时间线与研究轨迹 | 第 1 章、第 5 章 |
 | `experiments/harness/THESIS_METHOD.md` | 方法英文草稿 | 第 4 章 |
 | `experiments/harness/THESIS_CHAPTER_ZH.md` | 中文方法与案例章节草稿 | 第 4 章、第 5 章 |
 | `results/oneshot/spades/BASELINE_NOTES.md` | `spades` 基线演化 | 第 5 章 |

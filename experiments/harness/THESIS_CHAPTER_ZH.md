@@ -192,7 +192,7 @@ flowchart TD
 - `covid-19-signal`
 - `fieldbioinformatics`
 
-这些仓库均来自 [PROJECT_ROADMAP.md](/mnt/data1/zhangpf/code2workspace/PROJECT_ROADMAP.md) 中定义的目标列表。实验产物主要保存在 `results/oneshot/` 与 `.workspaces/oneshot/` 下。
+这些仓库均来自 [docs/overview/roadmap.md](/mnt/data1/zhangpf/code2workspace/docs/overview/roadmap.md) 中定义的目标列表。实验产物主要保存在 `results/oneshot/` 与 `.workspaces/oneshot/` 下。
 
 ### 5.2 运行预算与产物形态
 
