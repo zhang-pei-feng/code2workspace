@@ -150,6 +150,42 @@ class TestAppCSSValidation:
             assert app.is_running
 
 
+class TestResumeIntentCwd:
+    """Tests for startup resume cwd restoration."""
+
+    async def test_resolve_resume_thread_updates_cwd_from_saved_thread(self) -> None:
+        app = Code2WorkspaceApp(
+            thread_id=None,
+            resume_thread="thread-123",
+            cwd="/tmp/workspace/20260421010203",
+            server_kwargs={"assistant_id": "agent"},
+        )
+        app._assistant_id = "agent"
+
+        with (
+            patch(
+                "code2workspace_cli.sessions.thread_exists",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "code2workspace_cli.sessions.get_thread_agent",
+                new_callable=AsyncMock,
+                return_value="agent",
+            ),
+            patch(
+                "code2workspace_cli.sessions.get_thread_cwd",
+                new_callable=AsyncMock,
+                return_value="/tmp/workspace/20260421090909",
+            ),
+        ):
+            await app._resolve_resume_thread()
+
+        assert app._lc_thread_id == "thread-123"
+        assert app._cwd == "/tmp/workspace/20260421090909"
+        assert app._server_kwargs["cwd"] == "/tmp/workspace/20260421090909"
+
+
 class TestThreadCachePrewarm:
     """Tests for startup thread-cache prewarming."""
 

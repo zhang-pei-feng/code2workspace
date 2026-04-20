@@ -177,6 +177,49 @@ class TestStartServerAndGetAgent:
         assert kwargs["graph_ref"] == "./server_graph.py:graph"
         assert kwargs["checkpointer_path"] == "./checkpointer.py:create_checkpointer"
 
+    async def test_explicit_cwd_overrides_process_cwd_for_server_config(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        (project_root / ".git").mkdir()
+        invocation_cwd = project_root / "workspace" / "20260421010203"
+        invocation_cwd.mkdir(parents=True)
+        other_cwd = tmp_path / "elsewhere"
+        other_cwd.mkdir()
+        monkeypatch.chdir(other_cwd)
+
+        work_dir = tmp_path / "runtime"
+        work_dir.mkdir()
+
+        mock_server = MagicMock()
+        mock_server.start = AsyncMock()
+        mock_server.url = "http://127.0.0.1:2024"
+        mock_agent = object()
+
+        with (
+            patch.dict(os.environ, {}, clear=False),
+            patch(
+                "code2workspace_cli.server_manager.tempfile.mkdtemp",
+                return_value=str(work_dir),
+            ),
+            patch("code2workspace_cli.server_manager.shutil.copy2"),
+            patch("code2workspace_cli.server_manager._write_checkpointer"),
+            patch("code2workspace_cli.server_manager._write_pyproject"),
+            patch("code2workspace_cli.server.generate_langgraph_json"),
+            patch("code2workspace_cli.server.ServerProcess", return_value=mock_server),
+            patch("code2workspace_cli.remote_client.RemoteAgent", return_value=mock_agent),
+        ):
+            await start_server_and_get_agent(
+                assistant_id="agent",
+                mcp_config_path=None,
+                cwd=invocation_cwd,
+            )
+            assert os.environ[f"{SERVER_ENV_PREFIX}CWD"] == str(invocation_cwd.resolve())
+            assert os.environ[f"{SERVER_ENV_PREFIX}PROJECT_ROOT"] == str(
+                project_root.resolve()
+            )
+
     def test_relative_paths_written_verbatim_to_langgraph_json(
         self, tmp_path: Path
     ) -> None:

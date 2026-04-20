@@ -8,6 +8,7 @@ import json
 import logging
 import time
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -225,6 +226,7 @@ class TextualUIAdapter:
             ]
             | None
         ) = None,
+        cwd: str | Path | None = None,
     ) -> None:
         """Initialize the adapter."""
         self._mount_message = mount_message
@@ -259,6 +261,9 @@ class TextualUIAdapter:
         When awaited, returns a `Future` that resolves to user answers.
         """
 
+        self._cwd = Path(cwd).expanduser().resolve() if cwd else None
+        """Per-session working directory used for metadata and file mentions."""
+
         # State tracking
         self._current_tool_messages: dict[str, ToolCallMessage] = {}
         """Map of tool call IDs to their message widgets."""
@@ -272,6 +277,10 @@ class TextualUIAdapter:
 
         self._on_tokens_show: _TokensShowCallback | None = None
         """Called to restore the token display with the cached value."""
+
+    def update_cwd(self, cwd: str | Path | None) -> None:
+        """Update the adapter's per-session working directory."""
+        self._cwd = Path(cwd).expanduser().resolve() if cwd else None
 
     def finalize_pending_tools_with_error(self, error: str) -> None:
         """Mark all pending/running tool widgets as error and clear tracking.
@@ -414,7 +423,7 @@ async def execute_task_textual(
 
     # Parse file mentions and inject content if any — offload blocking I/O
     prompt_text, mentioned_files = await asyncio.to_thread(
-        parse_file_mentions, user_input
+        parse_file_mentions, user_input, adapter._cwd
     )
 
     # Max file size to embed inline (256KB, matching mistral-vibe)
@@ -451,7 +460,12 @@ async def execute_task_textual(
         message_content = final_input
 
     thread_id = session_state.thread_id
-    config = build_stream_config(thread_id, assistant_id, sandbox_type=sandbox_type)
+    config = build_stream_config(
+        thread_id,
+        assistant_id,
+        sandbox_type=sandbox_type,
+        cwd=adapter._cwd,
+    )
 
     await dispatch_hook("session.start", {"thread_id": thread_id})
 

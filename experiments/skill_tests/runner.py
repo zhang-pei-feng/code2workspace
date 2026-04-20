@@ -214,6 +214,8 @@ def _build_command(case: LiveEvalCase) -> list[str]:
             "all",
             "-n",
             case.prompt,
+            "--session-workdir-mode",
+            "inherit",
             "-q",
             "--no-mcp",
         ]

@@ -270,6 +270,17 @@ class TestBuildStreamConfig:
         config = build_stream_config("t-sb", assistant_id=None, sandbox_type="daytona")
         assert config["metadata"]["sandbox_type"] == "daytona"
 
+    def test_explicit_cwd_overrides_process_cwd(self, tmp_path: Path) -> None:
+        """Explicit cwd should be written into metadata instead of Path.cwd()."""
+        config = build_stream_config(
+            "t-cwd",
+            assistant_id="agent",
+            cwd=tmp_path / "workspace" / "20260421010203",
+        )
+        assert config["metadata"]["cwd"] == str(
+            (tmp_path / "workspace" / "20260421010203").resolve()
+        )
+
     def test_sandbox_type_absent_when_none(self) -> None:
         """Sandbox type should be absent from metadata when not provided."""
         config = build_stream_config("t-nosb", assistant_id=None)

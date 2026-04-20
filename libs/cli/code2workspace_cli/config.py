@@ -619,6 +619,7 @@ def build_stream_config(
     assistant_id: str | None,
     *,
     sandbox_type: str | None = None,
+    cwd: str | Path | None = None,
 ) -> RunnableConfig:
     """Build the LangGraph stream config dict.
 
@@ -653,10 +654,12 @@ def build_stream_config(
     from datetime import UTC, datetime
 
     try:
-        cwd = str(Path.cwd())
+        resolved_cwd = (
+            str(Path(cwd).expanduser().resolve()) if cwd is not None else str(Path.cwd())
+        )
     except OSError:
         logger.warning("Could not determine working directory", exc_info=True)
-        cwd = ""
+        resolved_cwd = ""
 
     # Include SDK version alongside CLI version — see docstring for why.
     versions: dict[str, str] = {"code2workspace-cli": __version__}
@@ -672,8 +675,8 @@ def build_stream_config(
     user_id = os.environ.get(USER_ID)
     if user_id:
         metadata["user_id"] = user_id
-    if cwd:
-        metadata["cwd"] = cwd
+    if resolved_cwd:
+        metadata["cwd"] = resolved_cwd
     if assistant_id:
         metadata.update(
             {

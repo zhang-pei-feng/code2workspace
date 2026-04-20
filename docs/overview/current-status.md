@@ -116,6 +116,12 @@ uv run --project libs/cli code2workspace -n "Reply with OK only." -q --no-mcp
 - The interactive TUI startup path now reaches the normal ready prompt again
   after the deferred-startup message-routing hotfix in
   `libs/cli/code2workspace_cli/app.py`.
+- Normal CLI sessions now create a per-session working directory under
+  `<invocation-cwd>/workspace/<YYYYMMDDHHMMSS>` and record that path in thread
+  metadata so resumed threads can return to the same workspace.
+- Experiment runners with fixed repo-layout assumptions currently opt out and
+  keep their original working directories, notably `experiments/oneshot` and
+  `experiments/skill_tests`.
 - Repo-tracked config lives at `.code2workspace/config.toml`.
 - Repo-tracked `.env` is intentionally committed for now during local
   development.
@@ -183,6 +189,9 @@ Remaining gaps:
   message handler names after the app-class rename to `Code2WorkspaceApp`.
 - Added regression coverage for both direct handler calls and real
   `post_message(...)` dispatch of deferred startup events.
+- Changed normal CLI session startup so new sessions default to
+  `workspace/<timestamp>` below the invocation directory, while fixed-layout
+  experiment runners explicitly preserve their original cwd.
 
 ## Read Next
 

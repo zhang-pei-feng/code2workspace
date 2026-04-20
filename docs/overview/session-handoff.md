@@ -31,6 +31,9 @@ tweaks.
   overbuild chat UX yet.
 - the interactive TUI startup hotfix is in; it now reaches the ready prompt
   again, so treat it as usable unless a deeper interaction bug is reproduced.
+- normal CLI sessions now start inside `workspace/<timestamp>` below the
+  invocation directory; only the explicit experiment runners keep their
+  original cwd.
 
 ## Before Changing Experiment Surfaces
 

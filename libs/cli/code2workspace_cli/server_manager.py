@@ -66,14 +66,14 @@ def _apply_server_config(config: ServerConfig) -> None:
         _set_or_clear_server_env(suffix, value)
 
 
-def _capture_project_context() -> ProjectContext | None:
+def _capture_project_context(cwd: str | Path | None = None) -> ProjectContext | None:
     """Capture the user's project context for the server subprocess.
 
     Returns:
         Explicit project context, or `None` when cwd cannot be determined.
     """
     try:
-        return ProjectContext.from_user_cwd(Path.cwd())
+        return ProjectContext.from_user_cwd(cwd or Path.cwd())
     except OSError:
         logger.warning("Could not determine working directory for server")
         return None
@@ -205,6 +205,7 @@ async def start_server_and_get_agent(
     no_mcp: bool = False,
     trust_project_mcp: bool | None = None,
     interactive: bool = True,
+    cwd: str | Path | None = None,
     host: str = "127.0.0.1",
     port: int = 2024,
 ) -> tuple[RemoteAgent, ServerProcess, MCPSessionManager | None]:
@@ -237,7 +238,7 @@ async def start_server_and_get_agent(
     from code2workspace_cli.remote_client import RemoteAgent
     from code2workspace_cli.server import ServerProcess
 
-    project_context = _capture_project_context()
+    project_context = _capture_project_context(cwd)
 
     config = ServerConfig.from_cli_args(
         project_context=project_context,
@@ -302,6 +303,7 @@ async def server_session(
     no_mcp: bool = False,
     trust_project_mcp: bool | None = None,
     interactive: bool = True,
+    cwd: str | Path | None = None,
     host: str = "127.0.0.1",
     port: int = 2024,
 ) -> AsyncIterator[tuple[RemoteAgent, ServerProcess]]:
@@ -351,6 +353,7 @@ async def server_session(
             no_mcp=no_mcp,
             trust_project_mcp=trust_project_mcp,
             interactive=interactive,
+            cwd=cwd,
             host=host,
             port=port,
         )

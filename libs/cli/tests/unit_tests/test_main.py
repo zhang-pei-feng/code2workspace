@@ -183,7 +183,13 @@ class TestRunTextualCliAsyncMcp:
             await asyncio.sleep(0)
             return app_result
 
-        with patch("code2workspace_cli.app.run_textual_app", new=_run_textual_app_stub):
+        with (
+            patch("code2workspace_cli.app.run_textual_app", new=_run_textual_app_stub),
+            patch(
+                "code2workspace_cli.main.prepare_session_cwd",
+                return_value=Path("/tmp/workspace/20260421010203"),
+            ),
+        ):
             result = await run_textual_cli_async(
                 "agent",
                 thread_id="thread-123",
@@ -208,6 +214,11 @@ class TestRunTextualCliAsyncMcp:
         assert captured_kwargs["model_kwargs"] is not None
         assert captured_kwargs["model_kwargs"]["model_spec"] == "openai:gpt-4o"
         assert captured_kwargs["model_kwargs"]["extra_kwargs"] is None
+        assert captured_kwargs["cwd"] == Path("/tmp/workspace/20260421010203")
+        assert (
+            captured_kwargs["server_kwargs"]["cwd"]
+            == "/tmp/workspace/20260421010203"
+        )
 
     async def test_no_mcp_kwargs_when_disabled(self) -> None:
         """mcp_preload_kwargs should be None when no_mcp=True."""

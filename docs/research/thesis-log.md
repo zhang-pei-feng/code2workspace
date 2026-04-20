@@ -42,6 +42,14 @@ harness-style iteration.
   `post_message(...)` dispatch of startup events, which improves confidence that
   future CLI/TUI renames will not silently strand the interface in a
   pre-session state
+- Adjusted the normal CLI session model so that new sessions now default to a
+  timestamped per-session working directory under `workspace/` in the user
+  invocation directory:
+  - this makes ordinary interactive and non-interactive runs easier to isolate
+    from one another
+  - existing fixed-layout experiment runners explicitly opt out and preserve
+    their original repository working directories so historical experiment
+    layouts remain comparable
 
 ### 2026-04-19
 

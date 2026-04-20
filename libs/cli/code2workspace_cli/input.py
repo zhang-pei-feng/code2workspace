@@ -271,7 +271,7 @@ class MediaTracker:
         return max_id + 1 if max_id else fallback_count + 1
 
 
-def parse_file_mentions(text: str) -> tuple[str, list[Path]]:
+def parse_file_mentions(text: str, cwd: str | Path | None = None) -> tuple[str, list[Path]]:
     r"""Extract `@file` mentions and return the text with resolved file paths.
 
     Parses `@file` mentions from the input text and resolves them to absolute
@@ -311,7 +311,8 @@ def parse_file_mentions(text: str) -> tuple[str, list[Path]]:
             path = Path(clean_path).expanduser()
 
             if not path.is_absolute():
-                path = Path.cwd() / path
+                base = Path(cwd).expanduser().resolve() if cwd else Path.cwd()
+                path = base / path
 
             resolved = path.resolve()
             if resolved.exists() and resolved.is_file():

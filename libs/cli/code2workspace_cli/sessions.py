@@ -948,6 +948,22 @@ async def get_thread_agent(thread_id: str) -> str | None:
             return row[0] if row else None
 
 
+async def get_thread_cwd(thread_id: str) -> str | None:
+    """Get the latest recorded working directory for a thread."""
+    async with _connect() as conn:
+        if not await _table_exists(conn, "checkpoints"):
+            return None
+
+        query = """
+            SELECT MAX(json_extract(metadata, '$.cwd'))
+            FROM checkpoints
+            WHERE thread_id = ?
+        """
+        async with conn.execute(query, (thread_id,)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+
 async def thread_exists(thread_id: str) -> bool:
     """Check if a thread exists in checkpoints.
 

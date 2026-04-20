@@ -3,6 +3,7 @@
 import io
 import sys
 from collections.abc import AsyncIterator
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -954,6 +955,50 @@ class TestNonInteractivePrompt:
 
         _, kwargs = mock_start_server.call_args
         assert kwargs["interactive"] is False
+
+    async def test_passes_explicit_cwd_to_stream_config_and_server(self, tmp_path: Path) -> None:
+        mock_agent = MagicMock()
+        mock_agent.astream = MagicMock(return_value=_async_iter([]))
+        mock_server_proc = MagicMock()
+
+        with (
+            patch(
+                "code2workspace_cli.non_interactive.create_model",
+                return_value=ModelResult(
+                    model=MagicMock(),
+                    model_name="test-model",
+                    provider="test",
+                ),
+            ),
+            patch(
+                "code2workspace_cli.non_interactive.generate_thread_id",
+                return_value="test-thread",
+            ),
+            patch("code2workspace_cli.non_interactive.settings") as mock_settings,
+            patch(
+                "code2workspace_cli.non_interactive.build_langsmith_thread_url",
+                return_value=None,
+            ),
+            patch(
+                "code2workspace_cli.config.build_stream_config",
+                return_value={"configurable": {"thread_id": "test-thread"}, "metadata": {}},
+            ) as mock_build_stream_config,
+            patch(
+                "code2workspace_cli.server_manager.start_server_and_get_agent",
+                new_callable=AsyncMock,
+                return_value=(mock_agent, mock_server_proc, None),
+            ) as mock_start_server,
+        ):
+            mock_settings.shell_allow_list = None
+            mock_settings.has_tavily = False
+            mock_settings.model_name = None
+
+            await run_non_interactive(message="do the thing", cwd=tmp_path)
+
+        mock_build_stream_config.assert_called_once()
+        assert mock_build_stream_config.call_args.kwargs["cwd"] == tmp_path.resolve()
+        _, kwargs = mock_start_server.call_args
+        assert kwargs["cwd"] == tmp_path.resolve()
 
     async def test_initial_skill_wraps_prompt_and_metadata(self) -> None:
         """Headless skill execution should send wrapped prompt + `__skill`."""

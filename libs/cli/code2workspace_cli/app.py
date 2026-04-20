@@ -914,6 +914,7 @@ class Code2WorkspaceApp(App):
             set_active_message=self._set_active_message,
             sync_message_content=self._sync_message_content,
             request_ask_user=self._request_ask_user,
+            cwd=self._cwd,
         )
         # Wire token display callbacks
         self._ui_adapter._on_tokens_update = self._on_tokens_update
@@ -1128,6 +1129,7 @@ class Code2WorkspaceApp(App):
         from code2workspace_cli.sessions import (
             find_similar_threads,
             generate_thread_id,
+            get_thread_cwd,
             get_most_recent,
             get_thread_agent,
             thread_exists,
@@ -1158,6 +1160,11 @@ class Code2WorkspaceApp(App):
                         if self._server_kwargs:
                             self._server_kwargs["assistant_id"] = agent_name
                     self._lc_thread_id = thread_id
+                    thread_cwd = await get_thread_cwd(thread_id)
+                    if thread_cwd:
+                        self._apply_cwd(thread_cwd)
+                        if self._server_kwargs:
+                            self._server_kwargs["cwd"] = self._cwd
                 else:
                     self._lc_thread_id = generate_thread_id()
                     if agent_filter:
@@ -1173,6 +1180,11 @@ class Code2WorkspaceApp(App):
                         self._assistant_id = agent_name
                         if self._server_kwargs:
                             self._server_kwargs["assistant_id"] = agent_name
+                thread_cwd = await get_thread_cwd(resume)
+                if thread_cwd:
+                    self._apply_cwd(thread_cwd)
+                    if self._server_kwargs:
+                        self._server_kwargs["cwd"] = self._cwd
             else:
                 # Thread not found — notify + fall back to new thread
                 self._lc_thread_id = generate_thread_id()
@@ -4660,6 +4672,17 @@ class Code2WorkspaceApp(App):
             else:
                 logger.debug(missing_message, thread_id)
 
+    def _apply_cwd(self, cwd: str | Path) -> None:
+        """Update the active session cwd across the app and its widgets."""
+        resolved = str(Path(cwd).expanduser().resolve())
+        self._cwd = resolved
+        if self._status_bar is not None:
+            self._status_bar.cwd = resolved
+        if self._chat_input is not None:
+            self._chat_input.update_cwd(resolved)
+        if self._ui_adapter is not None:
+            self._ui_adapter.update_cwd(resolved)
+
     async def _resume_thread(self, thread_id: str) -> None:
         """Resume a previously saved thread.
 
@@ -4670,6 +4693,8 @@ class Code2WorkspaceApp(App):
         Args:
             thread_id: The thread ID to resume.
         """
+        from code2workspace_cli.sessions import get_thread_cwd
+
         if not self._agent:
             await self._mount_message(
                 AppMessage("Cannot switch threads: no active agent")
@@ -4694,6 +4719,7 @@ class Code2WorkspaceApp(App):
         # Save previous state for rollback on failure
         prev_thread_id = self._lc_thread_id
         prev_session_thread = self._session_state.thread_id
+        prev_cwd = self._cwd
         self._thread_switching = True
         if self._chat_input:
             self._chat_input.set_cursor_active(active=False)
@@ -4715,6 +4741,9 @@ class Code2WorkspaceApp(App):
             # Switch to the selected thread
             self._session_state.thread_id = thread_id
             self._lc_thread_id = thread_id
+            restored_cwd = await get_thread_cwd(thread_id)
+            if restored_cwd:
+                self._apply_cwd(restored_cwd)
 
             self._update_welcome_banner(
                 thread_id,
@@ -4741,6 +4770,7 @@ class Code2WorkspaceApp(App):
             # Restore previous thread IDs so the user can retry
             self._session_state.thread_id = prev_session_thread
             self._lc_thread_id = prev_thread_id
+            self._apply_cwd(prev_cwd)
             self._update_welcome_banner(
                 prev_session_thread,
                 missing_message=(

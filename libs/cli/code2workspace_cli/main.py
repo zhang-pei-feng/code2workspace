@@ -18,7 +18,7 @@ import os
 import shutil
 import sys
 import traceback
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 warnings.filterwarnings("ignore", message=".*Pydantic V1.*", category=UserWarning)
 
 from code2workspace_cli._version import __version__
+from code2workspace_cli.session_workspace import prepare_session_cwd
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +337,12 @@ def parse_args() -> argparse.Namespace:
         description=("Code2Workspace - AI Coding Assistant"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         add_help=False,
+    )
+    parser.add_argument(
+        "--session-workdir-mode",
+        choices=("isolated", "inherit"),
+        default="isolated",
+        help=argparse.SUPPRESS,
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
@@ -688,6 +695,8 @@ async def run_textual_cli_async(
     mcp_config_path: str | None = None,
     no_mcp: bool = False,
     trust_project_mcp: bool | None = None,
+    cwd: str | Path | None = None,
+    session_workdir_mode: str = "isolated",
 ) -> "AppResult":
     """Run the Textual CLI interface (async version).
 
@@ -769,6 +778,11 @@ async def run_textual_cli_async(
         "extra_kwargs": model_params,
         "profile_overrides": profile_override,
     }
+    session_cwd = (
+        Path(cwd).expanduser().resolve()
+        if cwd is not None
+        else prepare_session_cwd(Path.cwd(), mode=session_workdir_mode)  # type: ignore[arg-type]
+    )
 
     # Build kwargs for deferred server startup (runs inside the TUI).
     # Never pass auto_approve to the server — the interactive server must
@@ -787,6 +801,7 @@ async def run_textual_cli_async(
         "no_mcp": no_mcp,
         "trust_project_mcp": trust_project_mcp,
         "interactive": True,
+        "cwd": str(session_cwd),
     }
 
     mcp_preload_kwargs: dict[str, Any] | None = None
@@ -802,7 +817,7 @@ async def run_textual_cli_async(
             assistant_id=assistant_id,
             backend=None,
             auto_approve=auto_approve,
-            cwd=Path.cwd(),
+            cwd=session_cwd,
             thread_id=thread_id,
             resume_thread=resume_thread,
             initial_prompt=initial_prompt,
@@ -1431,6 +1446,9 @@ def cli_main() -> None:
                     mcp_config_path=getattr(args, "mcp_config", None),
                     no_mcp=getattr(args, "no_mcp", False),
                     trust_project_mcp=getattr(args, "trust_project_mcp", False),
+                    session_workdir_mode=getattr(
+                        args, "session_workdir_mode", "isolated"
+                    ),
                 )
             )
             sys.exit(exit_code)
@@ -1492,6 +1510,9 @@ def cli_main() -> None:
                         mcp_config_path=getattr(args, "mcp_config", None),
                         no_mcp=getattr(args, "no_mcp", False),
                         trust_project_mcp=mcp_trust_decision,
+                        session_workdir_mode=getattr(
+                            args, "session_workdir_mode", "isolated"
+                        ),
                     )
                 )
                 return_code = result.return_code

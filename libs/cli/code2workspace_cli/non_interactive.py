@@ -24,6 +24,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from langchain.agents.middleware.human_in_the_loop import ActionRequest, HITLRequest
@@ -50,6 +51,7 @@ from code2workspace_cli.config import (
 from code2workspace_cli.file_ops import FileOpTracker
 from code2workspace_cli.hooks import dispatch_hook, dispatch_hook_fire_and_forget
 from code2workspace_cli.model_config import ModelConfigError
+from code2workspace_cli.session_workspace import prepare_session_cwd
 from code2workspace_cli.sessions import generate_thread_id
 from code2workspace_cli.textual_adapter import SessionStats, print_usage_table
 from code2workspace_cli.tool_display import format_tool_display
@@ -765,6 +767,8 @@ async def run_non_interactive(
     mcp_config_path: str | None = None,
     no_mcp: bool = False,
     trust_project_mcp: bool = False,
+    cwd: str | Path | None = None,
+    session_workdir_mode: str = "isolated",
 ) -> int:
     """Run a single task non-interactively and exit.
 
@@ -915,8 +919,16 @@ async def run_non_interactive(
 
     from code2workspace_cli.config import build_stream_config
 
+    session_cwd = (
+        Path(cwd).expanduser().resolve()
+        if cwd is not None
+        else prepare_session_cwd(Path.cwd(), mode=session_workdir_mode)  # type: ignore[arg-type]
+    )
     config: RunnableConfig = build_stream_config(
-        thread_id, assistant_id, sandbox_type=sandbox_type
+        thread_id,
+        assistant_id,
+        sandbox_type=sandbox_type,
+        cwd=session_cwd,
     )
 
     thread_url_lookup: ThreadUrlLookupState | None = None
@@ -983,6 +995,7 @@ async def run_non_interactive(
             no_mcp=no_mcp,
             trust_project_mcp=trust_project_mcp,
             interactive=False,
+            cwd=session_cwd,
         ) as (agent, _server_proc):
             # Collect MCP preload result (ran concurrently with server startup)
             if mcp_task is not None:

@@ -1033,6 +1033,17 @@ class ChatInput(Vertical):
                 "(widget not yet mounted)"
             )
 
+    def update_cwd(self, cwd: str | Path) -> None:
+        """Update the working directory used for file completion."""
+        self._cwd = Path(cwd).expanduser().resolve()
+        if self._file_controller is not None:
+            self._file_controller.set_cwd(self._cwd)
+            self.run_worker(
+                self._file_controller.warm_cache(),
+                exclusive=False,
+                exit_on_error=False,
+            )
+
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         """Detect input mode and update completions."""
         text = event.text_area.text

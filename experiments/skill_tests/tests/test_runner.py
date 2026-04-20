@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from experiments.skill_tests.runner import _matches, cases_root, load_case
+from experiments.skill_tests.runner import (
+    LiveEvalCase,
+    _build_command,
+    _matches,
+    cases_root,
+    load_case,
+)
 
 
 def test_load_case_reads_required_fields() -> None:
@@ -74,3 +80,25 @@ def test_matches_supports_tool_and_subagent_and_report_predicates() -> None:
     assert _matches("report-complete", context) is True
     assert _matches("report-source-class-count>=4", context) is True
     assert _matches("report-missing-lane-count<=0", context) is True
+
+
+def test_build_command_preserves_cwd_for_skill_eval_cases() -> None:
+    case = LiveEvalCase(
+        target="skill",
+        name="demo",
+        prompt="hello",
+        required_env=(),
+        expected_behaviors=(),
+        expected_outputs=(),
+        known_issues=(),
+        timeout_minutes=10,
+        allow_timeout_after_expectations=False,
+        command=None,
+        artifact_root=None,
+        path=Path("/tmp/demo.toml"),
+    )
+
+    command = _build_command(case)
+
+    assert "--session-workdir-mode" in command
+    assert "inherit" in command

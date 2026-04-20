@@ -349,6 +349,8 @@ def run_repo_task(
         "--project",
         str(cli_project_root()),
         "code2workspace",
+        "--session-workdir-mode",
+        "inherit",
         "--shell-allow-list",
         "all",
         "-n",

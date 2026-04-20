@@ -134,6 +134,8 @@ def test_run_repo_task_writes_manifest_and_summary(tmp_path, monkeypatch) -> Non
     assert summary["max_runtime_minutes"] == 30
     assert captured["cwd"] == repo_dir
     assert captured["cmd"][3].endswith("/libs/cli")
+    assert "--session-workdir-mode" in captured["cmd"]
+    assert "inherit" in captured["cmd"]
     assert captured["max_runtime_seconds"] == 1800
 
 

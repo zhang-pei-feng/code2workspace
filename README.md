@@ -38,6 +38,12 @@ lives under `docs/`.
 - Non-interactive CLI execution is usable with the current local gateway setup.
 - The interactive TUI startup path is working again after the deferred-startup
   message-routing hotfix.
+- Normal CLI sessions now default to a per-session working directory under
+  `<invocation-cwd>/workspace/<YYYYMMDDHHMMSS>`.
+- Experiment runners that require a fixed repo root, such as
+  `experiments/oneshot` and `experiments/skill_tests`, explicitly preserve
+  their original working directories instead of using the new per-session
+  workspace behavior.
 - The web control plane is stable enough for session management, run
   inspection, and one-shot task submission.
 - The one-shot runner has already produced real Docker/WDL success evidence on

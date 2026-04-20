@@ -2129,10 +2129,16 @@ class TestResumeThread:
         app._mount_message = AsyncMock()  # type: ignore[assignment]
         app.query_one = MagicMock(side_effect=_NoMatches())  # type: ignore[assignment]
 
-        await app._resume_thread("new-thread")
+        with patch(
+            "code2workspace_cli.sessions.get_thread_cwd",
+            new_callable=AsyncMock,
+            return_value="/tmp/workspace/20260421010203",
+        ):
+            await app._resume_thread("new-thread")
 
         assert app._lc_thread_id == "new-thread"
         assert app._session_state.thread_id == "new-thread"
+        assert app._cwd == "/tmp/workspace/20260421010203"
         app._pending_messages.clear.assert_called_once()
         app._queued_widgets.clear.assert_called_once()
         app._clear_messages.assert_awaited_once()
