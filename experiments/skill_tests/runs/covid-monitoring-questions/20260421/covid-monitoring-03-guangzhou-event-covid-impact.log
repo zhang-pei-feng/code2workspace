@@ -1,0 +1,44 @@
+已定位可用监测技能；接下来抓取中国/华南官方监测信号，再做 2026 年 8 月广州大型赛事的风险判断。抓取来源表中与中国/华南新冠监测相关的官方来源，并查看是否有近期周报或通报可作为判断依据。继续补充广州/广东层面的来源，并读取中疾控最新通报正文，避免只根据标题判断。已拿到中国疾控最新正文数据。再补一层华南/邻近地区监测信号，用来判断广州 2026 年 8 月大型活动的现实风险区间。再补一份香港卫生防护中心的周报页面，作为广州周边同气候带参考。会有影响，但按目前证据看，**更可能是“可管理的持续性影响”，而不是足以否定办赛的决定性影响**。对“2026年8月广州大型运动会”的判断，我会给 **中等风险、可办但需预案**。
+
+依据：
+- **中国疾控** 2026-01-09 通报显示，2025年12月全国新冠报告病例处于**低位波动**，重症和死亡很低；但本土序列中 **NB.1.8.1 及其亚分支占主导**。
+- **中国疾控** 2026年第4周哨点监测显示，新冠阳性率**总体低水平**，南方省份主要检出病原更多是流感/鼻病毒/副流感，说明新冠不是当时主导病原。
+- **WHO** 2026-03 总结显示，全球 SARS-CoV-2 活动**整体低且稳定**，但 NB.1.8.1 在西太区占比上升；WHO同时提示，现有监测和报告较过去稀疏，存在低估。
+
+对广州 2026 年 8 月的含义：
+- 广州夏季**人员密集、室内空调场馆多、跨地区流动大**，即使全国处于低位，也可能出现**赛前/赛中局部聚集传播**。
+- 更现实的影响不一定是“停办”，而是：**运动员/工作人员缺勤、代表团输入病例、医疗保障压力、舆情风险**。
+- 目前没有证据支持“到 2026 年 8 月一定会严重影响到无法举办”，但也**不能假设完全没有影响**。
+
+建议你按“正常办赛 + 新冠专项预案”准备：
+1. 赛前 6–8 周持续跟踪 **中国疾控、广东省疾控、广州疾控**。
+2. 为运动员村、媒体中心、室内场馆准备**发热/呼吸道症状处置流程**。
+3. 高风险岗位（医疗、接待、闭环服务）保留**快速检测、口罩、隔离房间、替补排班**。
+4. 对老年观众、慢病人群发布**分层防护建议**，而不是全面限制。
+5. 设定触发阈值：若赛前 2–4 周广州/广东监测出现**明显上升或新变异株风险升级**，再加强入场与医疗措施。
+
+信息来源：
+- skill: respiratory-disease-wide-monitor（中国疾控全国新型冠状病毒感染疫情情况；全国急性呼吸道传染病哨点监测）
+- WHO COVID-19 Dashboard Summary (2026-03)
+🔧 Calling tool: write_todos
+🔧 Calling tool: read_file
+🔧 Calling tool: read_file
+🔧 Calling tool: write_todos
+🔧 Calling tool: ls
+🔧 Calling tool: read_file
+🔧 Calling tool: ls
+🔧 Calling tool: read_file
+🔧 Calling tool: read_file
+🔧 Calling tool: execute
+🔧 Calling tool: read_file
+🔧 Calling tool: execute
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: read_file
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: fetch_url
+🔧 Calling tool: read_file
+🔧 Calling tool: fetch_url
+🔧 Calling tool: write_todos
+🔧 Calling tool: write_todos

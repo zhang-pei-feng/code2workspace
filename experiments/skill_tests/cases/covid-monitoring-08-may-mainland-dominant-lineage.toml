@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-08-may-mainland-dominant-lineage"
+prompt = "今年 5 月，中国大陆的主要流行新冠毒株（占比最高的毒株）会是哪一株？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

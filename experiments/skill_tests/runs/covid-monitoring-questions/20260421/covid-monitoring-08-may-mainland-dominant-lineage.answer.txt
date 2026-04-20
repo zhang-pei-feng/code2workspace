@@ -1,0 +1,16 @@
+Unexpected error during non-interactive execution
+Traceback (most recent call last):
+  File "/mnt/data1/zhangpf/code2workspace/libs/cli/code2workspace_cli/non_interactive.py", line 1019, in run_non_interactive
+    await _run_agent_loop(
+  File "/mnt/data1/zhangpf/code2workspace/libs/cli/code2workspace_cli/non_interactive.py", line 661, in _run_agent_loop
+    await _stream_agent(agent, stream_input, config, state, console, file_op_tracker)
+  File "/mnt/data1/zhangpf/code2workspace/libs/cli/code2workspace_cli/non_interactive.py", line 599, in _stream_agent
+    async for chunk in agent.astream(
+  File "/mnt/data1/zhangpf/code2workspace/libs/cli/code2workspace_cli/remote_client.py", line 134, in astream
+    async for ns, mode, data in graph.astream(
+  File "/mnt/data1/zhangpf/code2workspace/libs/cli/.venv/lib/python3.11/site-packages/langgraph/pregel/remote.py", line 967, in astream
+    raise RemoteException(chunk.data)
+langgraph.pregel.remote.RemoteException: {'error': 'InternalServerError', 'message': 'An internal error occurred'}
+
+Unexpected error (RemoteException): {'error': 'InternalServerError', 'message': 
+'An internal error occurred'}

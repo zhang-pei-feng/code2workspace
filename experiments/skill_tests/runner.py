@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import tomllib
@@ -20,10 +21,16 @@ from experiments.skill_tests.parsers import (
     parse_tool_invocations,
     parse_tool_names,
 )
-from experiments.skill_tests.report import write_summary_json, write_summary_zh
+from experiments.skill_tests.report import (
+    extract_final_answer_from_log,
+    write_capability_snapshot_zh,
+    write_summary_json,
+    write_summary_zh,
+)
 
 
-VALID_TARGETS = {"skill", "composite-skill", "oneshot", "harness"}
+VALID_TARGETS = {"skill", "composite-skill", "oneshot", "harness", "question"}
+_BATCH_CASE_RE = re.compile(r"`(?P<case>[^`]+\.toml)`")
 
 
 def repo_root() -> Path:
@@ -36,6 +43,14 @@ def cases_root() -> Path:
 
 def results_root() -> Path:
     return repo_root() / "results" / "skill-tests"
+
+
+def batch_root() -> Path:
+    return repo_root() / "experiments" / "skill_tests" / "batches"
+
+
+def runs_root() -> Path:
+    return repo_root() / "experiments" / "skill_tests" / "runs"
 
 
 def utc_date() -> str:
@@ -104,6 +119,19 @@ def list_cases(paths: list[Path] | None = None) -> list[LiveEvalCase]:
     return [load_case(path) for path in sorted(cases_root().glob("*.toml"))]
 
 
+def load_batch_cases(path: Path) -> list[LiveEvalCase]:
+    """Load case files referenced from a markdown batch manifest."""
+    text = path.read_text(encoding="utf-8")
+    case_names: list[str] = []
+    for line in text.splitlines():
+        match = _BATCH_CASE_RE.search(line)
+        if match:
+            case_names.append(match.group("case"))
+    if not case_names:
+        raise ValueError(f"{path} does not reference any .toml case files")
+    return [load_case(cases_root() / name) for name in case_names]
+
+
 def discover_runtime_env() -> dict[str, str]:
     env: dict[str, str] = {}
     data_governance_root = Path("/mnt/data1/zhangpf/superagent/data_governance_agent")
@@ -113,12 +141,18 @@ def discover_runtime_env() -> dict[str, str]:
     return env
 
 
-def run_case(case: LiveEvalCase, *, run_date: str) -> dict[str, Any]:
-    result_dir = results_root() / run_date
+def run_case(
+    case: LiveEvalCase,
+    *,
+    run_date: str,
+    output_root: Path | None = None,
+) -> dict[str, Any]:
+    result_dir = (output_root or results_root()) / run_date
     result_dir.mkdir(parents=True, exist_ok=True)
     slug = _slugify(case.name)
     log_path = result_dir / f"{slug}.log"
     prompt_path = result_dir / f"{slug}.prompt.txt"
+    answer_path = result_dir / f"{slug}.answer.txt"
 
     runtime_env = os.environ.copy()
     runtime_env.update(discover_runtime_env())
@@ -134,12 +168,14 @@ def run_case(case: LiveEvalCase, *, run_date: str) -> dict[str, Any]:
     if missing_env:
         log_path.write_text("", encoding="utf-8")
         prompt_path.write_text(case.prompt, encoding="utf-8")
+        answer_path.write_text("", encoding="utf-8")
         parsed = _parsed_log("")
-        return _finalize_result(
+        result = _finalize_result(
             case=case,
             status="infra_blocked",
             log_path=log_path,
             prompt_path=prompt_path,
+            answer_path=answer_path,
             returncode=None,
             log_text="",
             parsed=parsed,
@@ -147,6 +183,7 @@ def run_case(case: LiveEvalCase, *, run_date: str) -> dict[str, Any]:
             artifact_root=artifact_root,
             before_artifact_dirs=before_artifact_dirs,
         )
+        return result
 
     prompt_path.write_text(case.prompt, encoding="utf-8")
     command = _build_command(case)
@@ -163,12 +200,17 @@ def run_case(case: LiveEvalCase, *, run_date: str) -> dict[str, Any]:
         )
         log_text = _combine_output(completed.stdout, completed.stderr)
         log_path.write_text(log_text, encoding="utf-8")
+        answer_path.write_text(
+            extract_final_answer_from_log(log_text),
+            encoding="utf-8",
+        )
         parsed = _parsed_log(log_text)
         return _finalize_result(
             case=case,
             status=None,
             log_path=log_path,
             prompt_path=prompt_path,
+            answer_path=answer_path,
             returncode=completed.returncode,
             log_text=log_text,
             parsed=parsed,
@@ -179,6 +221,10 @@ def run_case(case: LiveEvalCase, *, run_date: str) -> dict[str, Any]:
     except subprocess.TimeoutExpired as exc:
         log_text = _combine_output(exc.stdout or "", exc.stderr or "")
         log_path.write_text(log_text, encoding="utf-8")
+        answer_path.write_text(
+            extract_final_answer_from_log(log_text),
+            encoding="utf-8",
+        )
         parsed = _parsed_log(log_text)
         timeout_status = "runner_error"
         timeout_error = f"Timed out after {case.timeout_minutes} minute(s)"
@@ -190,6 +236,7 @@ def run_case(case: LiveEvalCase, *, run_date: str) -> dict[str, Any]:
             status=timeout_status,
             log_path=log_path,
             prompt_path=prompt_path,
+            answer_path=answer_path,
             returncode=None,
             log_text=log_text,
             parsed=parsed,
@@ -203,19 +250,19 @@ def run_case(case: LiveEvalCase, *, run_date: str) -> dict[str, Any]:
 def _build_command(case: LiveEvalCase) -> list[str]:
     if case.command is not None:
         return list(case.command)
-    if case.target in {"skill", "composite-skill"}:
+    if case.target in {"skill", "composite-skill", "question"}:
         return [
             "uv",
             "run",
             "--project",
             str(repo_root() / "libs" / "cli"),
             "code2workspace",
+            "--session-workdir-mode",
+            "inherit",
             "--shell-allow-list",
             "all",
             "-n",
             case.prompt,
-            "--session-workdir-mode",
-            "inherit",
             "-q",
             "--no-mcp",
         ]
@@ -239,6 +286,7 @@ def _finalize_result(
     status: str | None,
     log_path: Path,
     prompt_path: Path,
+    answer_path: Path,
     returncode: int | None,
     log_text: str,
     parsed: dict[str, Any],
@@ -262,7 +310,10 @@ def _finalize_result(
     known_issue_hits = [item for item in case.known_issues if _matches(item, expectation_pool)]
 
     if status is None:
-        if known_issue_hits:
+        if returncode not in (None, 0):
+            final_status = "runner_error"
+            runner_error = runner_error or f"Non-zero exit code: {returncode}"
+        elif known_issue_hits:
             final_status = "known_issue"
         elif failed_expectations:
             final_status = "behavior_regression"
@@ -294,6 +345,7 @@ def _finalize_result(
         "prompt": case.prompt,
         "prompt_path": str(prompt_path),
         "log_path": str(log_path),
+        "answer_path": str(answer_path),
         "status": final_status,
         "returncode": returncode,
         "missing_env": missing_env,
@@ -459,10 +511,20 @@ def _matches(expectation: str, context: dict[str, Any]) -> bool:
     raise ValueError(f"Unsupported expectation matcher: {expectation}")
 
 
-def _combine_output(stdout: str, stderr: str) -> str:
-    if stdout and stderr:
-        return stdout + ("\n" if not stdout.endswith("\n") else "") + stderr
-    return stdout or stderr
+def _combine_output(stdout: str | bytes | None, stderr: str | bytes | None) -> str:
+    left = _coerce_text(stdout)
+    right = _coerce_text(stderr)
+    if left and right:
+        return left + ("\n" if not left.endswith("\n") else "") + right
+    return left or right
+
+
+def _coerce_text(payload: str | bytes | None) -> str:
+    if payload is None:
+        return ""
+    if isinstance(payload, bytes):
+        return payload.decode("utf-8", errors="replace")
+    return str(payload)
 
 
 def _list_dirs(root: Path) -> set[Path]:
@@ -479,28 +541,97 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", default=utc_date())
     parser.add_argument("--case", action="append", default=[])
+    parser.add_argument("--batch-file", type=Path)
+    parser.add_argument("--output-root", type=Path)
     parser.add_argument("--list-cases", action="store_true")
     return parser
 
 
+def run_cases(
+    cases: list[LiveEvalCase],
+    *,
+    run_date: str,
+    output_root: Path,
+    pinned_snapshot_root: Path | None = None,
+) -> dict[str, Any]:
+    results = [run_case(case, run_date=run_date, output_root=output_root) for case in cases]
+    result_dir = output_root / run_date
+    summary_payload = {
+        "date": run_date,
+        "results": results,
+    }
+    summary_path = write_summary_json(result_dir / "summary.json", summary_payload)
+    summary_zh_path = write_summary_zh(result_dir / "SUMMARY_ZH.md", results, run_date=run_date)
+    snapshot_path = write_capability_snapshot_zh(
+        result_dir / "CAPABILITY_SNAPSHOT_ZH.md",
+        results,
+        run_date=run_date,
+    )
+    pinned_snapshot_path = None
+    if pinned_snapshot_root is not None:
+        pinned_snapshot_path = write_capability_snapshot_zh(
+            pinned_snapshot_root / run_date / "CAPABILITY_SNAPSHOT_ZH.md",
+            results,
+            run_date=run_date,
+        )
+    return {
+        "date": run_date,
+        "result_dir": result_dir,
+        "summary_path": summary_path,
+        "summary_zh_path": summary_zh_path,
+        "capability_snapshot_path": snapshot_path,
+        "pinned_snapshot_path": pinned_snapshot_path,
+        "results": results,
+    }
+
+
 def main() -> int:
     args = build_parser().parse_args()
-    case_paths = [cases_root() / item for item in args.case] if args.case else None
-    cases = list_cases(case_paths)
+    case_paths = [cases_root() / item for item in args.case] if args.case else []
+    cases = list_cases(case_paths or None)
+    if args.batch_file is not None:
+        batch_cases = load_batch_cases(args.batch_file)
+        if case_paths:
+            seen = {case.path.resolve() for case in cases}
+            for case in batch_cases:
+                if case.path.resolve() not in seen:
+                    cases.append(case)
+        else:
+            cases = batch_cases
     if args.list_cases:
         for case in cases:
             print(case.path.name)
         return 0
 
-    results = [run_case(case, run_date=args.date) for case in cases]
-    result_dir = results_root() / args.date
-    summary_payload = {
-        "date": args.date,
-        "results": results,
-    }
-    write_summary_json(result_dir / "summary.json", summary_payload)
-    write_summary_zh(result_dir / "SUMMARY_ZH.md", results, run_date=args.date)
-    print(json.dumps({"date": args.date, "summary_path": str(result_dir / 'summary.json')}, ensure_ascii=False, indent=2))
+    output_root = args.output_root or results_root()
+    pinned_root = (
+        repo_root() / "experiments" / "skill_tests" / "snapshots"
+        if args.output_root is not None
+        else repo_root() / "experiments" / "skill_tests" / "snapshots"
+    )
+    bundle = run_cases(
+        cases,
+        run_date=args.date,
+        output_root=output_root,
+        pinned_snapshot_root=pinned_root,
+    )
+    print(
+        json.dumps(
+            {
+                "date": args.date,
+                "summary_path": str(bundle["summary_path"]),
+                "capability_snapshot_path": str(bundle["capability_snapshot_path"]),
+                "pinned_snapshot_path": (
+                    str(bundle["pinned_snapshot_path"])
+                    if bundle["pinned_snapshot_path"] is not None
+                    else None
+                ),
+                "result_dir": str(bundle["result_dir"]),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 

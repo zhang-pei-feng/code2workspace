@@ -1,0 +1,29 @@
+先查本地位点风险库，再补一层文献证据，确认哪些 Spike 位点最常见于抗体逃逸。本地库首轮结果偏向 NTD 零散位点；再按 RBD/NTD 分层做聚合，避免把单个模型里的高分位点误当成总体最重要位点。补查经典深度突变扫描文献和几个公认关键位点，避免只靠库里的聚合分数。再补查几个公认热点位点的库内分数，确保回答聚焦在 RBD 主逃逸热点而不是泛泛列点。最后补一个 NTD supersite 文献点，支撑 NTD 热点结论。最容易发生抗体逃逸的，主要集中在 **Spike 的 RBD，尤其是 RBM 周边**；如果按“反复被实验和变异株验证”的重要性看，优先记这些位点：
+
+- **E484**：最经典的抗体逃逸热点之一，对多克隆血清和多类中和抗体影响都很大。
+- **F486**：Omicron 后期非常关键，常与明显免疫逃逸相关。
+- **R346、K417、G446、L452、Y453、L455、F456、N460、Q493、Q498、N501、Y505**：多次出现在不同变异株/深度突变扫描中，常影响某一类或多类 RBD 抗体结合。
+- 其中可特别关注：**R346 / L452 / F456 / E484 / F486 / Q493 / N501 / Y505**。
+
+此外，**NTD supersite** 也是重要逃逸区，常见热点包括：
+- **F140、Y144/145、W152、E156-F157-R158 区段、R246**
+- 这类位点常通过缺失、插入或替换削弱 NTD 中和抗体识别。
+
+简化结论：  
+**RBD 里最核心的是 E484、F486，其次是 R346/K417/G446/L452/F456/Q493/N501/Y505；NTD 里最核心的是 140–158 和 246 附近。**  
+信息来源：本地 `virus_variation` 位点风险库；PubMed: Greaney et al., *Cell Host Microbe* 2021 (PMID 33259788), *Nat Commun* 2021 (PMID 34234131); McCallum et al., *Cell* 2021 (PMID 33761326)。
+🔧 Calling tool: write_todos
+🔧 Calling tool: read_file
+🔧 Calling tool: read_file
+🔧 Calling tool: write_todos
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: execute
+🔧 Calling tool: write_todos

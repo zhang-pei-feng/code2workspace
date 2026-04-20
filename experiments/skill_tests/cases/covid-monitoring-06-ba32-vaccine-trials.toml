@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-06-ba32-vaccine-trials"
+prompt = "近期是否有新的针对新冠 BA.3.2 的疫苗进入临床试验？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

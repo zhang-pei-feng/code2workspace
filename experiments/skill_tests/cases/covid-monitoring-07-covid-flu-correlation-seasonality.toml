@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-07-covid-flu-correlation-seasonality"
+prompt = "历年新冠和流感阳性率是否有相关关系？新冠阳性率的波动周期有什么规律？是否和季节有关？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

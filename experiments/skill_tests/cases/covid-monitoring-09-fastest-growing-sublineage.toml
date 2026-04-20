@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-09-fastest-growing-sublineage"
+prompt = "近两周增长最快的亚型及其序列数有多少？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

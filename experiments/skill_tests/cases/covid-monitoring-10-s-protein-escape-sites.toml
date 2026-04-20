@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-10-s-protein-escape-sites"
+prompt = "新冠病毒S蛋白上哪些位点的突变最容易逃逸抗体？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

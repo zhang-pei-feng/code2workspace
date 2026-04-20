@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-04-clinical-vs-wastewater-trends"
+prompt = "临床阳性率趋势与污水监测趋势是否一致？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

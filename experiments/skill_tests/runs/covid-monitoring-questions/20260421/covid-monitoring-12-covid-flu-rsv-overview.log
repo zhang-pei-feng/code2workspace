@@ -1,0 +1,36 @@
+先抓取近期官方监测页和汇总源，优先覆盖 WHO、美国 CDC、中国疾控，并补充 RSV/流感数据。已拿到中国疾控总览页和 CDC 监测入口；下一步补抓流感周报、急性呼吸道哨点和 CDC 多病原周度摘要，提炼近期趋势。补抓最新单篇周报正文和可用的数据入口，尽量把“上升/下降、主导病原、是否处于季节尾部”说清楚。用现成 skill 脚本补查更广的官方来源，看看 WHO/CDC 是否有更直接的近期周报或摘要页。再补一轮直接的周报正文，优先抓美国 FluView 当前周报和可能可读的 COVID/RSV 监测页。抓取中国疾控最新月报正文，补上 COVID 的最新数值。近期看，三种病原整体都不在高位，但**流感活动相对最明显，RSV 处于回落期，COVID 维持低水平小幅波动**。  
+- **中国**：第15周急性呼吸道哨点监测显示，门急诊样本阳性前三是**流感 15.3%**、鼻病毒 8.8%、副流感 6.9%；**RSV 2.6%，较上周下降 1.2 个百分点**；**新冠 1.8%，总体低位**。住院重症呼吸道感染中，RSV 为 **5.0%**，也在下降。  
+- **流感**：中国流感周报显示第15周南北方**流感阳性率下降**，但仍以**B 型流感为主**；全国报告 **23 起**流感样病例暴发，较前一周 56 起下降。  
+- **COVID**：中国 2026 年 3 月新增确诊 **26,306 例**、重症 **60 例**、死亡 **2 例**，属**低位波动增加**；本土序列仍几乎全是奥密克戎，**NB.1.8.1 及其亚分支**占主导，现有证据**未提示额外公共卫生风险的新变异株**。WHO 也提示全球 SARS-CoV-2 监测更多转入常规呼吸道监测，近期变异株面板还有技术性缺口。  
+- **美国/全球补充**：CDC 当前框架仍把 COVID、流感、RSV 作为同一季节性呼吸道病原持续监测；RSV 页面提示其季节通常秋季起、冬季达峰、春季结束，和目前中国“RSV 下降”的信号一致。  
+
+信息来源：China CDC 全国急性呼吸道传染病哨点监测情况（2026年第15周）；China CDC 中国流感监测周报（2026年第15周）；China CDC 全国新型冠状病毒感染疫情情况（2026年3月）；WHO COVID-19 dashboard；CDC RESP-NET / RSV Surveillance。
+🔧 Calling tool: write_todos
+🔧 Calling tool: read_file
+🔧 Calling tool: read_file
+🔧 Calling tool: read_file
+🔧 Calling tool: write_todos
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: ls
+🔧 Calling tool: ls
+🔧 Calling tool: read_file
+🔧 Calling tool: read_file
+🔧 Calling tool: ls
+🔧 Calling tool: ls
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: read_file
+🔧 Calling tool: read_file
+🔧 Calling tool: fetch_url
+🔧 Calling tool: write_todos

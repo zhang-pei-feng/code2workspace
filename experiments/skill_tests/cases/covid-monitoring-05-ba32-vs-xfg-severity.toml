@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-05-ba32-vs-xfg-severity"
+prompt = "BA.3.2 和 XFG 毒株的子代中，哪一种会导致临床重症率增加？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

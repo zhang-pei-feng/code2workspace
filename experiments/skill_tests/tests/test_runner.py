@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -7,7 +8,9 @@ from experiments.skill_tests.runner import (
     _build_command,
     _matches,
     cases_root,
+    load_batch_cases,
     load_case,
+    run_case,
 )
 
 
@@ -102,3 +105,105 @@ def test_build_command_preserves_cwd_for_skill_eval_cases() -> None:
 
     assert "--session-workdir-mode" in command
     assert "inherit" in command
+
+
+def test_load_batch_cases_reads_case_names_from_markdown(tmp_path: Path) -> None:
+    batch_file = tmp_path / "batch.md"
+    batch_file.write_text(
+        "\n".join(
+            [
+                "# Demo Batch",
+                "",
+                "- `academic-search-positive.toml`: question one",
+                "- `epietl-api-channels-positive.toml`: question two",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    cases = load_batch_cases(batch_file)
+
+    assert [case.path.name for case in cases] == [
+        "academic-search-positive.toml",
+        "epietl-api-channels-positive.toml",
+    ]
+
+
+def test_run_case_writes_to_custom_output_root_and_extracts_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = LiveEvalCase(
+        target="question",
+        name="demo",
+        prompt="hello",
+        required_env=(),
+        expected_behaviors=(),
+        expected_outputs=(),
+        known_issues=(),
+        timeout_minutes=10,
+        allow_timeout_after_expectations=False,
+        command=None,
+        artifact_root=None,
+        path=tmp_path / "demo.toml",
+    )
+
+    def fake_run(*args, **kwargs):  # noqa: ANN002, ANN003
+        return subprocess.CompletedProcess(
+            args=kwargs.get("args", args[0] if args else []),
+            returncode=0,
+            stdout="最终回答第一行\n最终回答第二行\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("experiments.skill_tests.runner.subprocess.run", fake_run)
+
+    result = run_case(
+        case,
+        run_date="20260421",
+        output_root=tmp_path / "runs" / "batch-a",
+    )
+
+    assert result["log_path"].startswith(str(tmp_path / "runs" / "batch-a" / "20260421"))
+    assert result["answer_path"].endswith("demo.answer.txt")
+    assert Path(result["answer_path"]).read_text(encoding="utf-8").strip().startswith(
+        "最终回答第一行"
+    )
+
+
+def test_run_case_nonzero_returncode_becomes_runner_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = LiveEvalCase(
+        target="question",
+        name="demo-error",
+        prompt="hello",
+        required_env=(),
+        expected_behaviors=(),
+        expected_outputs=(),
+        known_issues=(),
+        timeout_minutes=10,
+        allow_timeout_after_expectations=False,
+        command=None,
+        artifact_root=None,
+        path=tmp_path / "demo-error.toml",
+    )
+
+    def fake_run(*args, **kwargs):  # noqa: ANN002, ANN003
+        return subprocess.CompletedProcess(
+            args=kwargs.get("args", args[0] if args else []),
+            returncode=1,
+            stdout="Unexpected error (RemoteException): boom\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("experiments.skill_tests.runner.subprocess.run", fake_run)
+
+    result = run_case(
+        case,
+        run_date="20260421",
+        output_root=tmp_path / "runs" / "batch-a",
+    )
+
+    assert result["status"] == "runner_error"
+    assert result["returncode"] == 1

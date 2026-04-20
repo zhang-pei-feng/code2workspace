@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-11-us-trend-deaths-ed-positivity"
+prompt = "讲一下美国新冠疫情的趋势，最近一个月美国的新冠死亡率、急诊科就诊人数和检测阳性率变化情况如何？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

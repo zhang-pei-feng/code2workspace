@@ -42,6 +42,18 @@ PYTHONPATH=/mnt/data1/zhangpf/code2workspace \
 uv run --project libs/cli python experiments/skill_tests/runner.py --list-cases
 ```
 
+Run the fixed COVID monitoring question batch into `experiments/...`:
+
+```bash
+PYTHONPATH=/mnt/data1/zhangpf/code2workspace \
+uv run --project libs/cli python experiments/skill_tests/run_question_batch.py
+```
+
+This path tests direct natural-language questions against `code2workspace`
+without explicitly telling it to invoke any particular skill. The batch prompt
+list lives under `experiments/skill_tests/batches/`, and the run artifacts live
+under `experiments/skill_tests/runs/`.
+
 ## Output
 
 Results are written to:
@@ -56,6 +68,7 @@ Each run writes:
 - `<case>.log`
 - `summary.json`
 - `SUMMARY_ZH.md`
+- `CAPABILITY_SNAPSHOT_ZH.md` (输入 + 全量最终回答输出，已过滤 tool trace)
 
 ## Status model
 

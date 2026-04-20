@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-02-spring-travel-covid-spread"
+prompt = "2026 年初的春运人口流动是否促进了新冠传播？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

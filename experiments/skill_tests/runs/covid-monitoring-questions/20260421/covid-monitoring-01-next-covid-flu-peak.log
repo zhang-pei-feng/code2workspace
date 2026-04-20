@@ -1,0 +1,30 @@
+读取完本地监测技能说明，下一步抓取近期官方阳性率/监测趋势，再据此给出带不确定性的时间判断。继续抓取中国疾控的流感周报和急性呼吸道哨点监测，优先用中国官方数据判断“下一波”时间窗。为避免只看近两周噪声，再补一轮去年同期中国新冠与冬季流感走势，做季节性对照。按目前中国疾控最新监测看，**下一波流感阳性率高峰更可能在 2026 年冬季（大致 11 月下旬到 2027 年 1 月）**；**下一波新冠阳性率高峰更可能在 2026 年晚春到初夏（大致 4–6 月）**。  
+依据是：当前 2026 年第14–15周流感阳性率仍高但已从 **16.3% 降到 15.3%**，属于春季尾段；而新冠在哨点门急诊流感样病例中的阳性率仅 **2.0%→1.8%**，整体处低位。再对照去年中国疾控数据，2025 年新冠阳性率曾在 **4–6 月由 7.0% 升到 23.8% 后回落**，而流感则主要在冬春季高发。  
+所以如果问“下一波”而不是“当前这波尾声”，我判断：**流感看冬季，新冠看明年晚春初夏**。但这只是基于近一年季节性和当前走势的推断，若出现新变异株、学校/节假日传播放大，时间可前后偏移 **2–6 周**。  
+信息来源：China CDC《全国急性呼吸道传染病哨点监测情况（2026年第14–15周）》；China CDC《全国新型冠状病毒感染疫情情况（2026年2月、3月；2025年4月、5月、6月）》；China CDC《流感监测周报（2026年第14–15周）》
+🔧 Calling tool: write_todos
+🔧 Calling tool: read_file
+🔧 Calling tool: read_file
+🔧 Calling tool: read_file
+🔧 Calling tool: write_todos
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: write_todos
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: fetch_url
+🔧 Calling tool: write_todos

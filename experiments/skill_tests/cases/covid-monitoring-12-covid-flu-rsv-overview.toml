@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-12-covid-flu-rsv-overview"
+prompt = "帮我看一下近期 COVID、流感和 RSV 的监测情况。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

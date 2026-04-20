@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-03-guangzhou-event-covid-impact"
+prompt = "我想 2026 年8 月在广州举办一次大型运动会，是否会受到新冠的影响？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+

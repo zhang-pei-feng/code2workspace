@@ -1,0 +1,9 @@
+target = "question"
+name = "covid-monitoring-01-next-covid-flu-peak"
+prompt = "下一波新冠/流感阳性率的高峰会在什么时间？"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+timeout_minutes = 12
+
