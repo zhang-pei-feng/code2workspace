@@ -1,0 +1,22 @@
+target = "composite-skill"
+name = "epidemic-warning-report-end-to-end"
+prompt = "验证 epidemic-warning-report 的多 lane 端到端生成：初始化目录，写入至少三个 lane note，并 compose 出 final_report.md。"
+required_env = []
+expected_behaviors = []
+expected_outputs = [
+  "artifact:new-run-dir",
+  "report-final-exists",
+  "report-lane-count>=3",
+  "report-sources-count>=2",
+  "report-risk-level",
+  "report-char-count>=5000",
+  "report-meets-min-chars",
+]
+known_issues = []
+timeout_minutes = 2
+artifact_root = "results/skills/epidemic-warning-report"
+command = [
+  "bash",
+  "-lc",
+  "set -euo pipefail\nRUN_DIR=$(python3 .code2workspace/skills/epidemic-warning-report/scripts/epidemic_report_tool.py init --topic \"端到端疫情预警报告\" --pathogen \"RSV,Influenza\" --region \"global\" --period \"last 30 days\" | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"run_dir\"])')\nRUN_DIR=\"$RUN_DIR\" python3 - <<'PY'\nimport os\nfrom pathlib import Path\nrun_dir = Path(os.environ['RUN_DIR'])\nbody = {\n    '01_official-monitoring.md': ('Official Monitoring', 'respiratory-disease-data-fetcher', ['China CDC monthly COVID report', 'WHO respiratory dashboard'], '官方监测层显示不同地区对 RSV、流感和相关呼吸道负荷的表述存在时间差、口径差和覆盖差，因此报告需要同时写明趋势、强弱信号、地区异质性和证据等级。' * 40),\n    '02_source-catalog.md': ('Source Catalog and Channel Context', 'epietl-api', ['EpiETL channels', 'official dashboards'], '来源目录层提供对 source type、channel 组织方和地理覆盖的解释，这一层能说明为什么某些地区信息更全、某些地区只能得到片段更新。' * 36),\n    '03_variant-risk.md': ('Variant and Local DB Evidence', 'virus-variation-query', ['local DB'], '变异风险层在本报告中用于提示潜在位点和谱系结构风险，但结论必须谨慎，避免把位点风险直接上升为临床风险判断。' * 30),\n    '04_literature-clinical.md': ('Literature and Clinical Evidence', 'academic-search', ['PubMed'], '文献和临床层补充了疫苗进展、受试人群、阶段性保护证据与中和证据，让报告从单纯监测快照扩展为机制与干预并重的长报告。' * 40),\n    '05_actions.md': ('Actions', 'epidemic-warning-report', ['synthesized lane evidence'], '在行动层，报告应提出分级监测、重点机构通报、临床准备和序列追踪建议，并明确哪些行动是立即执行、哪些行动是持续追踪。' * 36),\n}\nfor filename, payload in body.items():\n    title, skill, sources, text = payload\n    path = run_dir / 'lanes' / filename\n    path.write_text('# ' + title + '\\n\\n' + f'Skill: {skill}\\n' + '\\n'.join(f'Source: {s}' for s in sources) + '\\n' + text + '\\n', encoding='utf-8')\nPY\npython3 .code2workspace/skills/epidemic-warning-report/scripts/epidemic_report_tool.py compose --run-dir \"$RUN_DIR\" --risk-level Elevated --summary \"End-to-end report generation completed with multi-source long-form content.\""
+]

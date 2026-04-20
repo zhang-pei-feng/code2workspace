@@ -1,0 +1,4 @@
+interface:
+  display_name: "Benchmark Workflow Orchestrator"
+  short_description: "复用 Bio-OS workflow、批量 benchmark、结果汇总与下载"
+  default_prompt: "使用 $benchmark-workflow-orchestrator 处理 workflow benchmark、多个 workflow 复用、Bio-OS 结果收集和 benchmark 汇总。先用共享 bioos helper 探测环境，再视情况调用 bioos-operator。禁止再调用旧 superagent 目录里的 ACP/DeepAgents agent。"

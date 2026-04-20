@@ -6,6 +6,11 @@
 
 ```txt
 code2workspace/
+├── apps/
+│   └── webapp/          # minimal web workspace MVP
+├── experiments/
+│   ├── harness/         # harness-practice scaffolding
+│   └── oneshot/         # generic one-shot repo-task runner
 ├── libs/
 │   ├── code2workspace/  # SDK runtime
 │   └── cli/         # terminal UI and non-interactive runner
@@ -14,7 +19,11 @@ code2workspace/
 
 ## Working rules
 
+- Read `SESSION_BRIEF.md` first for the shortest handoff.
+- Read `DEVELOPMENT_LOG.md` for the latest repository status, verified setup, and recent decisions.
+- Read `PROJECT_ROADMAP.md` for the active implementation target.
 - Keep changes focused on `libs/code2workspace` and `libs/cli`.
+- Keep new work aligned with the web / oneshot / harness roadmap unless the plan is intentionally changed.
 - Preserve current CLI and non-interactive behavior unless the task explicitly changes it.
 - Prefer small, testable changes over broad refactors.
 - Add or update tests when changing behavior.
@@ -26,4 +35,5 @@ code2workspace/
 uv run --project libs/cli code2workspace
 uv run --project libs/cli code2workspace -n "Reply with OK only." -q
 uv run --project libs/cli --group test pytest
+uv run --project libs/cli python -m uvicorn apps.webapp.api:app --app-dir . --reload
 ```

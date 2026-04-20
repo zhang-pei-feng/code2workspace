@@ -1,0 +1,16 @@
+target = "skill"
+name = "virus-variation-query-positive"
+prompt = "查一下本地数据库里当前 BA.2 谱系在 Spike RBD 区域有哪些定义突变，并结合本地风险库看这些位点里哪些抗体逃逸或ACE2相关风险较高，只给我数据库证据，不要查网页。"
+required_env = ["DATA_GOVERNANCE_AGENT_ROOT"]
+expected_behaviors = [
+  "tool:execute",
+  "log:covid_data",
+  "log:virus_variation",
+]
+expected_outputs = [
+  "log:BA.2",
+  "log:RBD",
+  "log:抗体逃逸",
+]
+known_issues = []
+timeout_minutes = 6

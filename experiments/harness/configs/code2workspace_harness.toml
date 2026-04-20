@@ -1,0 +1,49 @@
+[experiment]
+name = "code2workspace-harness"
+workspace_root = ".workspaces/oneshot"
+output_root = "results/harness"
+max_iterations = 3
+
+# Optional smoke proposer:
+#
+# [proposer]
+# command = [
+#   "uv",
+#   "run",
+#   "--project",
+#   "libs/cli",
+#   "python",
+#   "experiments/harness/proposers/noop_proposer.py",
+# ]
+# max_runtime_minutes = 10
+
+# Preferred deepagents outer proposer:
+#
+# [better_agent]
+# model = "gpt-5"
+# max_turns = 40
+# deepagents_root = "/mnt/data1/zhangpf/deepagents"
+
+[surfaces.one_shot_prompt]
+kind = "workspace_file"
+target = "experiments/harness/surfaces/one_shot_prompt.txt"
+filename = "one_shot_prompt.txt"
+base_file = "experiments/harness/surfaces/one_shot_prompt.txt"
+
+[surfaces.completion_rubric]
+kind = "workspace_file"
+target = "experiments/harness/surfaces/completion_rubric.txt"
+filename = "completion_rubric.txt"
+base_file = "experiments/harness/surfaces/completion_rubric.txt"
+
+[[cases]]
+case_id = "spades-train"
+repo_url = "https://github.com/ablab/spades"
+split = "train"
+max_runtime_minutes = 30
+
+[[cases]]
+case_id = "vpipe-holdout"
+repo_url = "https://github.com/cbg-ethz/v-pipe"
+split = "holdout"
+max_runtime_minutes = 30

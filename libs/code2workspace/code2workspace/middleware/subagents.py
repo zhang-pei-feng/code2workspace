@@ -87,6 +87,21 @@ class SubAgent(TypedDict):
     ``_PermissionMiddleware`` is appended last in the middleware stack.
     """
 
+    allow_nested_task: NotRequired[bool]
+    """Whether this subagent may receive a nested `task` tool."""
+
+    nested_task_budget: NotRequired[int]
+    """Maximum number of nested task launches allowed for this subagent."""
+
+    max_delegation_depth: NotRequired[int]
+    """Maximum delegation depth allowed for nested task launches."""
+
+    nested_subagents: NotRequired[list["SubAgent | CompiledSubAgent"]]
+    """Nested subagents that may be launched from this subagent."""
+
+    nested_scope_guard: NotRequired[str]
+    """String that must appear in the current delegated task description to allow nesting."""
+
 
 class CompiledSubAgent(TypedDict):
     """A pre-compiled agent spec.
@@ -134,7 +149,70 @@ DEFAULT_SUBAGENT_PROMPT = "In order to complete the objective that the user asks
 #    be explicitly filtered from runtime.state when invoking a subagent to prevent parent state
 #    from leaking to child agents (e.g., the general-purpose subagent loads its own skills via
 #    SkillsMiddleware).
-_EXCLUDED_STATE_KEYS = {"messages", "todos", "structured_response", "skills_metadata", "memory_contents"}
+_EXCLUDED_STATE_KEYS = {
+    "messages",
+    "todos",
+    "structured_response",
+    "skills_metadata",
+    "memory_contents",
+    "_delegation_depth",
+    "_delegation_calls",
+}
+
+_DELEGATION_DEPTH_KEY = "_delegation_depth"
+_DELEGATION_CALLS_KEY = "_delegation_calls"
+
+
+def _message_texts_from_state(state: dict[str, Any]) -> list[str]:
+    texts: list[str] = []
+    messages = state.get("messages", [])
+    if not isinstance(messages, list):
+        return texts
+    for message in messages:
+        content = getattr(message, "content", "")
+        if isinstance(content, str):
+            texts.append(content)
+            continue
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        texts.append(text)
+    return texts
+
+
+def check_nested_delegation_allowed(
+    *,
+    state: dict[str, Any],
+    scope_guard: str | None,
+    max_delegation_depth: int | None,
+    delegation_call_budget: int | None,
+) -> str | None:
+    """Return an error string if nested delegation should be rejected."""
+    current_depth = int(state.get(_DELEGATION_DEPTH_KEY, 0) or 0)
+    current_calls = int(state.get(_DELEGATION_CALLS_KEY, 0) or 0)
+
+    if scope_guard:
+        joined_text = "\n".join(_message_texts_from_state(state))
+        if scope_guard not in joined_text:
+            return (
+                "Nested subagent delegation is only allowed inside the "
+                f"'{scope_guard}' workflow context."
+            )
+
+    if max_delegation_depth is not None and current_depth >= max_delegation_depth:
+        return (
+            "Nested subagent delegation refused because the maximum delegation "
+            f"depth of {max_delegation_depth} has been reached."
+        )
+
+    if delegation_call_budget is not None and current_calls >= delegation_call_budget:
+        return (
+            "Nested subagent delegation refused because this lane has already "
+            f"used its nested task budget of {delegation_call_budget}."
+        )
+    return None
 
 
 class TaskToolSchema(BaseModel):
@@ -304,11 +382,18 @@ class _SubagentSpec(TypedDict):
     name: str
     description: str
     runnable: Runnable
+    max_delegation_depth: int | None
+    delegation_call_budget: int | None
+    scope_guard: str | None
 
 
 def _build_task_tool(  # noqa: C901
     subagents: list[_SubagentSpec],
     task_description: str | None = None,
+    *,
+    max_delegation_depth: int | None = None,
+    delegation_call_budget: int | None = None,
+    scope_guard: str | None = None,
 ) -> BaseTool:
     """Create a task tool from pre-built subagent graphs.
 
@@ -321,7 +406,9 @@ def _build_task_tool(  # noqa: C901
         A StructuredTool that can invoke subagents by type.
     """
     # Build the graphs dict and descriptions from the unified spec list
-    subagent_graphs: dict[str, Runnable] = {spec["name"]: spec["runnable"] for spec in subagents}
+    subagent_graphs: dict[str, Runnable] = {
+        spec["name"]: spec["runnable"] for spec in subagents
+    }
     subagent_description_str = "\n".join(f"- {s['name']}: {s['description']}" for s in subagents)
 
     # Use custom description if provided, otherwise use default template
@@ -332,7 +419,12 @@ def _build_task_tool(  # noqa: C901
     else:
         description = task_description
 
-    def _return_command_with_state_update(result: dict, tool_call_id: str) -> Command:
+    def _return_command_with_state_update(
+        result: dict,
+        tool_call_id: str,
+        *,
+        extra_state_update: dict[str, Any] | None = None,
+    ) -> Command:
         # Validate that the result contains a 'messages' key
         if "messages" not in result:
             error_msg = (
@@ -347,9 +439,18 @@ def _build_task_tool(  # noqa: C901
         message_text = result["messages"][-1].text.rstrip() if result["messages"][-1].text else ""
         return Command(
             update={
+                **(extra_state_update or {}),
                 **state_update,
                 "messages": [ToolMessage(message_text, tool_call_id=tool_call_id)],
             }
+        )
+
+    def _validate_nested_limits(runtime: ToolRuntime) -> str | None:
+        return check_nested_delegation_allowed(
+            state=cast("dict[str, Any]", runtime.state),
+            scope_guard=scope_guard,
+            max_delegation_depth=max_delegation_depth,
+            delegation_call_budget=delegation_call_budget,
         )
 
     def _validate_and_prepare_state(subagent_type: str, description: str, runtime: ToolRuntime) -> tuple[Runnable, dict]:
@@ -358,6 +459,9 @@ def _build_task_tool(  # noqa: C901
         # Create a new state dict to avoid mutating the original
         subagent_state = {k: v for k, v in runtime.state.items() if k not in _EXCLUDED_STATE_KEYS}
         subagent_state["messages"] = [HumanMessage(content=description)]
+        current_depth = int(runtime.state.get(_DELEGATION_DEPTH_KEY, 0) or 0)
+        subagent_state[_DELEGATION_DEPTH_KEY] = current_depth + 1
+        subagent_state[_DELEGATION_CALLS_KEY] = 0
         return subagent, subagent_state
 
     def task(
@@ -365,6 +469,8 @@ def _build_task_tool(  # noqa: C901
         subagent_type: str,
         runtime: ToolRuntime,
     ) -> str | Command:
+        if limit_error := _validate_nested_limits(runtime):
+            return limit_error
         if subagent_type not in subagent_graphs:
             allowed_types = ", ".join([f"`{k}`" for k in subagent_graphs])
             return f"We cannot invoke subagent {subagent_type} because it does not exist, the only allowed types are {allowed_types}"
@@ -373,13 +479,22 @@ def _build_task_tool(  # noqa: C901
             raise ValueError(value_error_msg)
         subagent, subagent_state = _validate_and_prepare_state(subagent_type, description, runtime)
         result = subagent.invoke(subagent_state)
-        return _return_command_with_state_update(result, runtime.tool_call_id)
+        return _return_command_with_state_update(
+            result,
+            runtime.tool_call_id,
+            extra_state_update={
+                _DELEGATION_DEPTH_KEY: int(runtime.state.get(_DELEGATION_DEPTH_KEY, 0) or 0),
+                _DELEGATION_CALLS_KEY: int(runtime.state.get(_DELEGATION_CALLS_KEY, 0) or 0) + 1,
+            },
+        )
 
     async def atask(
         description: str,
         subagent_type: str,
         runtime: ToolRuntime,
     ) -> str | Command:
+        if limit_error := _validate_nested_limits(runtime):
+            return limit_error
         if subagent_type not in subagent_graphs:
             allowed_types = ", ".join([f"`{k}`" for k in subagent_graphs])
             return f"We cannot invoke subagent {subagent_type} because it does not exist, the only allowed types are {allowed_types}"
@@ -388,7 +503,14 @@ def _build_task_tool(  # noqa: C901
             raise ValueError(value_error_msg)
         subagent, subagent_state = _validate_and_prepare_state(subagent_type, description, runtime)
         result = await subagent.ainvoke(subagent_state)
-        return _return_command_with_state_update(result, runtime.tool_call_id)
+        return _return_command_with_state_update(
+            result,
+            runtime.tool_call_id,
+            extra_state_update={
+                _DELEGATION_DEPTH_KEY: int(runtime.state.get(_DELEGATION_DEPTH_KEY, 0) or 0),
+                _DELEGATION_CALLS_KEY: int(runtime.state.get(_DELEGATION_CALLS_KEY, 0) or 0) + 1,
+            },
+        )
 
     return StructuredTool.from_function(
         name="task",
@@ -455,6 +577,9 @@ class SubAgentMiddleware(AgentMiddleware[Any, ContextT, ResponseT]):
         subagents: Sequence[SubAgent | CompiledSubAgent],
         system_prompt: str | None = TASK_SYSTEM_PROMPT,
         task_description: str | None = None,
+        max_delegation_depth: int | None = None,
+        delegation_call_budget: int | None = None,
+        scope_guard: str | None = None,
     ) -> None:
         """Initialize the `SubAgentMiddleware`."""
         super().__init__()
@@ -466,7 +591,13 @@ class SubAgentMiddleware(AgentMiddleware[Any, ContextT, ResponseT]):
         self._subagents = subagents
         subagent_specs = self._get_subagents()
 
-        task_tool = _build_task_tool(subagent_specs, task_description)
+        task_tool = _build_task_tool(
+            subagent_specs,
+            task_description,
+            max_delegation_depth=max_delegation_depth,
+            delegation_call_budget=delegation_call_budget,
+            scope_guard=scope_guard,
+        )
 
         # Build system prompt with available agents
         if system_prompt and subagent_specs:
@@ -489,7 +620,16 @@ class SubAgentMiddleware(AgentMiddleware[Any, ContextT, ResponseT]):
             if "runnable" in spec:
                 # CompiledSubAgent - use as-is
                 compiled = cast("CompiledSubAgent", spec)
-                specs.append({"name": compiled["name"], "description": compiled["description"], "runnable": compiled["runnable"]})
+                specs.append(
+                    {
+                        "name": compiled["name"],
+                        "description": compiled["description"],
+                        "runnable": compiled["runnable"],
+                        "max_delegation_depth": None,
+                        "delegation_call_budget": None,
+                        "scope_guard": None,
+                    }
+                )
                 continue
 
             # SubAgent - validate required fields
@@ -512,19 +652,22 @@ class SubAgentMiddleware(AgentMiddleware[Any, ContextT, ResponseT]):
             if interrupt_on:
                 middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
 
-            specs.append(
-                {
-                    "name": spec["name"],
-                    "description": spec["description"],
-                    "runnable": create_agent(
-                        model,
-                        system_prompt=spec["system_prompt"],
-                        tools=spec["tools"],
-                        middleware=middleware,
-                        name=spec["name"],
-                    ),
-                }
-            )
+                specs.append(
+                    {
+                        "name": spec["name"],
+                        "description": spec["description"],
+                        "runnable": create_agent(
+                            model,
+                            system_prompt=spec["system_prompt"],
+                            tools=spec["tools"],
+                            middleware=middleware,
+                            name=spec["name"],
+                        ),
+                        "max_delegation_depth": spec.get("max_delegation_depth"),
+                        "delegation_call_budget": spec.get("nested_task_budget"),
+                        "scope_guard": spec.get("nested_scope_guard"),
+                    }
+                )
 
         return specs
 

@@ -1,0 +1,14 @@
+target = "skill"
+name = "academic-search-negative"
+prompt = "请快速查看最近一个月中国疾控发布的新冠疫情情况，要点列出病例、重症和死亡相关信息，尽量用固定官方来源，不要全网扫描。"
+required_env = []
+expected_behaviors = [
+  "tool:fetch_url",
+  "not-log:PubMed",
+]
+expected_outputs = [
+  "log:中国疾控",
+  "not-log:academic-search (PubMed)",
+]
+known_issues = []
+timeout_minutes = 5

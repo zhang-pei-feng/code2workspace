@@ -52,6 +52,7 @@ from code2workspace_cli.hooks import dispatch_hook, dispatch_hook_fire_and_forge
 from code2workspace_cli.model_config import ModelConfigError
 from code2workspace_cli.sessions import generate_thread_id
 from code2workspace_cli.textual_adapter import SessionStats, print_usage_table
+from code2workspace_cli.tool_display import format_tool_display
 from code2workspace_cli.unicode_security import (
     check_url_safety,
     detect_dangerous_unicode,
@@ -328,6 +329,10 @@ def _process_ai_message(
             chunk_name = block.get("name")
             chunk_id = block.get("id")
             chunk_index = block.get("index")
+            chunk_args = block.get("args")
+            formatted_tool = None
+            if chunk_name and isinstance(chunk_args, dict):
+                formatted_tool = format_tool_display(chunk_name, chunk_args)
 
             if chunk_index is not None:
                 buffer_key: int | str = chunk_index
@@ -344,8 +349,9 @@ def _process_ai_message(
                     state.spinner.stop()
                 if state.full_response and not state.quiet:
                     _write_newline()
+                display_name = formatted_tool or chunk_name
                 console.print(
-                    f"[dim]🔧 Calling tool: {escape_markup(chunk_name)}[/dim]",
+                    f"[dim]🔧 Calling tool: {escape_markup(display_name)}[/dim]",
                     highlight=False,
                 )
 

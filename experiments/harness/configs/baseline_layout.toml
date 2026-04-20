@@ -1,0 +1,22 @@
+[experiment]
+name = "repo-oneshot-baseline"
+results_root = "results/oneshot"
+batch_results_root = "results/oneshot/_batch"
+workspace_root = ".workspaces/oneshot"
+prompt_surface = "experiments/harness/surfaces/one_shot_prompt.txt"
+completion_surface = "experiments/harness/surfaces/completion_rubric.txt"
+repo_splits = "experiments/harness/configs/repo_splits.toml"
+
+[artifacts]
+per_run = [
+  "prompt.txt",
+  "manifest.json",
+  "agent.log",
+  "summary.json",
+]
+batch = [
+  "batch_summary.json",
+]
+
+[notes]
+purpose = "Freeze the artifact layout before implementing keep-or-discard optimization loops."

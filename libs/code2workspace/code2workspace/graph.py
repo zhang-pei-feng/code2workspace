@@ -541,6 +541,56 @@ def create_workspace_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph ass
                 processed_spec["interrupt_on"] = subagent_interrupt_on
             inline_subagents.append(processed_spec)
 
+    processed_specs_by_name = {
+        cast("str", spec["name"]): spec
+        for spec in inline_subagents
+        if "name" in spec
+    }
+
+    for spec in inline_subagents:
+        if "runnable" in spec:
+            continue
+        if not spec.get("allow_nested_task"):
+            continue
+        nested_names = list(spec.get("nested_subagents", []))
+        if not nested_names:
+            continue
+        nested_specs: list[SubAgent | CompiledSubAgent] = []
+        for nested_name in nested_names:
+            nested_spec = processed_specs_by_name.get(nested_name)
+            if nested_spec is None:
+                logger.warning(
+                    "Skipping nested subagent %r for %r because it does not exist",
+                    nested_name,
+                    spec["name"],
+                )
+                continue
+            nested_specs.append(nested_spec)
+        if not nested_specs:
+            continue
+        spec_middleware = cast("list[AgentMiddleware[Any, Any, Any]]", spec.setdefault("middleware", []))
+        spec_middleware.append(
+            SubAgentMiddleware(
+                backend=backend,
+                subagents=nested_specs,
+                system_prompt=(
+                    "You may launch a narrowly scoped nested researcher only when a "
+                    "specific evidence gap blocks completion of the current epidemic "
+                    "warning lane. Prefer one nested delegate at a time, keep the "
+                    "research target concrete, and return to the current lane as "
+                    "soon as the missing evidence is filled."
+                ),
+                task_description=(
+                    "Launch a narrowly scoped nested research helper only when the "
+                    "current epidemic warning lane has a specific unresolved evidence "
+                    "gap. Available nested agents:\n{available_agents}"
+                ),
+                max_delegation_depth=int(spec.get("max_delegation_depth", 3)),
+                delegation_call_budget=int(spec.get("nested_task_budget", 1)),
+                scope_guard=str(spec.get("nested_scope_guard", "epidemic-warning-report")),
+            )
+        )
+
     # If an agent with general purpose name already exists in subagents, then don't add it
     # This is how you overwrite/configure general purpose subagent
     if not any(spec["name"] == GENERAL_PURPOSE_SUBAGENT["name"] for spec in inline_subagents):

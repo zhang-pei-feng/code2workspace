@@ -17,7 +17,9 @@ from code2workspace_cli.non_interactive import (
     _build_non_interactive_header,
     _collect_action_request_warnings,
     _make_hitl_decision,
+    _process_ai_message,
     _start_langsmith_thread_url_lookup,
+    StreamState,
     run_non_interactive,
 )
 
@@ -342,6 +344,36 @@ class TestQuietMode:
             await run_non_interactive(message="test", quiet=quiet)
 
         mock_console_cls.assert_called_once_with(**expected_kwargs)
+
+
+class TestToolDisplayInLogs:
+    """Tests for non-interactive tool display formatting."""
+
+    def test_task_tool_logs_subagent_type_when_args_present(self) -> None:
+        console_output = io.StringIO()
+        console = Console(file=console_output, force_terminal=False, color_system=None)
+        state = StreamState(quiet=False, stream=True)
+
+        ai_msg = MagicMock(spec=AIMessage)
+        ai_msg.usage_metadata = None
+        ai_msg.content_blocks = [
+            {
+                "type": "tool_call",
+                "name": "task",
+                "id": "tc-task",
+                "index": 0,
+                "args": {
+                    "subagent_type": "epidemic-monitor-analyst",
+                    "description": "Collect official monitoring evidence.",
+                },
+            }
+        ]
+
+        _process_ai_message(ai_msg, state, console)
+
+        rendered = console_output.getvalue()
+        assert "Calling tool:" in rendered
+        assert "task [epidemic-monitor-analyst]" in rendered
 
     async def test_quiet_stdout_contains_only_agent_text(self) -> None:
         """In quiet mode, stdout should have only agent text."""

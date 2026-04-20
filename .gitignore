@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -218,6 +218,16 @@ jobs/
 .idea
 TEXTUAL_REFACTOR_PLAN.md
 libs/cli/TEXTUAL_PROGRESS.md
+
+.workspaces/
+results/
+node_modules/
+experiments/harness/code2workspace_毕业论文.docx
+experiments/harness/skills/openclaw/acpx-skill/.acpx-home/
+experiments/harness/skills/openclaw/acpx-skill/.acpx-tools/
+experiments/harness/skills/openclaw/acpx-skill/.acpxrc.json
+experiments/harness/skills/openclaw/acpx-skill/acpx-deepagents-local.sh
+experiments/harness/skills/openclaw/acpx-skill/run-deepagents-acpx.sh
 
 /tmp/
 

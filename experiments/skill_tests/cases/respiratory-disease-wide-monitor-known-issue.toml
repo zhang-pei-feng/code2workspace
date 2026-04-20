@@ -1,0 +1,13 @@
+target = "skill"
+name = "respiratory-disease-wide-monitor-known-issue"
+prompt = "请不要只看WHO/CDC，按整理后的数据源表尽量全面看一下近期全球关于RSV和流感的官方监测来源，先筛出8个相关来源并下探一级网页或PDF，告诉我哪些来源值得持续监控。"
+required_env = []
+expected_behaviors = [
+  "tool:execute",
+  "log:整理后的数据源表",
+]
+expected_outputs = []
+known_issues = [
+  "log:RecursionError",
+]
+timeout_minutes = 6

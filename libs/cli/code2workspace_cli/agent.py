@@ -1002,10 +1002,12 @@ def create_cli_agent(
         else settings.get_project_agents_dir()
     )
 
-    for subagent_meta in list_subagents(
+    custom_subagent_metadata = list_subagents(
         user_agents_dir=user_agents_dir,
         project_agents_dir=project_agents_dir,
-    ):
+    )
+
+    for subagent_meta in custom_subagent_metadata:
         subagent: SubAgent = {
             "name": subagent_meta["name"],
             "description": subagent_meta["description"],
@@ -1013,6 +1015,16 @@ def create_cli_agent(
         }
         if subagent_meta["model"]:
             subagent["model"] = subagent_meta["model"]
+        if subagent_meta.get("allow_nested_task"):
+            subagent["allow_nested_task"] = True
+        if subagent_meta.get("nested_task_budget") is not None:
+            subagent["nested_task_budget"] = subagent_meta["nested_task_budget"]
+        if subagent_meta.get("max_delegation_depth") is not None:
+            subagent["max_delegation_depth"] = subagent_meta["max_delegation_depth"]
+        if subagent_meta.get("nested_subagents"):
+            subagent["nested_subagents"] = list(subagent_meta["nested_subagents"])
+        if subagent_meta.get("nested_scope_guard") is not None:
+            subagent["nested_scope_guard"] = subagent_meta["nested_scope_guard"]
         if restrictive_shell_allow_list is not None:
             subagent["middleware"] = [
                 ShellAllowListMiddleware(restrictive_shell_allow_list)

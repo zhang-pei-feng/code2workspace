@@ -1,0 +1,13 @@
+target = "skill"
+name = "epietl-api-risk-events-known-issue"
+prompt = "请帮我看一下近期东南亚地区有没有严重的呼吸道病原风险事件，优先用EpiETL这类 epidemic intelligence 数据，不要查论文。给我5条事件，包含国家、病原、严重程度和来源。"
+required_env = []
+expected_behaviors = [
+  "tool:execute",
+  "log:EpiETL",
+]
+expected_outputs = []
+known_issues = [
+  "log:401",
+]
+timeout_minutes = 5

@@ -1,0 +1,15 @@
+target = "skill"
+name = "epietl-api-channels-positive"
+prompt = "请用EpiETL帮我列出与WHO、China CDC、Hong Kong CHP 相关的呼吸道疾病监测 source channels 或来源目录，给我名称、机构、国家/地区和 source type，不要查论文。"
+required_env = []
+expected_behaviors = [
+  "tool:execute",
+  "log:EpiETL",
+]
+expected_outputs = [
+  "log:source type",
+  "log:WHO",
+  "log:China CDC",
+]
+known_issues = []
+timeout_minutes = 5

@@ -1,0 +1,8 @@
+https://github.com/ablab/spades
+https://github.com/marbl/canu
+https://github.com/voutcn/megahit
+https://github.com/fenderglass/Flye
+https://github.com/trinityrnaseq/trinityrnaseq
+https://github.com/cbg-ethz/v-pipe
+https://github.com/jaleezyy/covid-19-signal
+https://github.com/artic-network/fieldbioinformatics

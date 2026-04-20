@@ -1,0 +1,15 @@
+target = "skill"
+name = "academic-search-positive"
+prompt = "请根据最新论文信息，找3篇近几年关于RSV疫苗临床试验或临床进展的论文，给出题目、年份、期刊和一句摘要，不要用普通网页搜索。"
+required_env = []
+expected_behaviors = [
+  "tool:execute",
+  "log:PubMed",
+  "not-tool:web_search",
+]
+expected_outputs = [
+  "log:信息来源",
+  "log:academic-search",
+]
+known_issues = []
+timeout_minutes = 6

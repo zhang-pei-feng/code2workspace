@@ -1,0 +1,12 @@
+Judge one run as `COMPLETED` only if all of the following are true:
+
+1. The Docker build artifact exists and corresponds to the repository-specific image name.
+2. At least one real repository-provided or repository-referenced test case was executed inside the container.
+3. `results/docker_test` contains real output files from that containerized validation.
+4. The repository-specific WDL file was written and points runtime/image execution at the built image.
+5. Cromwell was actually run with `java -jar /mnt/data2/bin/cromwell.jar run`.
+6. The terminal output contains a real `Succeeded` signal for the WDL execution.
+7. `results/wdl_result` and `results/wdl_file` both contain real run artifacts.
+8. The final answer explicitly says whether the task is `COMPLETED`.
+
+Do not mark `COMPLETED` when the agent only planned, partially prepared files, or inferred success without running the required commands.

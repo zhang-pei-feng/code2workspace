@@ -46,6 +46,21 @@ class SubagentMetadata(TypedDict):
     model: str | None
     """Optional model override in 'provider:model-name' format."""
 
+    allow_nested_task: bool
+    """Whether this subagent may receive a nested `task` tool in report flows."""
+
+    nested_task_budget: int | None
+    """Maximum number of nested task delegations allowed for this subagent."""
+
+    max_delegation_depth: int | None
+    """Maximum delegation depth allowed when this subagent launches nested tasks."""
+
+    nested_subagents: list[str]
+    """Names of subagents that this subagent may launch as nested delegates."""
+
+    nested_scope_guard: str | None
+    """String marker that must appear in the current task description to allow nesting."""
+
     source: str
     """Where this subagent was loaded from ('user' or 'project')."""
 
@@ -87,14 +102,41 @@ def _parse_subagent_file(file_path: Path) -> SubagentMetadata | None:
     name = frontmatter.get("name")
     description = frontmatter.get("description")
     model = frontmatter.get("model")
+    allow_nested_task = frontmatter.get("allow_nested_task", False)
+    nested_task_budget = frontmatter.get("nested_task_budget")
+    max_delegation_depth = frontmatter.get("max_delegation_depth")
+    nested_subagents = frontmatter.get("nested_subagents", [])
+    nested_scope_guard = frontmatter.get("nested_scope_guard")
 
     # Validate types: name and description must be non-empty strings
     # model is optional but must be string if present
     name_valid = isinstance(name, str) and name
     description_valid = isinstance(description, str) and description
     model_valid = model is None or isinstance(model, str)
+    nested_bool_valid = isinstance(allow_nested_task, bool)
+    nested_budget_valid = nested_task_budget is None or (
+        isinstance(nested_task_budget, int) and nested_task_budget >= 1
+    )
+    nested_depth_valid = max_delegation_depth is None or (
+        isinstance(max_delegation_depth, int) and max_delegation_depth >= 1
+    )
+    nested_agents_valid = isinstance(nested_subagents, list) and all(
+        isinstance(item, str) and item for item in nested_subagents
+    )
+    nested_scope_valid = nested_scope_guard is None or isinstance(
+        nested_scope_guard, str
+    )
 
-    if not (name_valid and description_valid and model_valid):
+    if not (
+        name_valid
+        and description_valid
+        and model_valid
+        and nested_bool_valid
+        and nested_budget_valid
+        and nested_depth_valid
+        and nested_agents_valid
+        and nested_scope_valid
+    ):
         return None
 
     return {
@@ -102,6 +144,11 @@ def _parse_subagent_file(file_path: Path) -> SubagentMetadata | None:
         "description": description,
         "system_prompt": match.group(2).strip(),
         "model": model,
+        "allow_nested_task": allow_nested_task,
+        "nested_task_budget": nested_task_budget,
+        "max_delegation_depth": max_delegation_depth,
+        "nested_subagents": nested_subagents,
+        "nested_scope_guard": nested_scope_guard,
         "source": "",  # Set by caller
         "path": str(file_path),
     }

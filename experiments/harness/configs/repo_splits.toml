@@ -1,0 +1,16 @@
+[splits]
+train = [
+  "https://github.com/ablab/spades",
+  "https://github.com/marbl/canu",
+  "https://github.com/voutcn/megahit",
+  "https://github.com/fenderglass/Flye",
+  "https://github.com/trinityrnaseq/trinityrnaseq",
+]
+holdout = [
+  "https://github.com/cbg-ethz/v-pipe",
+  "https://github.com/jaleezyy/covid-19-signal",
+  "https://github.com/artic-network/fieldbioinformatics",
+]
+
+[notes]
+strategy = "Put the first five repositories into train because they are closer to the initial Docker-plus-WDL assembly focus, and reserve three workflow-heavy or virus-pipeline-heavy repositories for holdout."

@@ -1,0 +1,14 @@
+target = "skill"
+name = "respiratory-disease-wide-monitor-positive"
+prompt = "请按整理后的数据源表筛出4个与RSV监测相关的官方来源，只给出来源名、机构、URL和一句理由，不需要展开成长报告。"
+required_env = []
+expected_behaviors = [
+  "tool:execute",
+  "log:数据源表",
+]
+expected_outputs = [
+  "log:RSV",
+  "log:官方来源",
+]
+known_issues = []
+timeout_minutes = 5
