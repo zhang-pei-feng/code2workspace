@@ -18,8 +18,13 @@ report rather than a short reply.
    - `virus-variation-query`
 4. Materialize the report directory with:
    `python3 skills/deep-research-report/scripts/report_tool.py init --topic "<topic>"`
-5. After lane notes exist, compose the report with:
+5. Save lane notes as markdown under `lanes/*.md`, each with:
+   - `Skill: ...`
+   - `Source: ...`
+   - real narrative evidence beyond metadata-only lines
+6. After lane notes exist, compose the report with:
    `python3 skills/deep-research-report/scripts/report_tool.py compose --run-dir "<run-dir>"`
+7. Return the report path plus a short summary of the conclusion and evidence layers used.
 
 ## Rules
 
@@ -27,9 +32,12 @@ report rather than a short reply.
 - Do not promise a report before lane notes or sources exist.
 - Save outputs under `results/skills/deep-research-report/...`.
 - The final report must contain a `Sources` section.
+- `compose` now writes both `final_report.md` and `report_diagnostics.json`.
+- A metadata-only lane does not count as complete evidence.
 
 ## Output rules
 
 - Mention the report directory first.
 - Summarize the research conclusion briefly.
 - List the evidence layers actually used.
+- If diagnostics say the report is incomplete, say so explicitly instead of pretending the synthesis is fully covered.

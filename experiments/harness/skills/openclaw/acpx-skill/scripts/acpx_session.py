@@ -57,11 +57,6 @@ AGENT_TIMEOUT_SECONDS = {
     "report_agent": 1800,
 }
 
-DEFAULT_MIRACLE_ENV = {
-    "MIRACLE_ACCESS_KEY": "AKLTMjVkNjZiM2Q3MzI5NGQ4YmE5YTFmOWZhYjY4YzEzNTc",
-    "MIRACLE_SECRET_KEY": "WW1GbU1qSXdObVpoWXpVek5EazBPVGd6TVdVMFlXTXhOVEUzT0RKak9Eaw==",
-}
-
 REPORT_PATH_RE = re.compile(r"([^\s`'\"<>]*reports/[^\s`'\"<>]*final_report\.md)")
 
 ROUTES = [
@@ -119,7 +114,6 @@ ROUTES = [
             "workspace artifact",
             "workspace 产物",
             "生成 wdl",
-            "bio-os workspace",
         ),
     ),
     (
@@ -464,7 +458,7 @@ def materialize_code2workspace_response(output: str) -> str:
         "code2workspace_agent returned an empty final response. "
         f"Latest task workspace: {latest_workspace}. "
         f"Available logs: {log_text}. "
-        "Treat this as NOT COMPLETED unless those logs contain a successful Bio-OS run id."
+        "Treat this as NOT COMPLETED unless those logs contain real successful local validation evidence."
     )
 
 
@@ -646,30 +640,19 @@ def normalize_prompt(agent: str, prompt: str) -> str:
             "7. 不要只输出“报告文件”路径或让用户点击本地文件；用户无法访问服务器本地路径。"
         )
     if agent == "benchmark_agent":
-        base_prompt = (
+        return (
             f"{prompt}\n\n上下文路径：{EXTERNAL_AGENTS_ROOT}\n\n要求：\n"
             "1. 把 benchmark_agent 理解为 superagent 仓库里的通用代码/仓库分析 agent。\n"
             "2. 如果涉及本地仓库，请尽量绑定路径或命令结果。\n"
-            "3. 不要把泛化猜测当成仓库事实。"
+            "3. workflow 默认按本地执行路径理解，不要假设远端工作流平台。\n"
+            "4. 不要把泛化猜测当成仓库事实。"
         )
-        if is_bioos_benchmark_prompt(prompt):
-            return (
-                f"{base_prompt}\n"
-                "\nBio-OS benchmark 额外要求：\n"
-                "4. 优先使用仓库内现成脚本，而不是自由发挥：scripts/list_workflows.py、scripts/get_workflow_status.py、scripts/get_benchmark_metrics.py、scripts/summarize_benchmark.py、scripts/generate_benchmark_report.py。\n"
-                "5. 先查询已有 submission/run；如果已有 run 成功，直接复用并计算指标，不要重复投递。\n"
-                "6. 对无法匹配输入参数的工作流，直接记录失败原因并继续，不要卡住等待。\n"
-                "7. 只在确实存在新 submission 且状态非终态时才等待；如果已有 run 已经 Succeeded，就立即进入结果下载和指标计算。\n"
-                "8. 如果最终只有部分工作流可运行，就输出部分 benchmark 对比表，并明确列出其余工作流失败原因，不要因为少数失败而整轮不返回。\n"
-                "9. 返回结果时优先给出 submission id、run id、workflow id，以及 Genome coverage / N50 / contig 数量表。"
-            )
-        return base_prompt
     if agent == "code2workspace_agent":
         return (
             f"{prompt}\n\n上下文路径：{CODE2WORKSPACE_AGENT_ROOT}\n\n要求：\n"
             "1. 你是 code2workspace_agent，负责把用户给出的仓库、代码或任务转成可运行 workspace 产物。\n"
-            "2. 使用适配层分配的当前工作目录保存中间文件、Docker/WDL/Bio-OS 结果和日志。\n"
-            "3. 如果需要 Bio-OS、Dockerfile、WDL 或真实运行验证，必须返回真实产物路径、真实状态和失败原因；不要编造成功。\n"
+            "2. 使用适配层分配的当前工作目录保存中间文件、Docker/WDL、本地执行结果和日志。\n"
+            "3. 如果需要 Dockerfile、WDL 或真实运行验证，必须返回真实产物路径、真实状态和失败原因；不要编造成功。\n"
             "4. 不要把当前 OpenClaw workspace 当作你的任务工作目录。\n"
             "5. 这是一次 ACP one-shot 自动执行请求；用户已经授权完整执行。不要等待用户确认计划，不要只写 todo 后停止；如果使用 todo，必须立刻把第一项设为 in_progress 并继续执行。\n"
             "6. 对任务中提到的 docker_images-agent 和 wdl_run-agent，按你的内部流程顺序调用；不要把它们交还给 OpenClaw 主会话。"
@@ -679,10 +662,6 @@ def normalize_prompt(agent: str, prompt: str) -> str:
 
 def should_use_one_shot(agent: str, session_name: str, prompt: str) -> bool:
     if agent in ONE_SHOT_AGENTS:
-        return True
-    if agent == "benchmark_agent" and is_bioos_benchmark_prompt(prompt):
-        return True
-    if agent == "benchmark_agent" and extract_prompt_env(prompt):
         return True
     if agent == "benchmark_agent" and is_short_chat_prompt(prompt):
         return True
@@ -697,10 +676,6 @@ def should_use_one_shot(agent: str, session_name: str, prompt: str) -> bool:
 def fallback_reason(agent: str, session_name: str, prompt: str) -> str:
     if agent in ONE_SHOT_AGENTS:
         return "agent-default-one-shot"
-    if agent == "benchmark_agent" and is_bioos_benchmark_prompt(prompt):
-        return "bioos-miracle-task-uses-one-shot"
-    if agent == "benchmark_agent" and extract_prompt_env(prompt):
-        return "env-sensitive-task-uses-one-shot"
     if agent == "benchmark_agent" and is_short_chat_prompt(prompt):
         return "short-chat-uses-one-shot"
     if session_has_inflight_process(agent, session_name):
@@ -723,50 +698,10 @@ def is_short_chat_prompt(prompt: str) -> bool:
         marker in lower for marker in chat_markers
     )
 
-
-def is_bioos_benchmark_prompt(prompt: str) -> bool:
-    lowered = prompt.lower()
-    markers = (
-        "bio-os",
-        "bioos",
-        "benchmark",
-        "工作流复用",
-        "复用工作流",
-        "复用已有工作流",
-        "复用已有 workflow",
-        "已有 workflow 复跑",
-        "workflow reuse",
-        "reuse workflow",
-        "genome coverage",
-        "n50",
-        "contig",
-        "workflow",
-        "sars-cov-2-assembly-tools-20260326",
-        "miracle_access_key",
-        "miracle_secret_key",
-    )
-    return any(marker in lowered for marker in markers)
-
-
-def extract_prompt_env(prompt: str) -> dict[str, str]:
-    matches = re.findall(
-        r"""export\s+([A-Z0-9_]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s]+))""",
-        prompt,
-    )
-    env_overrides: dict[str, str] = {}
-    for key, _, dq_value, sq_value, bare_value in matches:
-        if key.startswith("MIRACLE_"):
-            env_overrides[key] = dq_value or sq_value or bare_value
-    return env_overrides
-
-
 def resolve_prompt_env(agent: str, prompt: str) -> dict[str, str]:
-    env_overrides = extract_prompt_env(prompt)
-    if agent == "benchmark_agent" and is_bioos_benchmark_prompt(prompt):
-        resolved = DEFAULT_MIRACLE_ENV.copy()
-        resolved.update(env_overrides)
-        return resolved
-    return env_overrides
+    del agent
+    del prompt
+    return {}
 
 
 def safe_fetch_session_metadata(agent: str, session_name: str) -> SessionMetadata | None:

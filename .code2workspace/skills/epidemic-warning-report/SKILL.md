@@ -35,6 +35,7 @@ Default pattern:
 3. save each lane result into `lanes/*.md`
 4. optionally run a synthesis subagent
 5. compose the final report from the lane files
+6. return the report path, risk level, and a short summary of the conclusion
 
 For a full warning report, the first four lanes are required evidence lanes:
 
@@ -180,6 +181,14 @@ python3 skills/epidemic-warning-report/scripts/epidemic_report_tool.py compose \
   --run-dir "<run-dir>"
 ```
 
+The compose step now reuses the shared lightweight report composer. The epidemic
+skill still owns:
+
+- required lane checks
+- epidemic-specific section order
+- risk-level framing
+- minimum report-length threshold
+
 ## Report requirements
 
 The final report should contain these sections unless the user explicitly asks
@@ -211,6 +220,7 @@ for a shorter structure:
 - Do not treat a report as complete if the required core lanes are missing.
 - The compose helper will record lane completeness diagnostics; use them instead
   of silently masking missing evidence.
+- `compose` writes both `final_report.md` and `report_diagnostics.json`.
 - Do not use path listings, manifest echoes, or section headers as fake detail.
   Add real analytical narrative, source comparison, interpretation, and action
   reasoning.

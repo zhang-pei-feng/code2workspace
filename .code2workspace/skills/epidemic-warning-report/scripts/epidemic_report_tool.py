@@ -15,6 +15,7 @@ if str(SHARED_HELPER_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_HELPER_DIR))
 
 from common import create_skill_run_dir, ensure_dir, read_json, write_json, write_text
+from report_composer import collect_lane_info, render_lane_evidence, write_composed_report
 
 
 LANE_SPECS = (
@@ -178,6 +179,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             )
 
     manifest = {
+        "run_dir": str(run_dir),
         "topic": args.topic,
         "pathogen": args.pathogen or "mixed",
         "region": args.region or "global",
@@ -290,10 +292,10 @@ def cmd_compose(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
     manifest = read_json(run_dir / "manifest.json")
     lanes_dir = run_dir / "lanes"
-    lane_info_by_file = {
-        lane["file"]: _parse_lane_file(lanes_dir / lane["file"])
-        for lane in LANE_SPECS
-    }
+    lane_info_by_file = collect_lane_info(
+        lanes_dir,
+        lane_files=[lane["file"] for lane in LANE_SPECS],
+    )
 
     risk_level = args.risk_level or manifest.get("risk_level", "pending")
     topic = manifest.get("topic", "Epidemic Warning Report")
@@ -312,192 +314,147 @@ def cmd_compose(args: argparse.Namespace) -> int:
         for lane_file in REQUIRED_LANE_FILES
         if bool(lane_info_by_file[lane_file]["has_evidence"])
     )
-    diagnostics = {
-        "run_dir": str(run_dir),
-        "risk_level": risk_level,
-        "min_report_chars": min_report_chars,
-        "required_lane_files": list(REQUIRED_LANE_FILES),
-        "lane_diagnostics": {
-            lane_file: {
-                "title": str(info["title"]),
-                "skills": list(info["skills"]),
-                "sources": list(info["sources"]),
-                "has_evidence": bool(info["has_evidence"]),
-                "missing_reasons": list(info["missing_reasons"]),
-            }
-            for lane_file, info in lane_info_by_file.items()
-        },
-        "missing_required_lanes": missing_required_lanes,
-        "source_classes_present": source_classes_present,
-        "source_class_count": len(source_classes_present),
-        "complete": not missing_required_lanes,
-    }
+    if missing_required_lanes:
+        missing_lane_lines = [
+            f"- `{lane_file}` incomplete: {', '.join(str(item) for item in lane_info_by_file[lane_file]['missing_reasons'])}"
+            for lane_file in missing_required_lanes
+        ]
+    else:
+        missing_lane_lines = [
+            "- All four required lanes provided evidence with `Skill:` and `Source:` metadata."
+        ]
 
-    report_lines = [
-        f"# {topic}",
-        "",
-        f"- Output directory: `{run_dir}`",
-        f"- Pathogen focus: `{pathogen}`",
-        f"- Region: `{region}`",
-        f"- Time window: `{period}`",
-        f"- Risk level: `{risk_level}`",
-        "",
-        "## Executive Summary",
-        "",
-        args.summary or "Complete this summary after reviewing the lane notes and evidence files.",
-        "",
-        "## Situation Framing",
-        "",
-        (
-            "This report integrates official monitoring, source-channel context, "
-            "variant or lineage evidence when relevant, and literature or clinical "
-            "signals. The intent is to support epidemic preparedness and early "
-            "warning rather than produce a minimal status memo."
-        ),
-        "",
-        "## Monitoring Overview",
-        "",
-        _lane_section_text(
-            lane_file="01_official-monitoring.md",
-            lane_info=lane_info_by_file["01_official-monitoring.md"],
-        ),
-        "",
-        "## Key Risk Signals",
-        "",
-        _lane_section_text(
-            lane_file="02_source-catalog.md",
-            lane_info=lane_info_by_file["02_source-catalog.md"],
-        ),
-        "",
-        "## Source and Coverage Analysis",
-        "",
-        (
-            "This section should explain which institutions and monitoring "
-            "channels are covering the topic, what type of source each one is, "
-            "which regions are well-covered, and where the monitoring picture is "
-            "still thin or fragmented."
-        ),
-        "",
-        "## Cross-Source Interpretation",
-        "",
-        (
-            "Compare the surveillance, source-channel, variant, and literature "
-            "lanes here. Highlight where sources converge, where they differ, and "
-            "which signals are strong enough to influence preparedness decisions."
-        ),
-        "",
-        "## Variant / Pathogen Notes",
-        "",
-        _lane_section_text(
-            lane_file="03_variant-risk.md",
-            lane_info=lane_info_by_file["03_variant-risk.md"],
-        ),
-        "",
-        "## Risk Level Rationale",
-        "",
-        (
-            "Explain explicitly why the final risk level is low, moderate, "
-            "elevated, or high. Tie the judgment back to surveillance signals, "
-            "source reliability, pathogen or variant context, and clinical or "
-            "vaccine developments."
-        ),
-        "",
-        "## Prevention and Preparedness Actions",
-        "",
-        _lane_section_text(
-            lane_file="05_actions.md",
-            lane_info=lane_info_by_file["05_actions.md"],
-        ),
-        "",
-        "## Operational Recommendations",
-        "",
-        (
-            "Translate the evidence above into concrete recommendations for "
-            "surveillance, sequencing, clinical readiness, communication, and "
-            "follow-up analysis."
-        ),
-        "",
-        "## Uncertainty and Data Gaps",
-        "",
-        "_Review lane notes for blind spots, unavailable sources, auth restrictions, and regional reporting gaps._",
-        "",
-        "### Missing Or Incomplete Required Lanes",
-        "",
-        "",
-        "## Literature and Clinical Context",
-        "",
-        _lane_section_text(
-            lane_file="04_literature-clinical.md",
-            lane_info=lane_info_by_file["04_literature-clinical.md"],
-        ),
-        "",
-        "## Sources",
-        "",
+    sections = [
+        {
+            "title": "Executive Summary",
+            "body": args.summary or "Complete this summary after reviewing the lane notes and evidence files.",
+        },
+        {
+            "title": "Situation Framing",
+            "body": (
+                "This report integrates official monitoring, source-channel context, "
+                "variant or lineage evidence when relevant, and literature or clinical "
+                "signals. The intent is to support epidemic preparedness and early "
+                "warning rather than produce a minimal status memo."
+            ),
+        },
+        {
+            "title": "Monitoring Overview",
+            "body": render_lane_evidence(
+                "01_official-monitoring.md",
+                lane_info_by_file["01_official-monitoring.md"],
+            ),
+            "lane_file": "01_official-monitoring.md",
+        },
+        {
+            "title": "Key Risk Signals",
+            "body": render_lane_evidence(
+                "02_source-catalog.md",
+                lane_info_by_file["02_source-catalog.md"],
+            ),
+            "lane_file": "02_source-catalog.md",
+        },
+        {
+            "title": "Source and Coverage Analysis",
+            "body": (
+                "This section should explain which institutions and monitoring "
+                "channels are covering the topic, what type of source each one is, "
+                "which regions are well-covered, and where the monitoring picture is "
+                "still thin or fragmented."
+            ),
+        },
+        {
+            "title": "Cross-Source Interpretation",
+            "body": (
+                "Compare the surveillance, source-channel, variant, and literature "
+                "lanes here. Highlight where sources converge, where they differ, and "
+                "which signals are strong enough to influence preparedness decisions."
+            ),
+        },
+        {
+            "title": "Variant / Pathogen Notes",
+            "body": render_lane_evidence(
+                "03_variant-risk.md",
+                lane_info_by_file["03_variant-risk.md"],
+            ),
+            "lane_file": "03_variant-risk.md",
+        },
+        {
+            "title": "Risk Level Rationale",
+            "body": (
+                "Explain explicitly why the final risk level is low, moderate, "
+                "elevated, or high. Tie the judgment back to surveillance signals, "
+                "source reliability, pathogen or variant context, and clinical or "
+                "vaccine developments."
+            ),
+        },
+        {
+            "title": "Prevention and Preparedness Actions",
+            "body": render_lane_evidence(
+                "05_actions.md",
+                lane_info_by_file["05_actions.md"],
+            ),
+            "lane_file": "05_actions.md",
+        },
+        {
+            "title": "Operational Recommendations",
+            "body": (
+                "Translate the evidence above into concrete recommendations for "
+                "surveillance, sequencing, clinical readiness, communication, and "
+                "follow-up analysis."
+            ),
+        },
+        {
+            "title": "Uncertainty and Data Gaps",
+            "body": "_Review lane notes for blind spots, unavailable sources, auth restrictions, and regional reporting gaps._",
+        },
+        {
+            "title": "Missing Or Incomplete Required Lanes",
+            "body": "\n".join(missing_lane_lines),
+        },
+        {
+            "title": "Literature and Clinical Context",
+            "body": render_lane_evidence(
+                "04_literature-clinical.md",
+                lane_info_by_file["04_literature-clinical.md"],
+            ),
+            "lane_file": "04_literature-clinical.md",
+        },
     ]
 
-    if missing_required_lanes:
-        for lane_file in missing_required_lanes:
-            reasons = ", ".join(
-                str(item) for item in lane_info_by_file[lane_file]["missing_reasons"]
-            )
-            report_lines.append(
-                f"- `{lane_file}` incomplete: {reasons}"
-            )
-    else:
-        report_lines.append("- All four required lanes provided evidence with `Skill:` and `Source:` metadata.")
-
-    report_lines.extend(
-        [
-            "",
-            "### Source Class Coverage",
-            "",
-            f"- Covered source classes: `{', '.join(source_classes_present) if source_classes_present else 'none'}`",
-            f"- Coverage complete: `{diagnostics['complete']}`",
-            "",
-        ]
+    payload = write_composed_report(
+        run_dir=run_dir,
+        title=str(topic),
+        sections=sections,
+        lane_info_by_file=lane_info_by_file,
+        header_lines=[
+            f"- Output directory: `{run_dir}`",
+            f"- Pathogen focus: `{pathogen}`",
+            f"- Region: `{region}`",
+            f"- Time window: `{period}`",
+            f"- Risk level: `{risk_level}`",
+        ],
+        required_lane_files=list(REQUIRED_LANE_FILES),
+        min_report_chars=min_report_chars,
+        source_section_mode="by_lane",
+        extra_diagnostics={
+            "risk_level": risk_level,
+            "min_report_chars": min_report_chars,
+            "required_lane_files": list(REQUIRED_LANE_FILES),
+            "source_classes_present": source_classes_present,
+            "source_class_count": len(source_classes_present),
+        },
     )
-
-    any_sources = False
-    for lane in LANE_SPECS:
-        lane_file = lane["file"]
-        lane_info = lane_info_by_file[lane_file]
-        skills = list(lane_info["skills"])
-        sources = list(lane_info["sources"])
-        report_lines.append(f"### {SECTION_TITLE_BY_FILE[lane_file]}")
-        if skills or sources:
-            any_sources = True
-            for item in dict.fromkeys([f"Skill: {skill}" for skill in skills]):
-                report_lines.append(f"- {item}")
-            for item in dict.fromkeys([f"Source: {source}" for source in sources]):
-                report_lines.append(f"- {item}")
-        else:
-            report_lines.append("- No usable source metadata was recorded for this lane.")
-        report_lines.append("")
-
-    if not any_sources:
-        report_lines.append("- No explicit sources were recorded in lane notes.")
-
-    report_text = "\n".join(report_lines) + "\n"
-    report_path = run_dir / "final_report.md"
-    diagnostics_path = run_dir / "report_diagnostics.json"
-    report_char_count = len(report_text)
-    diagnostics["report_char_count"] = report_char_count
-    diagnostics["meets_min_report_chars"] = report_char_count >= min_report_chars
-    diagnostics["complete"] = bool(diagnostics["complete"]) and bool(
-        diagnostics["meets_min_report_chars"]
-    )
-    write_text(report_path, report_text)
-    write_json(diagnostics_path, diagnostics)
     print(
         json.dumps(
             {
                 "run_dir": str(run_dir),
-                "report_path": str(report_path),
-                "diagnostics_path": str(diagnostics_path),
+                "report_path": payload["report_path"],
+                "diagnostics_path": payload["diagnostics_path"],
                 "risk_level": risk_level,
-                "report_char_count": report_char_count,
-                "meets_min_report_chars": diagnostics["meets_min_report_chars"],
-                "complete": diagnostics["complete"],
+                "report_char_count": payload["report_char_count"],
+                "meets_min_report_chars": payload["meets_min_report_chars"],
+                "complete": payload["complete"],
             },
             ensure_ascii=False,
             indent=2,
