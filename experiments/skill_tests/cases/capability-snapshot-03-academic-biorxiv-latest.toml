@@ -1,0 +1,15 @@
+target = "skill"
+name = "capability-snapshot-03-academic-biorxiv-latest"
+prompt = "请用 academic-search 的 bioRxiv 来源，在最近 14 天的窗口内筛选出 3 篇与 SARS-CoV-2 疫苗或抗病毒药物研究相关的最新预印本。请给出题目、日期、链接（bioRxiv URL/DOI）和一句摘要，并明确标注这是预印本；不要用普通网页搜索。"
+required_env = []
+expected_behaviors = [
+  "tool:execute",
+  "not-tool:web_search",
+]
+expected_outputs = [
+  "log:bioRxiv",
+  "log:biorxiv.org",
+  "log:信息来源",
+]
+known_issues = []
+timeout_minutes = 6

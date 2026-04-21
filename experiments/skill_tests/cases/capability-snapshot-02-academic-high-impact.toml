@@ -1,0 +1,16 @@
+target = "skill"
+name = "capability-snapshot-02-academic-high-impact"
+prompt = "在 PubMed 上检索 SARS-CoV-2 疫苗/抗病毒药物研究的最新论文，并尽量限定为 Nature 系/高影响期刊（优先 Nature / Nature Medicine / Nature Communications / Communications Medicine / NPJ Vaccines）。请直接用 academic-search(PubMed) 的结构化检索结果筛选出 3 篇，给出题目、期刊、日期、链接（PMID/DOI/URL）和一句摘要；不要用普通网页搜索。"
+required_env = []
+expected_behaviors = [
+  "tool:execute",
+  "log:PubMed",
+  "not-tool:web_search",
+]
+expected_outputs = [
+  "log:Nature",
+  "log:信息来源",
+  "log:academic-search",
+]
+known_issues = []
+timeout_minutes = 6

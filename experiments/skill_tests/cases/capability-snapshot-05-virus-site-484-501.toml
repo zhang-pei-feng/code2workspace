@@ -1,0 +1,18 @@
+target = "skill"
+name = "capability-snapshot-05-virus-site-484-501"
+prompt = "484 位点和 501 位点的所有可能突变及其风险评分是什么？请基于本地数据库查询给出两个位点的突变谱（至少包含突变形式与抗体逃逸/ACE2 相关风险评分字段），并做简要对比。不要查网页。"
+required_env = ["DATA_GOVERNANCE_AGENT_ROOT"]
+expected_behaviors = [
+  "tool:execute",
+  "log:covid_data",
+  "log:virus_variation",
+  "not-tool:web_search",
+]
+expected_outputs = [
+  "log:484",
+  "log:501",
+  "log:风险",
+]
+known_issues = []
+timeout_minutes = 6
+

@@ -1,0 +1,17 @@
+target = "skill"
+name = "capability-snapshot-01-academic-pubmed-latest"
+prompt = "在 PubMed 上帮我找几篇关于 SARS-CoV-2 疫苗与抗病毒药物研究的最新文献。请给出题目、年份/发表日期、期刊/预印本来源、链接（PMID/DOI/URL）和一句摘要。不要用普通网页搜索。"
+required_env = []
+expected_behaviors = [
+  "tool:execute",
+  "log:PubMed",
+  "not-tool:web_search",
+]
+expected_outputs = [
+  "log:SARS-CoV-2",
+  "log:信息来源",
+  "log:academic-search",
+]
+known_issues = []
+timeout_minutes = 6
+

@@ -1,0 +1,16 @@
+target = "skill"
+name = "capability-snapshot-06-monitor-who-covid"
+prompt = "用 respiratory-disease-data-fetcher 技能，讲一下 WHO 的最新新冠疫情情况：最近一个月（近 28 天）全球有多少感染病例？最近七天感染病例最多的国家是哪个？请给出数字与时间窗口口径，并标注信息来源。"
+required_env = []
+expected_behaviors = [
+  "tool:fetch_url",
+  "log:WHO",
+]
+expected_outputs = [
+  "log:28",
+  "log:7",
+  "log:信息来源",
+]
+known_issues = []
+timeout_minutes = 5
+

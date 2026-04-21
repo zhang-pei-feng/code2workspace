@@ -1,0 +1,16 @@
+target = "skill"
+name = "capability-snapshot-07-monitor-china-cdc"
+prompt = "用 respiratory-disease-data-fetcher 技能，最近一个月中国新冠病毒的诊疗量和确诊病例、重症病例分别是多少？有哪些变异株？请按中国疾控发布口径给出要点，并标注信息来源。"
+required_env = []
+expected_behaviors = [
+  "tool:fetch_url",
+  "log:中国疾控",
+]
+expected_outputs = [
+  "log:确诊",
+  "log:重症",
+  "log:变异",
+]
+known_issues = []
+timeout_minutes = 5
+

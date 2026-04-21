@@ -1,0 +1,17 @@
+target = "skill"
+name = "capability-snapshot-04-virus-antibody-hotspots"
+prompt = "新冠病毒 S 蛋白上哪些位点的突变最容易逃逸抗体？请查询本地风险数据库（例如 ncov_amino_acid_risk / virus_variation）给出证据：列出高风险位点和风险等级/评分，并简要解释这些位点为何容易逃逸。不要查网页。"
+required_env = ["DATA_GOVERNANCE_AGENT_ROOT"]
+expected_behaviors = [
+  "tool:execute",
+  "log:covid_data",
+  "log:virus_variation",
+  "not-tool:web_search",
+]
+expected_outputs = [
+  "log:S蛋白",
+  "log:抗体逃逸",
+]
+known_issues = []
+timeout_minutes = 6
+

@@ -1,0 +1,18 @@
+target = "oneshot"
+name = "capability-snapshot-08-governance-ncbi-virus"
+prompt = "刷新 ncbi_virus 最新 snapshot，并给出记录概览与质量问题（显式 command 直跑 governance_ops.py）。"
+required_env = []
+expected_behaviors = []
+expected_outputs = [
+  "log:\"source\": \"ncbi_virus\"",
+  "log:\"run_dir\"",
+  "log:\"issue_count\"",
+]
+known_issues = []
+timeout_minutes = 3
+command = [
+  "bash",
+  "-lc",
+  "set -euo pipefail\npython3 .code2workspace/skills/data-governance-ops/scripts/governance_ops.py refresh --source ncbi_virus --limit 5\npython3 .code2workspace/skills/data-governance-ops/scripts/governance_ops.py quality --source ncbi_virus --limit 10\n",
+]
+
