@@ -7,7 +7,7 @@
 ```txt
 code2workspace/
 ├── apps/
-│   └── webapp/          # minimal web workspace MVP
+│   └── webapp/          # minimal web API backend (frontend removed)
 ├── experiments/
 │   ├── harness/         # harness-practice scaffolding
 │   └── oneshot/         # generic one-shot repo-task runner
@@ -24,7 +24,7 @@ code2workspace/
 - Read `docs/overview/roadmap.md` for the active implementation target.
 - Read `docs/research/thesis-log.md` when work should stay aligned with thesis traceability.
 - Keep changes focused on `libs/code2workspace` and `libs/cli`.
-- Keep new work aligned with the web / oneshot / harness roadmap unless the plan is intentionally changed.
+- Keep new work aligned with the current repo roadmap; the earlier checked-in web frontend has been removed unless the plan is intentionally changed again.
 - Preserve current CLI and non-interactive behavior unless the task explicitly changes it.
 - Basic interactive TUI startup is working again; when changing terminal behavior, still verify both the interactive TUI path and the non-interactive runner path explicitly.
 - Prefer small, testable changes over broad refactors.

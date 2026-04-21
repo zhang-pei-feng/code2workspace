@@ -14,7 +14,7 @@ lives under `docs/`.
 - `libs/cli`
   - terminal interface and non-interactive runner
 - `apps/webapp`
-  - minimal web control plane
+  - minimal web API backend for the removed frontend
 - `experiments/oneshot`
   - generic one-shot repo-task runner
 - `experiments/harness`
@@ -24,6 +24,8 @@ lives under `docs/`.
 
 - `docs/overview/current-status.md`
   - current engineering status and blockers
+- `docs/overview/repo-layout.md`
+  - root directory policy for source, generated artifacts, and disposable cache
 - `docs/overview/roadmap.md`
   - active implementation targets
 - `docs/overview/session-handoff.md`
@@ -44,13 +46,27 @@ lives under `docs/`.
   `experiments/oneshot` and `experiments/skill_tests`, explicitly preserve
   their original working directories instead of using the new per-session
   workspace behavior.
-- The web control plane is stable enough for session management, run
-  inspection, and one-shot task submission.
+- The repository still has a small web API backend under `apps/webapp`, but the
+  checked-in web frontend has been removed.
 - The one-shot runner has already produced real Docker/WDL success evidence on
   `spades` and `v-pipe`, with additional positive evidence on
   `covid-19-signal` and `fieldbioinformatics`.
 - The harness layer now exists as a real optimization loop rather than a
   placeholder directory.
+
+## Generated Directories
+
+- `results/`
+  - retained experiment outputs and benchmark evidence worth comparing later
+- `.workspaces/`
+  - historical experiment workspaces and other large intermediate run areas
+- `workspace/`
+  - per-session CLI working directories under `<invocation-cwd>/workspace/<timestamp>`
+- `tmp/`
+  - disposable local scratch outputs and one-off probes
+
+Keep new local run artifacts inside those existing directories rather than
+creating additional root-level output folders.
 
 ## Local Run
 
@@ -66,7 +82,7 @@ Single non-interactive task:
 uv run --project libs/cli code2workspace -n "Reply with OK only." -q
 ```
 
-Run the minimal web workspace:
+Run the web API backend:
 
 ```bash
 uv run --project libs/cli python -m uvicorn apps.webapp.api:app --app-dir . --reload
@@ -76,8 +92,9 @@ uv run --project libs/cli python -m uvicorn apps.webapp.api:app --app-dir . --re
 
 The current sequence is:
 
-1. keep the web control plane stable
-2. keep hardening the generic one-shot experiment path
-3. use those runs to drive repeatable harness optimization
+1. keep hardening the generic one-shot experiment path
+2. use those runs to drive repeatable harness optimization
+3. keep the remaining web API backend minimal unless a new frontend is
+   intentionally introduced
 4. feed the resulting evidence into the thesis narrative and future
    `code2workspace` pipeline work

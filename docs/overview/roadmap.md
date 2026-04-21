@@ -2,12 +2,12 @@
 
 This file defines the current implementation target for the repository.
 
-## Goal 1: Minimal Web Workspace
+## Goal 1: Minimal Web API Backend
 
-Build a lightweight web interface for the LangGraph-backed `code2workspace`
-runtime.
+Keep the lightweight `apps/webapp` API backend minimal and reusable after the
+checked-in browser frontend was removed.
 
-### MVP scope
+### Current scope
 
 - session list
 - create session
@@ -20,8 +20,8 @@ runtime.
 
 ### Explicit non-goals
 
+- rebuilding a browser frontend right now
 - full multi-turn collaborative chat UX
-- frontend-side model configuration
 - auth and multi-user isolation
 - MCP management UI
 - rich artifact browsing
@@ -30,7 +30,7 @@ runtime.
 
 - backend: lightweight ASGI app in this repo
 - execution: reuse the existing non-interactive `code2workspace` path
-- frontend: stable workspace UI, not a second runtime
+- frontend: intentionally absent for now
 - state: pragmatic lightweight web store for now
 
 ## Goal 2: One-Shot Repo Task Experiments
@@ -97,31 +97,29 @@ Treat repository evolution as thesis material.
 
 ## Execution Order
 
-1. Web workspace MVP
-2. One-shot runner and prompt standardization
-3. Harness structure and baseline experiments
+1. One-shot runner and prompt standardization
+2. Harness structure and baseline experiments
+3. Keep the web API backend minimal
 4. Iterative refinement using real repo tasks
 
 ## Phased Plan
 
-### Phase A: Make The Control Plane Actually Usable
+### Phase A: Keep The Web API Thin And Honest
 
 Objective:
-keep the web layer simple, but strong enough to drive repeated one-shot
-experiments without falling back to the terminal for routine session management.
+keep the remaining web layer simple after frontend removal, without letting it
+become a second runtime or an undocumented side path.
 
 Planned work:
 
-- explicit session deletion
-- visible run history per session
-- manual refresh and clearer status indicators
-- minimal backend contract that keeps the frontend static and predictable
+- keep the API contract small and documented
+- preserve one-shot submission and run lookup
+- avoid rebuilding frontend concerns into backend routes
 
 Acceptance:
 
-- a session can be created, selected, refreshed, and deleted from the browser
-- one session can show multiple historical runs with status, time, and exit code
-- the latest run log remains readable while older runs stay accessible
+- the API can create, inspect, and delete sessions and runs
+- no checked-in browser frontend is assumed by the backend
 
 ### Phase B: Make The One-Shot Runner A Repeatable Experiment Entrypoint
 
@@ -186,8 +184,8 @@ Acceptance:
 
 - the local OpenAI-compatible gateway still requires
   `use_responses_api = false` for the working baseline
-- the web workspace has its own session store instead of sharing the CLI/TUI
-  source of truth
+- the remaining web API backend still has its own session store instead of
+  sharing the CLI/TUI source of truth
 - the target bioinformatics repositories are too expensive to brute-force early
 - tracked `.env` is useful for local progress but unsuitable for publication
 
@@ -197,5 +195,5 @@ Acceptance:
 2. Resume or complete the remaining repository baselines after `canu` and
    `megahit`.
 3. Spend more effort on harness iteration than on raw baseline accumulation.
-4. Keep the web workspace stable while it serves as the experiment control
-   plane.
+4. Keep the remaining web API backend minimal unless a new frontend is
+   intentionally reintroduced.

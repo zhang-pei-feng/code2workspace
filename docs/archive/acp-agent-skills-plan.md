@@ -19,7 +19,7 @@ allowed. The old repositories are migration references only.
 ## Public Skills
 
 1. `benchmark-workflow-orchestrator`
-   - Bio-OS workflow reuse, batch benchmark orchestration, result collection,
+   - Local workflow reuse, batch benchmark orchestration, result collection,
      benchmark summarization.
 2. `data-governance-ops`
    - Source brief, snapshot refresh, latest snapshot query, history compare,
@@ -31,10 +31,9 @@ allowed. The old repositories are migration references only.
 
 ## Project Subagents
 
-1. `bioos-operator`
-2. `governance-operator`
-3. `research-lane`
-4. `workspace-builder`
+1. `governance-operator`
+2. `research-lane`
+3. `workspace-builder`
 
 These subagents are prompt-defined only. They do not rely on automatic
 `SkillsMiddleware` injection and must explicitly read the relevant local skill
@@ -65,8 +64,8 @@ files or run the relevant local scripts.
 
 ## Follow-Up
 
-- Improve Bio-OS integration depth when the target environment guarantees CLI
-  tools and credentials.
+- Keep workflow execution local and remove remote-service assumptions from older
+  migration notes when they are no longer relevant.
 - Expand data-governance live fetch coverage beyond the minimal `ncbi_virus`
   path implemented locally here.
 - Add richer report composition and citation merging for the deep-research skill.

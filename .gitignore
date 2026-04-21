@@ -220,6 +220,9 @@ TEXTUAL_REFACTOR_PLAN.md
 libs/cli/TEXTUAL_PROGRESS.md
 
 .workspaces/
+/.benchmarks/
+/cromwell-workflow-logs/
+/workspace/
 results/
 node_modules/
 experiments/harness/code2workspace_毕业论文.docx

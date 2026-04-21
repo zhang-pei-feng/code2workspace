@@ -14,10 +14,10 @@ resume path.
 
 ## Current Priority
 
-Keep the LangGraph-backed web MVP stable, continue hardening the generic
-one-shot runner, finish the remaining high-value repo baselines, and then spend
-the next serious effort on the harness loop rather than more ad hoc prompt
-tweaks.
+Continue hardening the generic one-shot runner, finish the remaining high-value
+repo baselines, and then spend the next serious effort on the harness loop
+rather than more ad hoc prompt tweaks. The checked-in web frontend has been
+removed; only the small web API backend remains.
 
 ## Current State To Remember
 
@@ -27,8 +27,8 @@ tweaks.
   they mostly burn time on first-build dependency setup.
 - repository-preparation failures are now treated as explicit experiment
   outcomes instead of queue-killing crashes.
-- the web UI is green enough for control-plane use; keep it simple and do not
-  overbuild chat UX yet.
+- the checked-in web frontend has been removed on purpose; do not assume there
+  is still a browser UI in-tree.
 - the interactive TUI startup hotfix is in; it now reaches the ready prompt
   again, so treat it as usable unless a deeper interaction bug is reproduced.
 - normal CLI sessions now start inside `workspace/<timestamp>` below the
