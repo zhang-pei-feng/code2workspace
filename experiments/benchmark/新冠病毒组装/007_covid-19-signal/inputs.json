@@ -1,0 +1,15 @@
+{
+  "CovidSignal.sample_name": "test_sample",
+  "CovidSignal.read1": ".workspaces/oneshot/covid-19-signal/results/docker_test/real_input/E15_R1.fastq.gz",
+  "CovidSignal.read2": ".workspaces/oneshot/covid-19-signal/results/docker_test/real_input/E15_R2.fastq.gz",
+  "CovidSignal.viral_reference_genome": ".workspaces/oneshot/covid-19-signal/resources/primer_schemes/artic_v3/nCoV-2019.reference.fasta",
+  "CovidSignal.scheme_bed": ".workspaces/oneshot/covid-19-signal/resources/primer_schemes/artic_v3/nCoV-2019.bed",
+  "CovidSignal.min_qual": 20,
+  "CovidSignal.min_len": 20,
+  "CovidSignal.mpileup_depth": 100000,
+  "CovidSignal.var_freq_threshold": 0.75,
+  "CovidSignal.var_min_coverage_depth": 10,
+  "CovidSignal.var_min_freq_threshold": 0.25,
+  "CovidSignal.var_min_variant_quality": 20,
+  "CovidSignal.threads": 4
+}

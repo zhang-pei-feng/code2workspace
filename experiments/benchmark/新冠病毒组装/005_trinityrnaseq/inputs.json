@@ -1,0 +1,7 @@
+{
+    "TrinityRNASeq.left_reads": ".workspaces/oneshot/trinityrnaseq/sample_data/test_Trinity_Assembly/reads.left.fq.gz",
+    "TrinityRNASeq.right_reads": ".workspaces/oneshot/trinityrnaseq/sample_data/test_Trinity_Assembly/reads.right.fq.gz",
+    "TrinityRNASeq.seq_type": "fq",
+    "TrinityRNASeq.max_memory": "4G",
+    "TrinityRNASeq.cpu": 4
+}

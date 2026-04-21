@@ -1,0 +1,4 @@
+{
+  "SpadesWorkflow.read1": "experiments/benchmark/datasets/downloads/short-read-ecoli-srr001666/SRR001666_1.fastq.gz",
+  "SpadesWorkflow.read2": "experiments/benchmark/datasets/downloads/short-read-ecoli-srr001666/SRR001666_2.fastq.gz"
+}

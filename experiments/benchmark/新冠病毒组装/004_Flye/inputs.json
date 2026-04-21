@@ -1,0 +1,6 @@
+{
+    "FlyeAssembly.reads": "results/real-tests/canu/pacbio.fastq",
+    "FlyeAssembly.genome_size": "4.8m",
+    "FlyeAssembly.threads": 4,
+    "FlyeAssembly.min_overlap": 1000
+}

@@ -1,0 +1,7 @@
+{
+    "CanuWorkflow.reads_fastq": "results/real-tests/canu/pacbio.fastq",
+    "CanuWorkflow.prefix": "ecoli",
+    "CanuWorkflow.genome_size": "4.8m",
+    "CanuWorkflow.max_threads": 4,
+    "CanuWorkflow.max_memory": 8
+}

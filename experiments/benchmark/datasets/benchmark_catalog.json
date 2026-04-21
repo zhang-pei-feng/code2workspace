@@ -1,0 +1,401 @@
+{
+  "dataset_root": "experiments/benchmark/datasets",
+  "downloads_root": "experiments/benchmark/datasets/downloads",
+  "datasets": {
+    "short-read-ecoli-srr001666": {
+      "dataset_id": "SRR001666",
+      "family": "short-read-assembly",
+      "description": "Shared Illumina paired-end E. coli dataset for short-read assembly benchmarks.",
+      "source": "NCBI SRA",
+      "source_urls": [
+        "https://www.ncbi.nlm.nih.gov/sra/?term=SRR001666"
+      ],
+      "local_candidates": [
+        ".workspaces/oneshot/megahit/test_data/r3_1.fa",
+        ".workspaces/oneshot/megahit/test_data/r3_2.fa"
+      ],
+      "shared_between": [
+        "spades",
+        "megahit"
+      ],
+      "files": [
+        {
+          "logical_name": "reads_1",
+          "uri": "sra://SRR001666_1",
+          "filename": "SRR001666_1.fastq.gz"
+        },
+        {
+          "logical_name": "reads_2",
+          "uri": "sra://SRR001666_2",
+          "filename": "SRR001666_2.fastq.gz"
+        }
+      ]
+    },
+    "long-read-ecoli-pacbio": {
+      "dataset_id": "pacbio.fastq",
+      "family": "long-read-assembly",
+      "description": "Shared long-read E. coli benchmark input reused by Canu and Flye.",
+      "source": "Local verified benchmark input",
+      "source_urls": [
+        "results/real-tests/canu/pacbio.fastq"
+      ],
+      "local_candidates": [
+        "results/real-tests/canu/pacbio.fastq"
+      ],
+      "shared_between": [
+        "canu",
+        "Flye"
+      ],
+      "files": [
+        {
+          "logical_name": "reads",
+          "uri": "file://results/real-tests/canu/pacbio.fastq",
+          "filename": "pacbio.fastq"
+        }
+      ]
+    },
+    "trinity-rnaseq-srr390728": {
+      "dataset_id": "test_Trinity_Assembly",
+      "family": "rna-seq-transcriptome",
+      "description": "Bundled Trinity paired-end sample data.",
+      "source": "Local Trinity sample data",
+      "source_urls": [
+        ".workspaces/oneshot/trinityrnaseq/sample_data/test_Trinity_Assembly"
+      ],
+      "local_candidates": [
+        ".workspaces/oneshot/trinityrnaseq/sample_data/test_Trinity_Assembly/reads.left.fq.gz",
+        ".workspaces/oneshot/trinityrnaseq/sample_data/test_Trinity_Assembly/reads.right.fq.gz"
+      ],
+      "shared_between": [
+        "trinityrnaseq"
+      ],
+      "files": [
+        {
+          "logical_name": "reads_1",
+          "uri": "file://.workspaces/oneshot/trinityrnaseq/sample_data/test_Trinity_Assembly/reads.left.fq.gz",
+          "filename": "reads.left.fq.gz"
+        },
+        {
+          "logical_name": "reads_2",
+          "uri": "file://.workspaces/oneshot/trinityrnaseq/sample_data/test_Trinity_Assembly/reads.right.fq.gz",
+          "filename": "reads.right.fq.gz"
+        }
+      ]
+    },
+    "sars-cov-2-illumina-sra": {
+      "dataset_id": "E15",
+      "family": "viral-short-read-pipeline",
+      "description": "Local SARS-CoV-2 paired-end benchmark input used by covid-19-signal.",
+      "source": "Local covid-19-signal validation input",
+      "source_urls": [
+        ".workspaces/oneshot/covid-19-signal/results/docker_test/real_input/E15_R1.fastq.gz",
+        ".workspaces/oneshot/covid-19-signal/results/docker_test/real_input/E15_R2.fastq.gz"
+      ],
+      "local_candidates": [
+        ".workspaces/oneshot/covid-19-signal/results/docker_test/real_input/E15_R1.fastq.gz",
+        ".workspaces/oneshot/covid-19-signal/results/docker_test/real_input/E15_R2.fastq.gz"
+      ],
+      "shared_between": [
+        "covid-19-signal"
+      ],
+      "files": [
+        {
+          "logical_name": "read1",
+          "uri": "file://.workspaces/oneshot/covid-19-signal/results/docker_test/real_input/E15_R1.fastq.gz",
+          "filename": "E15_R1.fastq.gz"
+        },
+        {
+          "logical_name": "read2",
+          "uri": "file://.workspaces/oneshot/covid-19-signal/results/docker_test/real_input/E15_R2.fastq.gz",
+          "filename": "E15_R2.fastq.gz"
+        }
+      ]
+    },
+    "ebov-amplicon-flongle": {
+      "dataset_id": "MT007544",
+      "family": "viral-ont-amplicon",
+      "description": "Local ARTIC/fieldbioinformatics test data directory for MT007544.",
+      "source": "Bundled fieldbioinformatics test data",
+      "source_urls": [
+        ".workspaces/oneshot/fieldbioinformatics/test-data/MT007544"
+      ],
+      "local_candidates": [
+        ".workspaces/oneshot/fieldbioinformatics/test-data/MT007544"
+      ],
+      "shared_between": [
+        "fieldbioinformatics"
+      ],
+      "files": [
+        {
+          "logical_name": "input_fastq_dir",
+          "uri": "file://.workspaces/oneshot/fieldbioinformatics/test-data/MT007544",
+          "filename": "MT007544"
+        }
+      ]
+    }
+  },
+  "repo_cases": {
+    "spades": {
+      "repo_url": "https://github.com/ablab/spades",
+      "family": "short-read-assembly",
+      "dataset_key": "short-read-ecoli-srr001666",
+      "image_tag": "spades-benchmark",
+      "repo_native_entry": "spades.py -1 <reads_1> -2 <reads_2>",
+      "wdl_workflow_name": "SpadesWorkflow",
+      "case_dir": "experiments/benchmark/新冠病毒组装/001_spades",
+      "wdl_path": "experiments/benchmark/新冠病毒组装/001_spades/spades.wdl",
+      "inputs_path": "experiments/benchmark/新冠病毒组装/001_spades/inputs.json",
+      "dockerfile_path": ".workspaces/oneshot/spades/spades_Dockerfile",
+      "dockerfile_candidates": [
+        ".workspaces/oneshot/spades/spades_Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/新冠病毒组装/001_spades/spades.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/新冠病毒组装/001_spades/inputs.json"
+      ],
+      "repo_native_command_candidates": [
+        "/opt/spades/bin/spades.py --isolate -1 <reads_1> -2 <reads_2> -t 2 -o /work/repo_native_output"
+      ],
+      "local_result_candidates": [
+        ".workspaces/oneshot/spades/results/wdl_result/contigs.fasta",
+        ".workspaces/oneshot/spades/results/wdl_result/scaffolds.fasta",
+        ".workspaces/oneshot/spades/results/wdl_result/spades.log"
+      ],
+      "expected_outputs": [
+        "contigs.fasta",
+        "scaffolds.fasta",
+        "spades.log"
+      ],
+      "constraints": [
+        "Use the shared public short-read dataset.",
+        "Preserve the repo-native paired-end SPAdes entrypoint."
+      ]
+    },
+    "canu": {
+      "repo_url": "https://github.com/marbl/canu",
+      "family": "long-read-assembly",
+      "dataset_key": "long-read-ecoli-pacbio",
+      "image_tag": "canu-benchmark",
+      "repo_native_entry": "canu -p ecoli -d run -pacbio <reads>",
+      "wdl_workflow_name": "CanuWorkflow",
+      "case_dir": "experiments/benchmark/新冠病毒组装/002_canu",
+      "wdl_path": "experiments/benchmark/新冠病毒组装/002_canu/canu.wdl",
+      "inputs_path": "experiments/benchmark/新冠病毒组装/002_canu/inputs.json",
+      "dockerfile_path": ".workspaces/oneshot/canu/canu_Dockerfile",
+      "dockerfile_candidates": [
+        ".workspaces/oneshot/canu/canu_Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/新冠病毒组装/002_canu/canu.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/新冠病毒组装/002_canu/inputs.json"
+      ],
+      "repo_native_command_candidates": [
+        "canu -correct -p ecoli -d /work/repo_native_output genomeSize=4.8m useGrid=false maxThreads=4 maxMemory=8 stopOnLowCoverage=0 stopAfter=meryl -pacbio <reads>"
+      ],
+      "local_result_candidates": [
+        "results/real-tests/canu/ecoli-pacbio/ecoli.contigs.fasta",
+        "results/real-tests/canu/ecoli-pacbio/ecoli.report"
+      ],
+      "expected_outputs": [
+        "ecoli.report",
+        "ecoli.contigs.fasta"
+      ],
+      "constraints": [
+        "Use the shared PacBio long-read dataset.",
+        "Keep the raw-read Canu mode."
+      ]
+    },
+    "megahit": {
+      "repo_url": "https://github.com/voutcn/megahit",
+      "family": "short-read-assembly",
+      "dataset_key": "short-read-ecoli-srr001666",
+      "image_tag": "megahit-benchmark",
+      "repo_native_entry": "megahit -1 <reads_1> -2 <reads_2> -o out",
+      "wdl_workflow_name": "MegahitAssembly",
+      "case_dir": "experiments/benchmark/新冠病毒组装/003_megahit",
+      "wdl_path": "experiments/benchmark/新冠病毒组装/003_megahit/megahit.wdl",
+      "inputs_path": "experiments/benchmark/新冠病毒组装/003_megahit/inputs.json",
+      "dockerfile_path": ".workspaces/oneshot/megahit/megahit_Dockerfile",
+      "dockerfile_candidates": [
+        ".workspaces/oneshot/megahit/megahit_Dockerfile",
+        ".workspaces/oneshot/megahit/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/新冠病毒组装/003_megahit/megahit.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/新冠病毒组装/003_megahit/inputs.json"
+      ],
+      "repo_native_command_candidates": [
+        "megahit -1 <reads_1> -2 <reads_2> -o /work/repo_native_output -t 2"
+      ],
+      "local_result_candidates": [
+        ".workspaces/oneshot/megahit/test_data/ref.fa"
+      ],
+      "expected_outputs": [
+        "final.contigs.fa",
+        "log"
+      ],
+      "constraints": [
+        "Use the shared public short-read dataset.",
+        "Preserve the repo-native paired-end MEGAHIT entrypoint."
+      ]
+    },
+    "Flye": {
+      "repo_url": "https://github.com/fenderglass/Flye",
+      "family": "long-read-assembly",
+      "dataset_key": "long-read-ecoli-pacbio",
+      "image_tag": "flye-benchmark",
+      "repo_native_entry": "flye --pacbio-raw <reads> --out-dir out",
+      "wdl_workflow_name": "FlyeAssembly",
+      "case_dir": "experiments/benchmark/新冠病毒组装/004_Flye",
+      "wdl_path": "experiments/benchmark/新冠病毒组装/004_Flye/flye.wdl",
+      "inputs_path": "experiments/benchmark/新冠病毒组装/004_Flye/inputs.json",
+      "dockerfile_path": ".workspaces/oneshot/Flye/Flye_Dockerfile",
+      "dockerfile_candidates": [
+        ".workspaces/oneshot/Flye/Flye_Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/新冠病毒组装/004_Flye/flye.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/新冠病毒组装/004_Flye/inputs.json"
+      ],
+      "repo_native_command_candidates": [
+        "/opt/Flye/bin/flye --pacbio-raw <reads> --genome-size 4.8m --threads 4 --out-dir /work/repo_native_output"
+      ],
+      "local_result_candidates": [
+        "results/real-tests/flye/flye_toy_test/assembly.fasta",
+        "results/real-tests/flye/flye_toy_test/assembly_info.txt"
+      ],
+      "expected_outputs": [
+        "assembly.fasta",
+        "assembly_info.txt",
+        "assembly_graph.gfa",
+        "flye.log"
+      ],
+      "constraints": [
+        "Use the shared PacBio long-read dataset.",
+        "Keep Flye in raw long-read mode without format mutation."
+      ]
+    },
+    "trinityrnaseq": {
+      "repo_url": "https://github.com/trinityrnaseq/trinityrnaseq",
+      "family": "rna-seq-transcriptome",
+      "dataset_key": "trinity-rnaseq-srr390728",
+      "image_tag": "trinityrnaseq-benchmark",
+      "repo_native_entry": "Trinity --left <reads_1> --right <reads_2> --seqType fq",
+      "wdl_workflow_name": "TrinityRNASeq",
+      "case_dir": "experiments/benchmark/新冠病毒组装/005_trinityrnaseq",
+      "wdl_path": "experiments/benchmark/新冠病毒组装/005_trinityrnaseq/trinityrnaseq.wdl",
+      "inputs_path": "experiments/benchmark/新冠病毒组装/005_trinityrnaseq/inputs.json",
+      "dockerfile_path": ".workspaces/oneshot/trinityrnaseq/trinityrnaseq_Dockerfile",
+      "dockerfile_candidates": [
+        ".workspaces/oneshot/trinityrnaseq/trinityrnaseq_Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/新冠病毒组装/005_trinityrnaseq/trinityrnaseq.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/新冠病毒组装/005_trinityrnaseq/inputs.json"
+      ],
+      "repo_native_command_candidates": [
+        "Trinity --left <reads_1> --right <reads_2> --seqType fq --max_memory 4G --CPU 4 --no_bowtie --no_salmon --output /work/repo_native_output"
+      ],
+      "local_result_candidates": [
+        ".workspaces/oneshot/trinityrnaseq/results/wdl_result/Trinity.fasta"
+      ],
+      "expected_outputs": [
+        "Trinity.fasta"
+      ],
+      "constraints": [
+        "Use the Trinity example RNA-seq dataset.",
+        "Keep the paired-end transcriptome assembly flow."
+      ]
+    },
+    "covid-19-signal": {
+      "repo_url": "https://github.com/jaleezyy/covid-19-signal",
+      "family": "viral-short-read-pipeline",
+      "dataset_key": "sars-cov-2-illumina-sra",
+      "image_tag": "covid-19-signal-benchmark",
+      "repo_native_entry": "python signalexe.py --configfile config.yaml --cores 2 all",
+      "wdl_workflow_name": "CovidSignal",
+      "case_dir": "experiments/benchmark/新冠病毒组装/007_covid-19-signal",
+      "wdl_path": "experiments/benchmark/新冠病毒组装/007_covid-19-signal/covid-19-signal.wdl",
+      "inputs_path": "experiments/benchmark/新冠病毒组装/007_covid-19-signal/inputs.json",
+      "dockerfile_path": ".workspaces/oneshot/covid-19-signal/covid_19_signal_Dockerfile",
+      "dockerfile_candidates": [
+        ".workspaces/oneshot/covid-19-signal/covid_19_signal_Dockerfile",
+        ".workspaces/oneshot/covid-19-signal/resources/Dockerfile_pipeline"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/新冠病毒组装/007_covid-19-signal/covid-19-signal.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/新冠病毒组装/007_covid-19-signal/inputs.json"
+      ],
+      "repo_native_command_candidates": [
+        "python signalexe.py --configfile config.yaml --cores 2 all"
+      ],
+      "local_result_candidates": [
+        ".workspaces/oneshot/covid-19-signal/results/wdl_result/outputs_manifest.json",
+        ".workspaces/oneshot/covid-19-signal/results/wdl_result/wdl_signal.log"
+      ],
+      "expected_outputs": [
+        "test_sample.consensus.fa",
+        "test_sample.sorted.bam",
+        "test_sample.sorted.bam.bai",
+        "test_sample.trimmed.sorted.bam",
+        "test_sample.ivar_variants.tsv",
+        "test_sample.flagstat.txt",
+        "test_sample_run.log"
+      ],
+      "constraints": [
+        "Use the local SARS-CoV-2 Illumina paired-end dataset.",
+        "Run only the core assembly and consensus flow; skip heavy postprocess and ncov_tools branches."
+      ]
+    },
+    "fieldbioinformatics": {
+      "repo_url": "https://github.com/artic-network/fieldbioinformatics",
+      "family": "viral-ont-amplicon",
+      "dataset_key": "ebov-amplicon-flongle",
+      "image_tag": "fieldbioinformatics-benchmark",
+      "repo_native_entry": "./test-runner.sh clair3",
+      "wdl_workflow_name": "ArticMinion",
+      "case_dir": "experiments/benchmark/新冠病毒组装/008_fieldbioinformatics",
+      "wdl_path": "experiments/benchmark/新冠病毒组装/008_fieldbioinformatics/fieldbioinformatics.wdl",
+      "inputs_path": "experiments/benchmark/新冠病毒组装/008_fieldbioinformatics/inputs.json",
+      "dockerfile_path": ".workspaces/oneshot/fieldbioinformatics/fieldbioinformatics_Dockerfile",
+      "dockerfile_candidates": [
+        ".workspaces/oneshot/fieldbioinformatics/fieldbioinformatics_Dockerfile",
+        ".workspaces/oneshot/fieldbioinformatics/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/新冠病毒组装/008_fieldbioinformatics/fieldbioinformatics.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/新冠病毒组装/008_fieldbioinformatics/inputs.json"
+      ],
+      "repo_native_command_candidates": [
+        "./test-runner.sh clair3"
+      ],
+      "local_result_candidates": [
+        ".workspaces/oneshot/fieldbioinformatics/test-data/consensus-sequences/MT007544.consensus.medaka.fasta"
+      ],
+      "expected_outputs": [
+        "MT007544.consensus.fasta",
+        "MT007544.pass.vcf",
+        "MT007544.merged.vcf",
+        "MT007544.minion.log.txt"
+      ],
+      "constraints": [
+        "Use the bundled MT007544 ONT test data.",
+        "If Clair3 model files are unavailable, record the case as externally blocked."
+      ]
+    }
+  }
+}

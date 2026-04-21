@@ -1,0 +1,10 @@
+{
+  "ArticMinion.input_fastq_dir": ".workspaces/oneshot/fieldbioinformatics/test-data/MT007544",
+  "ArticMinion.bed_file": ".workspaces/oneshot/fieldbioinformatics/test-data/primer-schemes/nCoV-2019/V3/nCoV-2019.bed",
+  "ArticMinion.ref_fasta": ".workspaces/oneshot/fieldbioinformatics/test-data/primer-schemes/nCoV-2019/V3/nCoV-2019.reference.fasta",
+  "ArticMinion.pileup_pt": "/tmp/clair3_models/r941_prom_hac_g360+g422/pileup.pt",
+  "ArticMinion.full_alignment_pt": "/tmp/clair3_models/r941_prom_hac_g360+g422/full_alignment.pt",
+  "ArticMinion.sample_name": "MT007544",
+  "ArticMinion.model_name": "r941_prom_hac_g360+g422",
+  "ArticMinion.threads": 4
+}
