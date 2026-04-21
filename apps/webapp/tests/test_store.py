@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 
 from apps.webapp.store import AppStore
 
@@ -63,3 +64,17 @@ def test_append_run_output_persists_streamed_chunks(tmp_path: Path) -> None:
 
     assert loaded is not None
     assert loaded["output"] == "first line\nsecond line\n"
+
+
+def test_store_enables_concurrent_friendly_sqlite_pragmas(tmp_path: Path) -> None:
+    db_path = tmp_path / "webapp.db"
+    AppStore(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+      journal_mode = conn.execute("PRAGMA journal_mode").fetchone()
+      busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()
+
+    assert journal_mode is not None
+    assert journal_mode[0].lower() == "wal"
+    assert busy_timeout is not None
+    assert busy_timeout[0] >= 5000

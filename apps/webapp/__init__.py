@@ -1,1 +1,1 @@
-"""Minimal web workspace for Code2Workspace."""
+"""Minimal web API backend for Code2Workspace."""

@@ -1,4 +1,4 @@
-"""SQLite-backed store for the minimal web workspace."""
+"""SQLite-backed store for the minimal web API backend."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def utc_now() -> str:
 
 
 def default_db_path() -> Path:
-    """Return the default sqlite path for the web workspace state."""
+    """Return the default sqlite path for the web API state."""
     db_dir = Path.home() / ".code2workspace"
     db_dir.mkdir(parents=True, exist_ok=True)
     return db_dir / "webapp.db"
@@ -33,11 +33,14 @@ class AppStore:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     def init_db(self) -> None:
         """Create the required tables if they do not already exist."""
         with self._connect() as conn:
+            conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -158,7 +161,6 @@ class AppStore:
     def delete_session(self, session_id: str) -> bool:
         """Delete one session and its dependent records."""
         with self._connect() as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
             cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             return cursor.rowcount > 0
 

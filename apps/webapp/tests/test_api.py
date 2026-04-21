@@ -44,22 +44,23 @@ def test_get_run_endpoint(tmp_path: Path) -> None:
     assert loaded.json()["run"]["status"] == "succeeded"
 
 
-def test_session_subpage_serves_frontend(tmp_path: Path) -> None:
+def test_frontend_routes_are_not_exposed(tmp_path: Path) -> None:
     api.STORE = AppStore(tmp_path / "webapp.db")
     session = api.STORE.create_session("Deep Link Session")
     client = TestClient(api.app)
 
+    root = client.get("/")
     loaded = client.get(f"/sessions/{session.id}")
 
+    assert root.status_code == 404
+    assert loaded.status_code == 404
+
+
+def test_health_endpoint_still_available(tmp_path: Path) -> None:
+    api.STORE = AppStore(tmp_path / "webapp.db")
+    client = TestClient(api.app)
+
+    loaded = client.get("/api/health")
+
     assert loaded.status_code == 200
-    assert "Code2Workspace Lab" in loaded.text
-
-
-def test_static_index_references_existing_bundles() -> None:
-    static_dir = Path(api.STATIC_DIR)
-    index_text = static_dir.joinpath("index.html").read_text(encoding="utf-8")
-
-    assert "/static/assets/" in index_text
-    asset_dir = static_dir / "assets"
-    assert asset_dir.exists()
-    assert any(asset_dir.iterdir())
+    assert loaded.json() == {"ok": True}

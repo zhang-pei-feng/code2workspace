@@ -1,4 +1,4 @@
-"""Shared data shapes for the minimal web workspace."""
+"""Shared data shapes for the minimal web API backend."""
 
 from __future__ import annotations
 

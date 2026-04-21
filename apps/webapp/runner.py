@@ -1,4 +1,4 @@
-"""Background one-shot execution for the minimal web workspace."""
+"""Background one-shot execution for the minimal web API backend."""
 
 from __future__ import annotations
 

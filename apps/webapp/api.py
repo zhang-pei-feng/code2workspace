@@ -1,26 +1,18 @@
-"""ASGI app for the minimal Code2Workspace web workspace."""
+"""ASGI app for the minimal Code2Workspace web API."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse
-from starlette.routing import Mount, Route
-from starlette.staticfiles import StaticFiles
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from apps.webapp.runner import queue_one_shot_run
 from apps.webapp.store import AppStore
 
 STORE = AppStore()
-STATIC_DIR = Path(__file__).with_name("static")
-
-
-async def index(_: Request) -> FileResponse:
-    """Serve the single-page frontend."""
-    return FileResponse(STATIC_DIR / "index.html")
 
 
 async def health(_: Request) -> JSONResponse:
@@ -83,9 +75,6 @@ async def get_run(request: Request) -> JSONResponse:
 app = Starlette(
     debug=True,
     routes=[
-        Route("/", index),
-        Route("/sessions", index),
-        Route("/sessions/{session_id}", index),
         Route("/api/health", health),
         Route("/api/sessions", list_sessions, methods=["GET"]),
         Route("/api/sessions", create_session, methods=["POST"]),
@@ -93,6 +82,5 @@ app = Starlette(
         Route("/api/sessions/{session_id}", delete_session, methods=["DELETE"]),
         Route("/api/sessions/{session_id}/runs", create_run, methods=["POST"]),
         Route("/api/runs/{run_id}", get_run, methods=["GET"]),
-        Mount("/static", app=StaticFiles(directory=STATIC_DIR), name="static"),
     ],
 )
