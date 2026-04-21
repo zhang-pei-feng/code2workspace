@@ -4,15 +4,15 @@ This is the fastest engineering snapshot for the repository.
 
 ## Snapshot
 
-- Last consolidated update: 2026-04-20
+- Last consolidated update: 2026-04-21
 - Repository scope: focused on `libs/code2workspace`, `libs/cli`, the web
-  control plane, one-shot repo experiments, and harness work
+  API backend, one-shot repo experiments, and harness work
 - Current verified baseline: non-interactive CLI works, interactive TUI startup
-  reaches a usable prompt again, the web control plane is usable, and the
-  `spades` Docker + WDL path has reached a real successful baseline
+  reaches a usable prompt again, the web API backend works, and the `spades`
+  Docker + WDL path has reached a real successful baseline
 - Additional positive baseline: `v-pipe` now also completes end to end with
   matching direct-container and WDL output evidence
-- Local model setup: OpenAI-compatible gateway on `http://127.0.0.1:8080/v1`
+- Local model setup: OpenAI-compatible gateway on `http://8.221.123.105:8080/v1`
   with `use_responses_api = false`
 
 ## Repository Shape
@@ -23,32 +23,37 @@ This is the fastest engineering snapshot for the repository.
   - terminal UI, non-interactive runner, model/config handling, and server
     bridge
 - `apps/webapp`
-  - lightweight web control plane backed by the existing CLI execution path
+  - lightweight web API backend backed by the existing CLI execution path
 - `experiments/oneshot`
   - generic one-shot runner for repo-to-Docker/WDL tasks
+- `experiments/benchmark`
+  - local benchmark datasets, fixed workflow assets, and reused seven-case
+    covid-assembly benchmark area
 - `experiments/harness`
   - harness optimization loop, editable surfaces, and thesis-writing material
 
 ## Workstream Progress
 
-### 1. Web Control Plane
+### 1. Web API Backend
 
-Status: usable MVP
+Status: minimal backend only
 
-- Session list, create, select, delete, refresh, run history, raw log
-  inspection, and one-shot submission are in place.
-- The current frontend is a three-column React/Vite workspace under
-  `apps/webapp/frontend/`.
+- Session list, create, delete, run submission, run lookup, and health routes
+  are still in place under `/api/*`.
+- The checked-in browser frontend and static SPA assets have been removed.
+- The web SQLite store now enables `WAL` mode plus a busy timeout so one-shot
+  completion is not starved by repeated status polling.
 - The backend still intentionally delegates execution to the non-interactive
   CLI path instead of introducing a second runtime.
-- Focused validation previously recorded: `apps/webapp/tests` at `6 passed`.
+- Focused validation currently recorded:
+  - `apps/webapp/tests`: `10 passed`
 
 Remaining gaps:
 
 - web sessions still use a lightweight app store instead of the CLI/TUI thread
   model
 - execution is still one-shot only
-- avoid building richer chat UX before experiment stability improves
+- there is no checked-in browser UI anymore
 
 ### 2. One-Shot Repo Runner
 
@@ -79,7 +84,40 @@ Remaining gaps:
   serialized properly
 - the final target-repo baseline set is not yet complete
 
-### 3. Harness
+### 3. Local Benchmark Assets
+
+Status: seven-case local benchmark path exists and has partial real results
+
+- The benchmark datasets and the `新冠病毒组装` workflow assets now live under
+  `experiments/benchmark/`.
+- The local benchmark helper now reads
+  `experiments/benchmark/datasets/benchmark_catalog.json` instead of the old
+  `experiments/oneshot` path, and the catalog is normalized to the seven local
+  cases rather than the earlier eight-case draft.
+- Fixed local `inputs.json` files now point at live repo-local data instead of
+  dead historical absolute paths.
+- Current 2026-04-21 benchmark run root:
+  `results/skills/benchmark-workflow-orchestrator/20260421-covid-assembly-benchmark`
+- Current evidence from that run:
+  - WDL success: `spades`, `megahit`, `trinityrnaseq`
+  - repo-native success with real outputs: `canu`, `megahit`, `trinityrnaseq`
+  - explicit blocker with recorded failure evidence: `covid-19-signal`,
+    `fieldbioinformatics`
+  - long-running execution still in progress when last recorded:
+    `Flye` repo-native, `canu` WDL
+
+Remaining gaps:
+
+- the helper still does not natively execute WDL runs; those are currently
+  recorded via case-local Cromwell status artifacts
+- `covid-19-signal` currently blocks on a network-dependent `pangoLEARN`
+  fetch during image build
+- `fieldbioinformatics` currently blocks inside WDL execution even after model
+  download because `artic` is not found in the runtime command environment
+- the benchmark run should be resumed and summarized again after the remaining
+  long-running cases settle
+
+### 4. Harness
 
 Status: first local optimization loop exists
 
@@ -102,7 +140,7 @@ Remaining gaps:
 - repo-budget strategy for heavy scientific repos remains the biggest practical
   limiter
 
-### 4. Runtime And Local Environment
+### 5. Runtime And Local Environment
 
 Status: locally usable with a known compatibility workaround
 
@@ -138,16 +176,16 @@ Remaining gaps:
 
 - heavy scientific repositories are expensive and slow to converge on cold
   Docker layers
-- browser session state and CLI/TUI runtime state are still split
+- the remaining web API state and CLI/TUI runtime state are still split
 - gateway compatibility with the ideal Responses API path is incomplete
 - the inherited runtime is usable, but the repo-specific `code2workspace`
   pipeline still needs more implementation depth
 
 ## Current Priority Order
 
-1. Keep the web control plane stable and simple.
-2. Continue hardening and running the generic one-shot experiment path.
-3. Turn the prompt/policy surfaces into repeatable harness experiments.
+1. Continue hardening and running the generic one-shot experiment path.
+2. Turn the prompt/policy surfaces into repeatable harness experiments.
+3. Keep the remaining web API backend minimal.
 4. Use the resulting evidence to support the thesis narrative and future
    pipeline work.
 
@@ -192,6 +230,24 @@ Remaining gaps:
 - Changed normal CLI session startup so new sessions default to
   `workspace/<timestamp>` below the invocation directory, while fixed-layout
   experiment runners explicitly preserve their original cwd.
+- Fixed a web-store concurrency issue by enabling SQLite `WAL` mode and busy
+  timeout handling so repeated status polling no longer leaves quick one-shot
+  runs stranded in `running`.
+- Removed the checked-in web frontend and static SPA assets entirely; `apps/webapp`
+  is now API-only.
+- Rebased the local benchmark helper and catalog onto `experiments/benchmark/`,
+  updated the seven local covid-assembly case inputs to live paths, and started
+  a real benchmark run with partial WDL-positive results for `spades`,
+  `megahit`, and `trinityrnaseq`.
+- Added a soft planner-routing layer for project skills:
+  - `planning-guide` now emits structured soft recommendations such as
+    `recommended_skill`, `selected_skill`, task type, lane hints, and fresh-run
+    isolation hints for obvious benchmark / paper2workspace prompts
+  - the shared CLI agent path now injects those recommendations into the
+    system prompt via a planner middleware instead of forcing hard dispatch
+  - isolated copies can now point back to the original project root through a
+    `.code2workspace/project-root.txt` marker so project skills and agents stay
+    visible without copying historical `results/`
 
 ## Read Next
 

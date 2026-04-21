@@ -55,7 +55,9 @@ from code2workspace_cli.local_context import (
     _AsyncExecutableBackend,
     _ExecutableBackend,
 )
+from code2workspace_cli.planner_routing import PlannerRoutingMiddleware
 from code2workspace_cli.project_utils import ProjectContext, get_server_project_context
+from code2workspace_cli.project_utils import find_reference_project_root
 from code2workspace_cli.subagents import list_subagents
 from code2workspace_cli.unicode_security import (
     check_url_safety,
@@ -73,6 +75,11 @@ DEFAULT_AGENT_NAME = "agent"
 
 REQUIRE_COMPACT_TOOL_APPROVAL: bool = True
 """When `True`, `compact_conversation` requires HITL approval like other gated tools."""
+
+
+def _fallback_repo_root() -> Path:
+    """Best-effort project source root when running from the repo checkout."""
+    return Path(__file__).resolve().parents[3]
 
 
 class ShellAllowListMiddleware(AgentMiddleware):
@@ -522,12 +529,12 @@ def get_system_prompt(
             "- If asked how to approach something, explain first, then act."
         )
         todo_guidance = (
-            "6. When first creating a todo list for a task, ALWAYS ask the user if "
-            "the plan looks good before starting work\n"
-            '   - Create the todos, then ask: "Does this plan '
-            'look good?" or similar\n'
-            "   - Wait for the user's response before marking the first todo as "
-            "in_progress\n"
+            "6. When you first create a todo list for a task, send a brief "
+            "message that summarizes the plan before continuing work.\n"
+            "   - After creating the todos, tell the user the plan in one short "
+            "message or a few compact bullets.\n"
+            "   - Do not wait for plan approval; mark the first relevant todo "
+            "as in_progress and continue.\n"
             "7. Update todo status promptly as you complete each item"
         )
     else:
@@ -555,7 +562,8 @@ def get_system_prompt(
         todo_guidance = (
             "6. There is no human operator in this mode — do NOT ask the user to "
             "approve your plan or wait for a reply.\n"
-            "   After you create todos for a multi-step task, mark the first item "
+            "   After you create todos for a multi-step task, send a brief "
+            "message that summarizes the plan, then mark the first item "
             "`in_progress` immediately and start work.\n"
             "   If the plan needs adjustment, revise the todo list yourself; do "
             "not block on human confirmation.\n"
@@ -961,6 +969,11 @@ def create_cli_agent(
     user_agent_skills_dir = None
     project_skills_dir = None
     project_agent_skills_dir = None
+    reference_project_root = find_reference_project_root(
+        project_context.user_cwd
+        if project_context is not None
+        else effective_cwd
+    )
     if enable_skills:
         skills_dir = settings.ensure_user_skills_dir(assistant_id)
         user_agent_skills_dir = settings.get_user_agent_skills_dir()
@@ -974,6 +987,14 @@ def create_cli_agent(
             if project_context is not None
             else settings.get_project_agent_skills_dir()
         )
+        if (project_skills_dir is None or not project_skills_dir.exists()) and reference_project_root is not None:
+            project_skills_dir = reference_project_root / ".code2workspace" / "skills"
+        if (project_agent_skills_dir is None or not project_agent_skills_dir.exists()) and reference_project_root is not None:
+            project_agent_skills_dir = reference_project_root / ".agents" / "skills"
+        if (project_skills_dir is None or not project_skills_dir.exists()):
+            repo_project_skills_dir = _fallback_repo_root() / ".code2workspace" / "skills"
+            if repo_project_skills_dir.exists():
+                project_skills_dir = repo_project_skills_dir
 
     # Load custom subagents from filesystem
     custom_subagents: list[SubAgent | CompiledSubAgent] = []
@@ -1001,6 +1022,12 @@ def create_cli_agent(
         if project_context is not None
         else settings.get_project_agents_dir()
     )
+    if (project_agents_dir is None or not project_agents_dir.exists()) and reference_project_root is not None:
+        project_agents_dir = reference_project_root / ".code2workspace" / "agents"
+    if (project_agents_dir is None or not project_agents_dir.exists()):
+        repo_project_agents_dir = _fallback_repo_root() / ".code2workspace" / "agents"
+        if repo_project_agents_dir.exists():
+            project_agents_dir = repo_project_agents_dir
 
     custom_subagent_metadata = list_subagents(
         user_agents_dir=user_agents_dir,
@@ -1110,6 +1137,7 @@ def create_cli_agent(
                 sources=sources,
             )
         )
+        agent_middleware.append(PlannerRoutingMiddleware())
 
     # CONDITIONAL SETUP: Local vs Remote Sandbox
     if sandbox is None:

@@ -25,6 +25,82 @@ harness-style iteration.
 
 ### 2026-04-21
 
+- Updated the repo-tracked local development gateway baseline to the current
+  remote endpoint:
+  - changed `.code2workspace/config.toml` from the loopback URL
+    `http://127.0.0.1:8080/v1` to `http://8.221.123.105:8080/v1`
+  - follow-up validation against the remote gateway showed the OpenAI-compatible
+    API surface still lives under `/v1`, while the root path serves the HTML
+    gateway page rather than API responses
+  - kept `use_responses_api = false` unchanged so the working chat-completions
+    compatibility baseline stays consistent
+- Converted the ad hoc local benchmark assets into a more thesis-usable
+  seven-case benchmark surface under `experiments/benchmark/`:
+  - moved the benchmark datasets and `新冠病毒组装` case assets out of the old
+    `experiments/oneshot/` location
+  - normalized the benchmark catalog to those seven real local cases instead of
+    the earlier eight-case draft that still mentioned `v-pipe`
+  - rewired the benchmark helper to the new catalog location and fixed the
+    image-tag resolution bug that could produce invalid references like
+    `image:tag:latest`
+- Replaced dead historical absolute input paths in the local benchmark WDL
+  inputs with real repo-local dataset paths:
+  - short-read cases now use the shared E. coli FASTQ pair already stored under
+    `experiments/benchmark/datasets/downloads`
+  - long-read cases share the verified PacBio input already used in the Canu
+    real-test path
+  - Trinity and covid-signal now use bundled local sample data
+  - fieldbioinformatics now points at bundled test data plus explicitly managed
+    Clair3 model files instead of the removed `deepagent` workspace
+- Started a real seven-case local benchmark run under
+  `results/skills/benchmark-workflow-orchestrator/20260421-covid-assembly-benchmark`
+  and recorded layered completion evidence instead of treating the benchmark as
+  all-or-nothing:
+  - `spades`, `megahit`, and `trinityrnaseq` now have real WDL-success
+    evidence in the new run root
+  - `canu` has real repo-native success evidence and its WDL path was pushed
+    into real execution
+  - `Flye` repo-native execution reached deep real assembly stages with real
+    intermediate outputs when last checked
+  - `covid-19-signal` and `fieldbioinformatics` produced explicit blocker
+    evidence rather than silent absence of results
+- These outcomes are useful thesis material because they show three different
+  benchmark-result classes inside one controlled run:
+  - true positive executions with reusable artifacts
+  - long-running in-progress scientific workflows that need more wall-clock
+    budget but are clearly beyond setup failure
+  - externally constrained failures with concrete evidence, such as
+    network-dependent environment bootstrap and image/runtime command-surface
+    mismatch
+- Added a softer orchestration layer for skills rather than a hard external
+  router:
+  - the planning skill now emits a structured recommendation contract for
+    benchmark, paper2workspace, and mixed multi-lane prompts
+  - the CLI agent injects that recommendation into the model context as
+    guidance, keeping the final execution decision with the agent itself
+  - isolated benchmark/workspace copies may now keep project skills visible
+    through a `.code2workspace/project-root.txt` pointer while still excluding
+    historical results
+- This is useful thesis evidence because it preserves the “skills shape agent
+  behavior” design while addressing two concrete experimental failure modes:
+  - project skills disappearing when fresh-run isolation hides the original
+    repository root
+  - long benchmark tasks finishing execution but failing to synthesize results
+    because no report-first guidance was present in the orchestration layer
+- Root-caused and fixed a web-layer concurrency issue revealed during live
+  API validation:
+  - submitting a quick one-shot task through the web API and polling its status
+    at the frontend cadence could leave the run stranded in `running`
+  - the same CLI command completed normally when run directly, which isolated
+    the problem to the web store / polling interaction rather than the core
+    agent runtime
+  - enabling SQLite `WAL` mode plus a busy timeout in the web store restored
+    successful completion under the real 1.5-second polling cadence
+- Removed the checked-in browser frontend and static SPA assets from
+  `apps/webapp` after the OpenHands-shell experiment:
+  - the repository now keeps only the lightweight web API/backend pieces
+  - this narrows the repo back toward runtime, experiment, and harness work
+    rather than ongoing browser UX development
 - Repaired a concrete interactive terminal regression in the current CLI:
   - the TUI was no longer advancing past `Connecting to local server...`
     even though the local LangGraph server had already become healthy

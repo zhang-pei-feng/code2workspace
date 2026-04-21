@@ -16,6 +16,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+_REFERENCE_PROJECT_ROOT_MARKER = ".code2workspace/project-root.txt"
+"""Marker file used by isolated copies to point back to the original project root."""
+
 
 @dataclass(frozen=True)
 class ProjectContext:
@@ -186,3 +189,33 @@ def find_project_agent_md(project_root: Path) -> list[Path]:
         except OSError:
             pass
     return paths
+
+
+def find_reference_project_root(start_path: str | Path | None = None) -> Path | None:
+    """Find an explicit reference project root from an isolation marker file.
+
+    The marker file path is `<candidate>/.code2workspace/project-root.txt` and
+    should contain the absolute path of the original project root whose skills
+    and agents should remain visible from an isolated copy.
+    """
+    current = Path(start_path or Path.cwd()).expanduser().resolve()
+
+    for parent in [current, *list(current.parents)]:
+        marker = parent / _REFERENCE_PROJECT_ROOT_MARKER
+        try:
+            if not marker.is_file():
+                continue
+            raw = marker.read_text(encoding="utf-8").strip()
+            if not raw:
+                continue
+            resolved = Path(raw).expanduser().resolve()
+            if resolved.exists():
+                return resolved
+        except OSError:
+            logger.warning(
+                "Could not inspect reference project root marker at %s",
+                marker,
+                exc_info=True,
+            )
+            continue
+    return None

@@ -1,6 +1,6 @@
 ---
 name: paper2workspace-orchestrator
-description: Enforce a strict two-phase repository-to-workspace execution workflow when the user asks to inspect a repository, build a real image, run real validation, generate WDL artifacts, and only then run local Cromwell or Bio-OS workflow execution. Use the current code2workspace task/subagent system instead of the legacy paper2workspace ACP agent.
+description: Enforce a strict two-phase repository-to-workspace execution workflow when the user asks to inspect a repository, build a real image, run real validation, generate WDL artifacts, and only then run local Cromwell or other local workflow execution. Use the current code2workspace task/subagent system instead of the legacy paper2workspace ACP agent.
 ---
 
 # Paper2Workspace Orchestrator
@@ -12,9 +12,12 @@ into a runnable validated workspace.
 
 1. Treat the task as a strict two-phase workflow.
 2. Phase 1: repository inspection, exact Dockerfile/image work, real validation.
-3. Phase 2: WDL/Bio-OS or local Cromwell execution.
+3. Phase 2: local WDL or local Cromwell execution.
 4. Never start phase 2 until phase 1 artifacts exist on disk.
 5. Prefer the `workspace-builder` subagent for long execution branches.
+6. Before extending the task with optional extras, write or update a
+   user-facing workspace report that states phase completion, real artifact
+   paths, and remaining blockers.
 
 ## Local helpers
 

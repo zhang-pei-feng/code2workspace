@@ -8,7 +8,7 @@ the `RemoteAgent` client (see `server_manager.server_session`).
 
 Shell commands are gated by an optional allow-list (`--shell-allow-list`):
 
-- Not set → shell disabled, all other tool calls auto-approved.
+- Not set → shell enabled with the equivalent of `--shell-allow-list all`.
 - `recommended` or explicit list → shell enabled, commands validated
     against the list; non-shell tools approved unconditionally.
 - `all` → shell enabled, any command allowed, all tools auto-approved.
@@ -19,6 +19,7 @@ stderr, leaving stdout exclusively for the agent's response text.
 
 from __future__ import annotations
 
+import ast
 import logging
 import sys
 import threading
@@ -216,6 +217,15 @@ class ThreadUrlLookupState:
     url: str | None = None
 
 
+def _effective_non_interactive_shell_allow_list() -> list[str]:
+    """Return the shell allow-list used by non-interactive mode.
+
+    Non-interactive CLI defaults to unrestricted shell access unless the user
+    explicitly configures a restrictive allow-list.
+    """
+    return settings.shell_allow_list or SHELL_ALLOW_ALL
+
+
 def _start_langsmith_thread_url_lookup(thread_id: str) -> ThreadUrlLookupState:
     """Start background LangSmith URL resolution without blocking.
 
@@ -358,6 +368,42 @@ def _process_ai_message(
                 )
 
 
+def _parse_todo_items(output: str) -> list[object] | None:
+    """Parse `write_todos` output into a Python list when possible."""
+    try:
+        items = ast.literal_eval(output)
+    except (ValueError, SyntaxError):
+        return None
+    return items if isinstance(items, list) else None
+
+
+def _build_todo_plan_preview(output: str, *, max_items: int = 3) -> str | None:
+    """Create a compact `Plan:` summary from todo items."""
+    items = _parse_todo_items(output)
+    if not items:
+        return None
+
+    steps: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            raw_text = item.get("content") or item.get("activeForm")
+        else:
+            raw_text = item
+        if not isinstance(raw_text, str):
+            continue
+        text = raw_text.strip().rstrip(".")
+        if text:
+            steps.append(text)
+
+    if not steps:
+        return None
+
+    preview = "; ".join(steps[:max_items])
+    if len(steps) > max_items:
+        preview += "; ..."
+    return f"Plan: {preview}."
+
+
 def _process_message_chunk(
     data: tuple[AIMessage | ToolMessage, dict[str, str]],
     state: StreamState,
@@ -393,6 +439,21 @@ def _process_message_chunk(
     if isinstance(message_obj, AIMessage):
         _process_ai_message(message_obj, state, console)
     elif isinstance(message_obj, ToolMessage):
+        tool_call_id = getattr(message_obj, "tool_call_id", None)
+        tool_name = state.tool_call_buffers.get(tool_call_id, {}).get("name")
+        if tool_name == "write_todos":
+            content = message_obj.content
+            if isinstance(content, list):
+                content_text = "\n".join(str(item) for item in content)
+            else:
+                content_text = str(content) if content is not None else ""
+            plan_preview = _build_todo_plan_preview(content_text)
+            if plan_preview:
+                if state.spinner:
+                    state.spinner.stop()
+                if state.full_response and not state.quiet:
+                    _write_newline()
+                console.print(plan_preview, highlight=False)
         record = file_op_tracker.complete_with_message(message_obj)
         if record and record.diff:
             if state.spinner:
@@ -479,28 +540,14 @@ def _make_hitl_decision(
     action_name = action_request.get("name", "")
 
     if action_name in SHELL_TOOL_NAMES:
-        if not settings.shell_allow_list:
-            command = action_request.get("args", {}).get("command", "")
-            console.print(
-                f"\n[red]Shell command rejected (no allow-list configured): "
-                f"{command}[/red]"
-            )
-            return {
-                "type": "reject",
-                "message": (
-                    "Shell commands are not permitted in non-interactive mode "
-                    "without a --shell-allow-list. Use --shell-allow-list to "
-                    "specify allowed commands."
-                ),
-            }
-
+        effective_allow_list = _effective_non_interactive_shell_allow_list()
         command = action_request.get("args", {}).get("command", "")
 
-        if is_shell_command_allowed(command, settings.shell_allow_list):
+        if is_shell_command_allowed(command, effective_allow_list):
             console.print(f"[dim]✓ Auto-approved: {escape_markup(command)}[/dim]")
             return {"type": "approve"}
 
-        allowed_list_str = ", ".join(settings.shell_allow_list)
+        allowed_list_str = ", ".join(effective_allow_list)
         console.print(f"\n[red]Shell command rejected:[/red] {escape_markup(command)}")
         console.print(
             f"[yellow]Allowed commands:[/yellow] {escape_markup(allowed_list_str)}"
@@ -778,7 +825,7 @@ async def run_non_interactive(
 
     Shell access and auto-approval are controlled by `--shell-allow-list`:
 
-    - Not set → shell disabled, all other tools auto-approved.
+    - Not set → shell enabled with the equivalent of `--shell-allow-list all`.
     - `recommended` or explicit list → shell enabled, commands gated by
         allow-list; non-shell tools approved unconditionally.
     - `all` → shell enabled, any command allowed, all tools auto-approved.
@@ -959,9 +1006,10 @@ async def run_non_interactive(
             logger.warning("MCP metadata preload task creation failed", exc_info=True)
 
     try:
-        enable_shell = bool(settings.shell_allow_list)
+        effective_shell_allow_list = _effective_non_interactive_shell_allow_list()
+        enable_shell = True
         shell_is_unrestricted = isinstance(
-            settings.shell_allow_list, type(SHELL_ALLOW_ALL)
+            effective_shell_allow_list, type(SHELL_ALLOW_ALL)
         )
         # Currently, non-shell tools have no HITL handler in non-interactive
         # mode, so interrupting on them just fragments LangSmith traces
@@ -971,8 +1019,8 @@ async def run_non_interactive(
         # Extract the concrete allow-list to forward to the server subprocess.
         # settings.shell_allow_list is already validated at this point.
         restrictive_allow_list: list[str] | None = (
-            list(settings.shell_allow_list)
-            if use_interrupt_shell_only and settings.shell_allow_list
+            list(effective_shell_allow_list)
+            if use_interrupt_shell_only and effective_shell_allow_list
             else None
         )
 

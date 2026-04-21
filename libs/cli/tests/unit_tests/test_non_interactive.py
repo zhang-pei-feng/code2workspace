@@ -7,11 +7,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from rich.console import Console
 from rich.style import Style
 from rich.text import Text
 
+from code2workspace_cli.file_ops import FileOpTracker
 from code2workspace_cli.config import SHELL_ALLOW_ALL, ModelResult
 from code2workspace_cli.non_interactive import (
     ThreadUrlLookupState,
@@ -19,6 +20,7 @@ from code2workspace_cli.non_interactive import (
     _collect_action_request_warnings,
     _make_hitl_decision,
     _process_ai_message,
+    _process_message_chunk,
     _start_langsmith_thread_url_lookup,
     StreamState,
     run_non_interactive,
@@ -41,15 +43,16 @@ class TestMakeHitlDecision:
         )
         assert result == {"type": "approve"}
 
-    def test_shell_without_allow_list_rejected(self, console: Console) -> None:
-        """Shell commands should be rejected when no allow-list is configured."""
+    def test_shell_without_allow_list_approved_by_default(
+        self, console: Console
+    ) -> None:
+        """Non-interactive mode should default to approving shell commands."""
         with patch("code2workspace_cli.non_interactive.settings") as mock_settings:
             mock_settings.shell_allow_list = None
             result = _make_hitl_decision(
                 {"name": "execute", "args": {"command": "rm -rf /"}}, console
             )
-            assert result["type"] == "reject"
-            assert "not permitted" in result["message"]
+            assert result == {"type": "approve"}
 
     def test_shell_allowed_command_approved(self, console: Console) -> None:
         """Shell commands in the allow-list should be approved."""
@@ -444,6 +447,36 @@ class TestToolDisplayInLogs:
         # Header and completion messages are fully suppressed in quiet mode
         assert "Task completed" not in stderr
         assert "Running task" not in stderr
+
+    def test_write_todos_tool_message_emits_plan_summary(self) -> None:
+        console_output = io.StringIO()
+        console = Console(file=console_output, force_terminal=False, color_system=None)
+        state = StreamState(quiet=False, stream=True)
+        state.tool_call_buffers["todo-call"] = {"name": "write_todos", "id": "todo-call"}
+
+        tool_message = ToolMessage(
+            content=str(
+                [
+                    {"content": "Read the two planning skill files", "status": "in_progress"},
+                    {"content": "Compare their scope", "status": "pending"},
+                    {"content": "Summarize the overlap", "status": "pending"},
+                ]
+            ),
+            tool_call_id="todo-call",
+        )
+
+        _process_message_chunk(
+            (tool_message, {}),
+            state,
+            console,
+            FileOpTracker(assistant_id=None),
+        )
+
+        rendered = " ".join(console_output.getvalue().split())
+        assert (
+            "Plan: Read the two planning skill files; Compare their scope; "
+            "Summarize the overlap."
+        ) in rendered
 
 
 class TestNoStreamMode:
@@ -845,7 +878,7 @@ class TestShellAllowListDecisionLogic:
                 True,
                 False,
                 None,
-                id="no-allow-list-auto-approves",
+                id="no-allow-list-defaults-to-shell-enabled",
             ),
             pytest.param(
                 ["ls", "cat"],
@@ -911,6 +944,7 @@ class TestShellAllowListDecisionLogic:
         assert kwargs["auto_approve"] is expected_auto
         assert kwargs["interrupt_shell_only"] is expected_shell_only
         assert kwargs["shell_allow_list"] == expected_allow_list
+        assert kwargs["enable_shell"] is True
 
 
 class TestNonInteractivePrompt:

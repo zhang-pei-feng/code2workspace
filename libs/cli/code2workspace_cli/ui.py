@@ -118,7 +118,7 @@ def show_help() -> None:
         "  --json                     Emit machine-readable JSON for commands"
     )
     console.print(
-        "  -S, --shell-allow-list CMDS  Comma-separated cmds, 'recommended', or 'all'"
+        "  -S, --shell-allow-list CMDS  Restrict default shell access: comma-separated cmds, 'recommended', or 'all'"
     )
     console.print("  --default-model [MODEL]    Set, show, or manage the default model")
     console.print("  --clear-default-model      Clear the default model")

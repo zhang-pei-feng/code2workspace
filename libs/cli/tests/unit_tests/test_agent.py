@@ -582,15 +582,17 @@ class TestGetSystemPromptNonInteractive:
 
         assert "interactive CLI" in prompt
 
-    def test_interactive_todo_section_asks_user_before_starting(self) -> None:
-        """Interactive mode should require plan approval before first in_progress."""
+    def test_interactive_todo_section_summarizes_plan_and_continues(self) -> None:
+        """Interactive mode should summarize the plan to the user and keep working."""
         mock_settings = Mock()
         mock_settings.model_name = None
 
         with patch("code2workspace_cli.agent.settings", mock_settings):
             prompt = get_system_prompt("test-agent", interactive=True)
 
-        assert "Wait for the user's response before marking the first todo" in prompt
+        assert "send a brief message that summarizes the plan" in prompt
+        assert "Do not wait for plan approval" in prompt
+        assert "Wait for the user's response before marking the first todo" not in prompt
 
     def test_non_interactive_todo_section_does_not_wait_for_user(self) -> None:
         """Headless mode must not contradict 'no human' guidance in todo rules."""
@@ -603,6 +605,7 @@ class TestGetSystemPromptNonInteractive:
         wait_for_user = "Wait for the user's response before marking the first todo"
         assert wait_for_user not in prompt
         assert "do NOT ask the user to approve your plan" in prompt
+        assert "send a brief message that summarizes the plan" in prompt
         assert "mark the first item `in_progress` immediately" in prompt
 
 
@@ -1433,6 +1436,87 @@ class TestCreateCliAgentProjectContext:
 
         assert mock_shell.call_args.kwargs["root_dir"] == user_cwd
 
+    def test_reference_project_root_restores_project_skills_and_agents(
+        self, tmp_path: Path
+    ) -> None:
+        isolated_root = tmp_path / "isolated"
+        isolated_root.mkdir()
+        (isolated_root / ".git").mkdir()
+        user_cwd = isolated_root / "workspace"
+        user_cwd.mkdir()
+
+        source_project = tmp_path / "source-project"
+        source_project.mkdir()
+        source_skills_dir = source_project / ".code2workspace" / "skills"
+        source_skills_dir.mkdir(parents=True)
+        source_agents_dir = source_project / ".code2workspace" / "agents"
+        source_agents_dir.mkdir(parents=True)
+        marker_dir = isolated_root / ".code2workspace"
+        marker_dir.mkdir()
+        (marker_dir / "project-root.txt").write_text(
+            str(source_project),
+            encoding="utf-8",
+        )
+
+        project_context = ProjectContext.from_user_cwd(user_cwd)
+
+        agent_dir = tmp_path / "agent"
+        agent_dir.mkdir()
+        user_skills_dir = tmp_path / "user-skills"
+        user_skills_dir.mkdir()
+        user_agent_skills_dir = tmp_path / "user-agent-skills"
+        user_agent_skills_dir.mkdir()
+
+        mock_settings = Mock()
+        mock_settings.ensure_agent_dir.return_value = agent_dir
+        mock_settings.ensure_user_skills_dir.return_value = user_skills_dir
+        mock_settings.get_user_agent_skills_dir.return_value = user_agent_skills_dir
+        mock_settings.get_project_skills_dir.return_value = None
+        mock_settings.get_project_agent_skills_dir.return_value = None
+        mock_settings.get_built_in_skills_dir.return_value = (
+            Settings.get_built_in_skills_dir()
+        )
+        mock_settings.get_user_agent_md_path.return_value = agent_dir / "AGENTS.md"
+        mock_settings.get_project_agent_md_path.return_value = []
+        mock_settings.get_user_agents_dir.return_value = tmp_path / "agents"
+        mock_settings.get_project_agents_dir.return_value = None
+        mock_settings.model_name = None
+        mock_settings.model_provider = None
+        mock_settings.model_unsupported_modalities = frozenset()
+        mock_settings.model_context_limit = None
+        mock_settings.project_root = None
+        mock_settings.user_langchain_project = None
+
+        captured_sources: list[list[str]] = []
+
+        class FakeSkillsMiddleware:
+            def __init__(self, **kwargs: Any) -> None:
+                captured_sources.append(kwargs.get("sources", []))
+
+        mock_agent = Mock()
+        mock_agent.with_config.return_value = mock_agent
+
+        fake_model = _make_fake_chat_model()
+        with (
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.SkillsMiddleware", FakeSkillsMiddleware),
+            patch("code2workspace_cli.agent.MemoryMiddleware"),
+            patch("code2workspace_cli.agent.list_subagents", return_value=[]),
+            patch("code2workspace_cli.agent.create_workspace_agent", return_value=mock_agent),
+            patch("code2workspace._models.init_chat_model", return_value=fake_model),
+        ):
+            create_cli_agent(
+                model="fake-model",
+                assistant_id="test",
+                enable_memory=False,
+                enable_skills=True,
+                enable_shell=False,
+                project_context=project_context,
+            )
+
+        assert len(captured_sources) == 1
+        assert str(source_skills_dir) in captured_sources[0]
+
     def test_cwd_sets_local_filesystem_root_dir_without_shell(
         self, tmp_path: Path
     ) -> None:
@@ -1555,6 +1639,60 @@ class TestMiddlewareStackConformance:
             assert isinstance(mw, AgentMiddleware), (
                 f"{type(mw).__name__} does not inherit from AgentMiddleware"
             )
+
+    def test_planner_routing_middleware_added_when_skills_enabled(
+        self, tmp_path: Path
+    ) -> None:
+        agent_dir = tmp_path / "agent"
+        agent_dir.mkdir()
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+
+        mock_settings = Mock()
+        mock_settings.ensure_agent_dir.return_value = agent_dir
+        mock_settings.ensure_user_skills_dir.return_value = skills_dir
+        mock_settings.get_project_skills_dir.return_value = None
+        mock_settings.get_built_in_skills_dir.return_value = (
+            Settings.get_built_in_skills_dir()
+        )
+        mock_settings.get_user_agent_md_path.return_value = agent_dir / "AGENTS.md"
+        mock_settings.get_project_agent_md_path.return_value = []
+        mock_settings.get_user_agents_dir.return_value = tmp_path / "agents"
+        mock_settings.get_project_agents_dir.return_value = None
+        mock_settings.get_user_agent_skills_dir.return_value = tmp_path / "user-agent-skills"
+        mock_settings.get_project_agent_skills_dir.return_value = None
+        mock_settings.get_user_claude_skills_dir.return_value = tmp_path / "user-claude-skills"
+        mock_settings.get_project_claude_skills_dir.return_value = None
+        mock_settings.model_name = None
+        mock_settings.model_provider = None
+        mock_settings.model_unsupported_modalities = frozenset()
+        mock_settings.model_context_limit = None
+        mock_settings.project_root = None
+
+        captured: list[list[Any]] = []
+
+        def capture(**kwargs: Any) -> Mock:
+            captured.append(kwargs.get("middleware", []))
+            agent = Mock()
+            agent.with_config.return_value = agent
+            return agent
+
+        fake_model = _make_fake_chat_model()
+        with (
+            patch("code2workspace_cli.agent.settings", mock_settings),
+            patch("code2workspace_cli.agent.create_workspace_agent", side_effect=capture),
+            patch("code2workspace._models.init_chat_model", return_value=fake_model),
+        ):
+            create_cli_agent(
+                model="fake-model",
+                assistant_id="test",
+                enable_memory=False,
+                enable_skills=True,
+                enable_shell=False,
+            )
+
+        middleware_names = {type(mw).__name__ for mw in captured[0]}
+        assert "PlannerRoutingMiddleware" in middleware_names
 
 
 class TestEnableAskUser:
