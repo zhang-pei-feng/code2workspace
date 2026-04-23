@@ -75,6 +75,14 @@ class LiveEvalCase:
     command: tuple[str, ...] | None
     artifact_root: str | None
     path: Path
+    task_family: str | None = None
+    question_type: str | None = None
+    preferred_skills: tuple[str, ...] = ()
+    source_hints: tuple[str, ...] = ()
+    source_urls: tuple[str, ...] = ()
+    judge_focus: tuple[str, ...] = ()
+    prior_case_refs: tuple[str, ...] = ()
+    weight: float = 1.0
 
 
 def load_case(path: Path) -> LiveEvalCase:
@@ -110,6 +118,14 @@ def load_case(path: Path) -> LiveEvalCase:
         command=command,
         artifact_root=artifact_root,
         path=path,
+        task_family=str(payload["task_family"]) if "task_family" in payload else None,
+        question_type=str(payload["question_type"]) if "question_type" in payload else None,
+        preferred_skills=tuple(str(item) for item in payload.get("preferred_skills", [])),
+        source_hints=tuple(str(item) for item in payload.get("source_hints", [])),
+        source_urls=tuple(str(item) for item in payload.get("source_urls", [])),
+        judge_focus=tuple(str(item) for item in payload.get("judge_focus", [])),
+        prior_case_refs=tuple(str(item) for item in payload.get("prior_case_refs", [])),
+        weight=float(payload.get("weight", 1.0)),
     )
 
 
@@ -153,6 +169,7 @@ def run_case(
     log_path = result_dir / f"{slug}.log"
     prompt_path = result_dir / f"{slug}.prompt.txt"
     answer_path = result_dir / f"{slug}.answer.txt"
+    trace_path = result_dir / f"{slug}.trace.json"
 
     runtime_env = os.environ.copy()
     runtime_env.update(discover_runtime_env())
@@ -170,12 +187,14 @@ def run_case(
         prompt_path.write_text(case.prompt, encoding="utf-8")
         answer_path.write_text("", encoding="utf-8")
         parsed = _parsed_log("")
+        _write_trace(trace_path, case=case, parsed=parsed, answer_text="")
         result = _finalize_result(
             case=case,
             status="infra_blocked",
             log_path=log_path,
             prompt_path=prompt_path,
             answer_path=answer_path,
+            trace_path=trace_path,
             returncode=None,
             log_text="",
             parsed=parsed,
@@ -200,17 +219,17 @@ def run_case(
         )
         log_text = _combine_output(completed.stdout, completed.stderr)
         log_path.write_text(log_text, encoding="utf-8")
-        answer_path.write_text(
-            extract_final_answer_from_log(log_text),
-            encoding="utf-8",
-        )
+        answer_text = extract_final_answer_from_log(log_text)
+        answer_path.write_text(answer_text, encoding="utf-8")
         parsed = _parsed_log(log_text)
+        _write_trace(trace_path, case=case, parsed=parsed, answer_text=answer_text)
         return _finalize_result(
             case=case,
             status=None,
             log_path=log_path,
             prompt_path=prompt_path,
             answer_path=answer_path,
+            trace_path=trace_path,
             returncode=completed.returncode,
             log_text=log_text,
             parsed=parsed,
@@ -221,11 +240,10 @@ def run_case(
     except subprocess.TimeoutExpired as exc:
         log_text = _combine_output(exc.stdout or "", exc.stderr or "")
         log_path.write_text(log_text, encoding="utf-8")
-        answer_path.write_text(
-            extract_final_answer_from_log(log_text),
-            encoding="utf-8",
-        )
+        answer_text = extract_final_answer_from_log(log_text)
+        answer_path.write_text(answer_text, encoding="utf-8")
         parsed = _parsed_log(log_text)
+        _write_trace(trace_path, case=case, parsed=parsed, answer_text=answer_text)
         timeout_status = "runner_error"
         timeout_error = f"Timed out after {case.timeout_minutes} minute(s)"
         if case.allow_timeout_after_expectations:
@@ -237,6 +255,7 @@ def run_case(
             log_path=log_path,
             prompt_path=prompt_path,
             answer_path=answer_path,
+            trace_path=trace_path,
             returncode=None,
             log_text=log_text,
             parsed=parsed,
@@ -287,6 +306,7 @@ def _finalize_result(
     log_path: Path,
     prompt_path: Path,
     answer_path: Path,
+    trace_path: Path,
     returncode: int | None,
     log_text: str,
     parsed: dict[str, Any],
@@ -346,6 +366,7 @@ def _finalize_result(
         "prompt_path": str(prompt_path),
         "log_path": str(log_path),
         "answer_path": str(answer_path),
+        "trace_path": str(trace_path),
         "status": final_status,
         "returncode": returncode,
         "missing_env": missing_env,
@@ -357,7 +378,39 @@ def _finalize_result(
         "summary_lines": parsed["summary_lines"],
         "artifact_context": artifact_context,
         "conclusion_zh": conclusion,
+        "task_family": case.task_family,
+        "question_type": case.question_type,
+        "preferred_skills": list(case.preferred_skills),
+        "source_hints": list(case.source_hints),
+        "source_urls": list(case.source_urls),
+        "judge_focus": list(case.judge_focus),
+        "prior_case_refs": list(case.prior_case_refs),
+        "weight": case.weight,
     }
+
+
+def _write_trace(
+    path: Path,
+    *,
+    case: LiveEvalCase,
+    parsed: dict[str, Any],
+    answer_text: str,
+) -> None:
+    payload = {
+        "case_name": case.name,
+        "tool_invocations": parsed["tool_invocations"],
+        "tool_names": parsed["tool_names"],
+        "subagents": parsed["subagents"],
+        "summary_lines": parsed["summary_lines"],
+        "repo_paths": parsed["repo_paths"],
+        "tool_invocation_count": len(parsed["tool_invocations"]),
+        "answer_char_count": len(answer_text.strip()),
+        "trace_warnings": [],
+    }
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _build_artifact_context(
