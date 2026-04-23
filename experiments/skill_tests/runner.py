@@ -95,16 +95,20 @@ def load_case(path: Path) -> LiveEvalCase:
     target = str(payload["target"])
     if target not in VALID_TARGETS:
         raise ValueError(f"{path} has invalid target {target!r}")
-    required_env = tuple(str(item) for item in payload["required_env"])
-    expected_behaviors = tuple(str(item) for item in payload["expected_behaviors"])
-    expected_outputs = tuple(str(item) for item in payload["expected_outputs"])
-    known_issues = tuple(str(item) for item in payload.get("known_issues", []))
+    required_env = _string_tuple(payload["required_env"], field="required_env", path=path)
+    expected_behaviors = _string_tuple(
+        payload["expected_behaviors"], field="expected_behaviors", path=path
+    )
+    expected_outputs = _string_tuple(
+        payload["expected_outputs"], field="expected_outputs", path=path
+    )
+    known_issues = _string_tuple(payload.get("known_issues", []), field="known_issues", path=path)
     timeout_minutes = int(payload.get("timeout_minutes", 8))
     if timeout_minutes < 1:
         raise ValueError(f"{path} timeout_minutes must be >= 1")
     allow_timeout_after_expectations = bool(payload.get("allow_timeout_after_expectations", False))
     raw_command = payload.get("command")
-    command = None if raw_command is None else tuple(str(item) for item in raw_command)
+    command = None if raw_command is None else _string_tuple(raw_command, field="command", path=path)
     artifact_root = str(payload["artifact_root"]) if "artifact_root" in payload else None
     weight = float(payload.get("weight", 1.0))
     if not math.isfinite(weight):
@@ -591,9 +595,20 @@ def _optional_string_tuple(
     path: Path,
 ) -> tuple[str, ...]:
     raw = payload.get(field, [])
+    return _string_tuple(raw, field=field, path=path)
+
+
+def _string_tuple(
+    raw: Any,
+    *,
+    field: str,
+    path: Path,
+) -> tuple[str, ...]:
     if isinstance(raw, str) or not isinstance(raw, list | tuple):
-        raise ValueError(f"{path} field {field!r} must be a list")
-    return tuple(str(item) for item in raw)
+        raise ValueError(f"{path} field {field!r} must be a list of strings")
+    if any(not isinstance(item, str) for item in raw):
+        raise ValueError(f"{path} field {field!r} must contain only strings")
+    return tuple(raw)
 
 
 def _list_dirs(root: Path) -> set[Path]:

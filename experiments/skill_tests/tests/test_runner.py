@@ -103,6 +103,26 @@ preferred_skills = "planning-guide"
         load_case(case_path)
 
 
+def test_load_case_rejects_non_string_metadata_items(tmp_path: Path) -> None:
+    case_path = tmp_path / "bad-metadata-items.toml"
+    case_path.write_text(
+        """
+target = "question"
+name = "bad-metadata-items"
+prompt = "hello"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+source_urls = ["https://example.invalid", 42]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="source_urls"):
+        load_case(case_path)
+
+
 def test_matches_supports_tool_and_subagent_and_report_predicates() -> None:
     context = {
         "tool_names": ["task", "task", "execute"],
@@ -191,6 +211,19 @@ def test_load_batch_cases_reads_case_names_from_markdown(tmp_path: Path) -> None
         "academic-search-positive.toml",
         "epietl-api-channels-positive.toml",
     ]
+
+
+def test_load_batch_cases_supports_complex_qa_suite() -> None:
+    batch_file = (
+        Path(__file__).resolve().parents[1]
+        / "batches"
+        / "complex-qa-suite-v1.md"
+    )
+
+    cases = load_batch_cases(batch_file)
+
+    assert len(cases) == 12
+    assert cases[0].path.parts[-2] == "complex_qa"
 
 
 def test_run_case_writes_to_custom_output_root_and_extracts_answer(
