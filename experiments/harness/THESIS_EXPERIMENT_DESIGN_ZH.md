@@ -10,6 +10,8 @@
 结合当前项目状态，论文实验部分主要围绕以下内容展开。
 
 - 构建标准化的 one-shot repository runner，并形成可比较的仓库级结果
+- 构建低成本的 project-skill 编排评测路径，用于验证软路由与
+  编排约束
 - 引入权威轻量 benchmark，补充通用软件工程能力验证
 - 识别影响真实仓库任务完成率的关键 harness 因素
 - 设计 evidence-backed completion judgment，提高完成标签的可信度
@@ -23,6 +25,7 @@
 - 智能体在真实重型仓库任务上是否能够进入真实执行路径
 - harness 设计是否会显著影响任务完成率与失败模式
 - 基于显式 surfaces 的优化框架是否比非结构化 prompt 调参更可复现、更可审计
+- 基于 skills 与规划约束的轻量编排，是否能在不大改主智能体结构的前提下提高任务完成率与报告完整度
 
 ## 3. 研究问题
 
@@ -50,15 +53,15 @@
 
 | 仓库 | 类型 | 当前状态 | 论文中的角色 |
 | --- | --- | --- | --- |
-| `SWE-bench Lite` | 通用软件工程 benchmark | 待补测 | 通用能力验证 |
-| `spades` | 重型科学仓库 | 已形成正反例链路 | 核心个案 |
+| `SWE-bench Lite` | 通用软件工程 benchmark | 已有 5 条 `dev` pilot，其中 3 条 official resolved | 通用能力验证 |
+| `spades` | 重型科学仓库 | 已形成真实完成样本，并保留早期失败链路 | 核心个案 / 正向样本 |
 | `canu` | 重型科学仓库 | 已进入真实构建，30 分钟超时 | 难例 |
-| `megahit` | 重型科学仓库 | 已进入真实构建，30 分钟超时 | 难例 |
+| `megahit` | 重型科学仓库 | 历史 30 分钟 baseline 超时；缩减评估 direct retry 已完成 | 正向样本 / 难例 |
 | `Flye` | 科学仓库 | 已定位最短真实入口，尚未闭环 | 部分失败例 |
 | `trinityrnaseq` | 重型科学仓库 | 30 分钟超时 | 难例 |
-| `v-pipe` | 工作流型仓库 | 已自动完成 | 正例 |
-| `covid-19-signal` | 工作流型仓库 | 已自动完成 | 正例 |
-| `fieldbioinformatics` | 工作流型仓库 | 已自动完成 | 正例 |
+| `v-pipe` | 工作流型仓库 | 历史 one-shot 正例；当前缩减评估主要作为 workflow-heavy 长时程样本 | 历史正例 / 长时程对照 |
+| `covid-19-signal` | 工作流型仓库 | 历史 one-shot 正例；当前 benchmark 通道阻塞 | 历史正例 / 网络阻塞 |
+| `fieldbioinformatics` | 工作流型仓库 | 历史 one-shot 正例；当前 benchmark 与缩减评测均复现运行时阻塞 | 历史正例 / 运行时阻塞 |
 
 ## 5. 研究方案和思路
 
@@ -69,7 +72,9 @@
 3. 通过 `spades` 等核心案例归纳失败模式，区分能力缺失、执行策略不足与具体工程错误。
 4. 将 harness 中的 prompt 与 completion 规则显式化为 surfaces。
 5. 采用 variant、split、keep/discard 机制组织外环优化。
-6. 比较 baseline 与 candidate 的结果，并分析已完成实验和待补实验。
+6. 用 `experiments/skill_tests` 对 planner / orchestrator / mixed-task 做
+   低成本编排评测。
+7. 比较 baseline 与 candidate 的结果，并分析已完成实验和待补实验。
 
 ## 6. 实验环境与约束
 
@@ -146,6 +151,8 @@
 - 是否具有 split-level 评估结果
 - 是否具有 keep/discard 决策记录
 - 是否具有 evidence-backed completion judgment
+- 是否能正确选中目标 orchestrator skill
+- 是否输出了覆盖 phase / case / blocker 的用户可读报告
 
 ## 9. 论文框架结构中的实验部分落点
 
@@ -182,9 +189,13 @@
 | `megahit` | `20260416T154420Z` | `timed_out` | 未完成 | 已进入真实构建，暴露外部依赖问题 |
 | `Flye` | `20260417T003012Z` | `finished` | 未完成 | 真实入口已确定，但尚未闭环 |
 | `trinityrnaseq` | `20260417T003257Z` | `timed_out` | 未完成 | 长时程难例 |
-| `v-pipe` | `20260417T010342Z` | `completed` | 完成 | 形成自动完成正例 |
-| `covid-19-signal` | `20260417T012910Z` | `completed` | 完成 | 形成自动完成正例 |
-| `fieldbioinformatics` | `20260417T014050Z` | `completed` | 完成 | 形成自动完成正例 |
+| `v-pipe` | `20260417T010342Z` | `completed` | 完成 | 历史 one-shot 正向基线 |
+| `covid-19-signal` | `20260417T012910Z` | `completed` | 完成 | 历史 one-shot 正向基线 |
+| `fieldbioinformatics` | `20260417T014050Z` | `completed` | 完成 | 历史 one-shot 正向基线 |
+
+需要强调的是，上表只表示标准化 one-shot 历史 baseline，不等同于当前最强结果样本。按 2026-04-22 的最新缩减评估证据，当前最强完成样本已经更新为 `spades` 与 `megahit`；`v-pipe` 与 `fieldbioinformatics` 在这一轮中主要承担长时程/阻塞对照角色。
+
+该组结果现已整理为 `results/oneshot-baseline-summary-20260422/`。其中 `summary.json` 可直接支撑表 5-2，`rows.csv` 与 `results/thesis-plot-data-20260422/` 可直接支撑图 5-1 和图 5-2。
 
 ### 10.2 已有实验 B：`spades` 失败模式演化
 
@@ -211,17 +222,81 @@
 
 这部分即使尚未做出大量 candidate 对比，也足以支撑“方法实现已经成立”的论文叙述。
 
+### 10.4 已有实验 D：skills 软路由与实验编排层
+
+截至当前版本，项目已经不再依赖旧式硬编码 planner/router，而是形成了基于
+`planning-guide` 的软路由与编排层。其已有证据包括：
+
+- benchmark、paper2workspace 和 mixed task 可生成统一规划摘要
+- 规划摘要中已经包含 `recommended_skill`、lane hints、fresh-run hints
+  以及更细粒度的执行约束
+- `benchmark-workflow-orchestrator` 已形成 case、status、analysis、summary
+  组织结构
+- `paper2workspace-orchestrator` 已形成分阶段的 run layout、status
+  检查与 workspace report 入口
+
+该组实验的论文价值不在于“又增加了一个技能”，而在于说明系统已经能够把
+高成本任务的约束组织为外部化、可维护、可测试的编排约束，
+从而以较低侵入方式提升任务执行稳定性与结果汇总质量。
+
+截至 2026-04-22，该编排层已经有一组真实但低成本的 smoke 证据：
+
+| case | 内容 | 状态 | 结果目录 |
+| --- | --- | --- | --- |
+| benchmark routing | benchmark 软路由 + fresh-run / shared-dataset 约束 | `passed` | `results/skill-tests/project-skill-orchestration/20260422` |
+| paper2workspace routing | workspace 软路由 + 严格 phase gate | `passed` | `results/skill-tests/project-skill-orchestration/20260422` |
+| mixed routing | workspace + benchmark + synthesis lane 摘要 | `passed` | `results/skill-tests/project-skill-orchestration/20260422` |
+| 分阶段 helper report | `workspace_tool.py` status/report helper | `passed` | `results/skill-tests/project-skill-orchestration/20260422` |
+
+这组结果虽然不等同于高成本 repo-url benchmark，但它为论文提供了一层新的
+实验对象：不是只问“仓库任务最后做没做完”，而是进一步问“planner
+摘要、skill 选择、lane 组织和报告完整性是否稳定可观测”。
+
+需要说明的是，当前仓库并没有在同一条件下保留“无规划提示”或“旧关键词路由”的受控重跑结果。因此，正文中的表 5-7 不再伪造不存在的历史对照组，而是基于现有真实日志，归纳当前软路由层已经稳定暴露出的规划摘要、技能选择、lane 组织与 phase report 信号。
+
+### 10.5 已有实验 E：两小时缩减评估集
+
+截至当前版本，项目还形成了一组“是否继续使用 harness”的缩减版真实评估。
+该组实验不追求一次性跑完整个 8 仓库集合，而是在两小时窗口内优先验证：
+
+- harness 能否把 agent 推到真实 `docker build`
+- 是否能在至少一个重仓库上真实 `COMPLETED`
+- workflow-heavy 仓库失败是否能归因为真实 blocker 而不是空超时
+
+当前已得到的最重要结论是：
+
+- `spades`：`completed`
+- `megahit`：direct retry `completed`
+- `fieldbioinformatics`：真实阻塞（`artic` PATH/运行时）后 `timed_out`
+- `v-pipe`：真实 Docker / Snakemake / conda 初始化后 `timed_out`
+
+这一组结果使论文可以更有把握地写出一个工程判断：当前 harness 值得继续用于
+主任务，但更适合先围绕缩减版代表集推进，而不是直接回到 8 仓库全量长跑。
+
 ## 11. 待补做实验
 
 以下实验尚未全部完成，但非常适合写入论文的“实验设计”部分，并在后续有时间时继续补数据。
 
-### 11.1 计划实验 P1：SWE-bench Lite 通用能力验证实验
+### 11.1 实验 P1：SWE-bench Lite 通用能力验证实验
 
 目的：
 
 - 引入一个权威但实验成本相对可控的公开 benchmark，验证 agent 在通用软件工程仓库修复场景下的能力
 
-设计：
+当前已完成的 pilot：
+
+- 使用 `SWE-bench Lite` 的 `dev` split
+- 当前已完成 5 条真实 pilot run：`marshmallow-code__marshmallow-1359`、
+  `pylint-dev__astroid-1268`、`pydicom__pydicom-1694`、
+  `marshmallow-code__marshmallow-1343`、`sqlfluff__sqlfluff-2419`
+- 其中 4 条 run 使用当前 `code2workspace` 非交互入口在仓库基线提交上生成真实 patch
+- `marshmallow` 首次 official harness 评测因 Docker 内 `git clone` 瞬时网络失败报错；对同一份 `predictions.jsonl` 直接重试后，达到 `resolved=1/1`
+- `pydicom` 在首次 official harness 评测中直接达到 `resolved=1/1`
+- `marshmallow-1343` 也已形成新的 official `resolved=1/1` 样本
+- `astroid` 已生成真实 patch 并通过目标 pytest；在引入 official-eval 自动重试后，现已能够完成完整 official harness 评测，但当前结果为 `unresolved=1/1`
+- `sqlfluff-2419` 在引入 agent-side retry 后仍连续两次遭遇 `InternalServerError`，当前作为 `empty_patch` 服务不稳定反例保留
+
+后续扩展设计：
 
 - 选择 `SWE-bench Lite` 作为通用能力评测集
 - 不必一开始跑全量，优先选取 20 到 50 题代表性子集
@@ -230,7 +305,7 @@
 
 预期结论：
 
-- 即便在不做大规模调参的情况下，`SWE-bench Lite` 也能为论文提供“通用软件工程能力”这一层的权威补充证据
+- 即便在不做大规模调参的情况下，`SWE-bench Lite` 也能为论文提供“通用软件工程能力”这一层的权威补充证据；同时 pilot 也揭示了模型服务稳定性、official harness 波动与真实 patch 质量应被分开分析
 
 ### 11.2 计划实验 P2：shell 能力消融实验
 
@@ -335,7 +410,7 @@
 | 3 | 收集 `spades`、`canu`、`megahit` 等 baseline 证据 | 已完成基础部分 | 2026-04 中旬 |
 | 4 | 完成 harness 原型与 thesis method 草稿 | 已完成 | 2026-04 中下旬 |
 | 5 | 补写论文总大纲、实验设计与章节框架 | 已完成 | 2026-04-19 |
-| 6 | 补做 SWE-bench Lite 子集评测 | 待完成 | 2026-04 下旬 |
+| 6 | 扩展 SWE-bench Lite pilot 子集评测 | 进行中 | 2026-04 下旬 |
 | 7 | 补做 shell 消融、预算对比、completion 规则对比实验 | 待完成 | 2026-04 下旬 |
 | 8 | 补做 harness candidate/holdout 对比实验 | 待完成 | 2026-04 下旬到 2026-05 上旬 |
 | 9 | 完成第 3 章与第 5 章正文初稿 | 待完成 | 2026-05 上旬 |
@@ -360,13 +435,13 @@
 | --- | --- | --- |
 | 表 5-1 | 仓库任务列表与难度特征 | 可做 |
 | 表 5-2 | one-shot 结果总表 | 可做 |
-| 表 5-3 | SWE-bench Lite 子集结果表 | 需补实验 |
+| 表 5-3 | SWE-bench Lite 子集结果表 | 已有 pilot 数据 |
 | 表 5-4 | `spades` 演化时间线 | 可做 |
-| 表 5-5 | 不同 completion 判定口径对比 | 需补整理 |
-| 表 5-6 | harness baseline/candidate 结果对比 | 需补 candidate 实验 |
+| 表 5-5 | harness baseline/candidate 结果对比 | 需补 candidate 实验 |
+| 表 5-6 | 不同 completion 判定口径对比 | 需补整理 |
 | 图 5-1 | 各仓库完成状态柱状图 | 可做 |
-| 图 5-2 | 失败类型分布图 | 需人工归类 |
-| 图 5-3 | SWE-bench Lite 子集 resolved 比例图 | 需补实验 |
+| 图 5-2 | 失败类型分布图 | 可做 |
+| 图 5-3 | SWE-bench Lite 子集 resolved 比例图 | 已有 pilot 数据 |
 | 图 5-4 | 30 分钟与 60 分钟预算对比图 | 需补实验 |
 
 ## 15. 写作时的口径约束

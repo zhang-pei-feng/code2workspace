@@ -179,6 +179,40 @@ harness-style iteration.
 
 ### 2026-04-22
 
+- Added a thesis-facing asset-index / regeneration line so checked-in
+  experiment outputs can be turned directly into manuscript-ready tables and
+  figure notes:
+  - `docs/research/experiment-artifact-index.md` now indexes the currently
+    usable thesis-facing result bundles
+  - `experiments/harness/generate_thesis_asset_notes.py` and
+    `experiments/harness/tests/test_thesis_asset_notes.py` provide
+    caption-ready notes for the current table / figure set
+  - `results/thesis-asset-notes-20260422/`,
+    `results/oneshot-baseline-summary-20260422/`, and
+    `results/thesis-plot-data-20260422/` now serve as the current manuscript
+    asset bundles rather than requiring manual value extraction
+- Added and validated a real `SWE-bench Lite` pilot line under
+  `experiments/swebench/`:
+  - runner: `run_swebench_lite_pilot.py`
+  - summarizer: `summarize_swebench_lite.py`
+  - thesis-facing summary bundle:
+    `results/swebench-lite-summary-20260423/`
+  - the checked-in pilot now covers five real dev-split instances with
+    evidence for resolved, unresolved, and empty-patch / service-instability
+    outcomes
+- This matters for the thesis because it adds a second evaluation layer beyond
+  the bioinformatics repository tasks:
+  - `SWE-bench Lite` provides a recognizable software-engineering benchmark
+    anchor
+  - the repo-to-workspace and scientific-workflow tasks still provide the
+    domain-specific execution / harness evidence
+- Tightened the manuscript and chapter assets so they now point at those real
+  generated bundles instead of ad hoc notes:
+  - `THESIS_FULL_DRAFT_ZH.md`
+  - `THESIS_EXPERIMENT_DESIGN_ZH.md`
+  - `THESIS_ASSET_MATRIX_ZH.md`
+  - `docs/research/README.md`
+
 - Added a harness-native phase-1 benchmark-autonomy ladder under
   `experiments/harness` so the repository can study how much agent freedom is
   tolerable before benchmark reliability drops:
