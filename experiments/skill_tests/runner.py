@@ -106,7 +106,12 @@ def load_case(path: Path) -> LiveEvalCase:
     timeout_minutes = int(payload.get("timeout_minutes", 8))
     if timeout_minutes < 1:
         raise ValueError(f"{path} timeout_minutes must be >= 1")
-    allow_timeout_after_expectations = bool(payload.get("allow_timeout_after_expectations", False))
+    allow_timeout_after_expectations = _optional_bool(
+        payload,
+        "allow_timeout_after_expectations",
+        default=False,
+        path=path,
+    )
     raw_command = payload.get("command")
     command = None if raw_command is None else _string_tuple(raw_command, field="command", path=path)
     artifact_root = str(payload["artifact_root"]) if "artifact_root" in payload else None
@@ -126,8 +131,8 @@ def load_case(path: Path) -> LiveEvalCase:
         command=command,
         artifact_root=artifact_root,
         path=path,
-        task_family=str(payload["task_family"]) if "task_family" in payload else None,
-        question_type=str(payload["question_type"]) if "question_type" in payload else None,
+        task_family=_optional_string_value(payload, "task_family", path=path),
+        question_type=_optional_string_value(payload, "question_type", path=path),
         preferred_skills=_optional_string_tuple(payload, "preferred_skills", path=path),
         source_hints=_optional_string_tuple(payload, "source_hints", path=path),
         source_urls=_optional_string_tuple(payload, "source_urls", path=path),
@@ -609,6 +614,30 @@ def _string_tuple(
     if any(not isinstance(item, str) for item in raw):
         raise ValueError(f"{path} field {field!r} must contain only strings")
     return tuple(raw)
+
+
+def _optional_string_value(payload: dict[str, Any], field: str, *, path: Path) -> str | None:
+    if field not in payload:
+        return None
+    raw = payload[field]
+    if not isinstance(raw, str):
+        raise ValueError(f"{path} field {field!r} must be a string")
+    return raw
+
+
+def _optional_bool(
+    payload: dict[str, Any],
+    field: str,
+    *,
+    default: bool,
+    path: Path,
+) -> bool:
+    if field not in payload:
+        return default
+    raw = payload[field]
+    if not isinstance(raw, bool):
+        raise ValueError(f"{path} field {field!r} must be a boolean")
+    return raw
 
 
 def _list_dirs(root: Path) -> set[Path]:

@@ -123,6 +123,46 @@ source_urls = ["https://example.invalid", 42]
         load_case(case_path)
 
 
+def test_load_case_rejects_non_boolean_allow_timeout_flag(tmp_path: Path) -> None:
+    case_path = tmp_path / "bad-allow-timeout.toml"
+    case_path.write_text(
+        """
+target = "question"
+name = "bad-allow-timeout"
+prompt = "hello"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+allow_timeout_after_expectations = "false"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="allow_timeout_after_expectations"):
+        load_case(case_path)
+
+
+def test_load_case_rejects_non_string_task_family(tmp_path: Path) -> None:
+    case_path = tmp_path / "bad-task-family.toml"
+    case_path.write_text(
+        """
+target = "question"
+name = "bad-task-family"
+prompt = "hello"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+task_family = 123
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="task_family"):
+        load_case(case_path)
+
+
 def test_matches_supports_tool_and_subagent_and_report_predicates() -> None:
     context = {
         "tool_names": ["task", "task", "execute"],
