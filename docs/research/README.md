@@ -8,6 +8,8 @@ stay close to the harness experiment code under `experiments/harness/`, while
 
 - `docs/research/thesis-log.md`
   - dated research and writing chronology
+- `docs/research/experiment-artifact-index.md`
+  - checked-in map from thesis claims to local raw experiment directories and regenerated summary assets
 - `experiments/harness/THESIS_METHOD.md`
   - method-oriented explanation of the harness design
 - `experiments/harness/THESIS_CHAPTER_ZH.md`

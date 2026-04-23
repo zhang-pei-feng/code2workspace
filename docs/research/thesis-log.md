@@ -23,6 +23,155 @@ harness-style iteration.
 
 ## Chronology
 
+### 2026-04-22
+
+- Added a thesis-facing asset-note generator so the already checked-in result
+  bundles can be turned directly into caption-ready table notes:
+  - new script: `experiments/harness/generate_thesis_asset_notes.py`
+  - new tests: `experiments/harness/tests/test_thesis_asset_notes.py`
+  - generated bundle: `results/thesis-asset-notes-20260422/`
+  - current note coverage: table 5-2 historical one-shot baseline, figure 5-1
+    baseline status chart, figure 5-2 failure distribution chart, table 5-8
+    project-skill orchestration, table 5-9 reduced two-hour evaluation, and
+    table 5-10 benchmark snapshot
+- Added a dedicated summary bundle for the historical standard one-shot
+  baselines used in thesis table 5-2:
+  - new script: `experiments/harness/summarize_oneshot_baseline.py`
+  - new tests: `experiments/harness/tests/test_oneshot_baseline_summary.py`
+  - generated bundle: `results/oneshot-baseline-summary-20260422/`
+  - `rows.csv` now also carries `completion_level` and `failure_category`, so
+    figures 5-1 and 5-2 no longer need manual value extraction
+  - this removes another manual table-transcription step from the current
+    thesis-writing path
+- Added a small figure-data exporter for the ready one-shot figures:
+  - new script: `experiments/harness/generate_thesis_plot_data.py`
+  - new tests: `experiments/harness/tests/test_thesis_plot_data.py`
+  - generated bundle: `results/thesis-plot-data-20260422/`
+  - the bundle directly provides `figure_5_1_counts.csv` and
+    `figure_5_2_counts.csv` so the user can draw those two figures without any
+    extra counting step
+- Added a one-command thesis asset regeneration entrypoint:
+  - new script: `experiments/harness/regenerate_thesis_assets.py`
+  - new tests: `experiments/harness/tests/test_regenerate_thesis_assets.py`
+  - this entrypoint sequentially regenerates the current project-skill,
+    benchmark, two-hour, one-shot, plot-data, and asset-note bundles
+- Tightened the thesis narrative so historical one-shot positives are no longer
+  conflated with the newer reduced-eval / benchmark blocker evidence:
+  - `THESIS_FULL_DRAFT_ZH.md`, `THESIS_CHAPTER_ZH.md`, and
+    `THESIS_EXPERIMENT_DESIGN_ZH.md` now explicitly distinguish
+    “historical standard one-shot baseline” from the current strongest
+    completed samples (`spades`, `megahit`)
+  - `THESIS_ASSET_MATRIX_ZH.md` now aligns table names and sources with the
+    current chapter structure, including the soft-routing table and the
+    benchmark snapshot wording
+  - `docs/overview/current-status.md` now describes the benchmark line as an
+    eight-tool snapshot built from seven checked-in local cases plus reused
+    `v-pipe` evidence, which matches the checked-in summary bundle
+- Added a stable observability layer for planner-driven orchestration in
+  non-interactive runs:
+  - quiet-mode CLI logs now print a deterministic `Planner:` summary plus a
+    `Planner Contract:` line when `planning-guide` emits a recommendation
+  - this turns soft routing from an internal middleware effect into a directly
+    testable experimental signal
+- Upgraded the checked-in harness config from a two-case demo to the live
+  `train/holdout` repository split and attached fixed `stratum`
+  labels to every case:
+  - `spades` -> `phase-gate`
+  - `canu` / `megahit` -> `dependency-convergence`
+  - `Flye` / `trinityrnaseq` -> `long-run`
+  - `v-pipe` -> `positive-control`
+  - `covid-19-signal` -> `network-blocker`
+  - `fieldbioinformatics` -> `runtime-surface`
+- Added a low-cost project-skill orchestration evaluation lane under
+  `experiments/skill_tests/` with four initial cases:
+  - benchmark soft routing and fresh-run / shared-dataset constraints
+  - paper2workspace routing and strict phase gate
+  - mixed benchmark + workspace lane decomposition
+  - paper2workspace phase-gated helper report generation
+- Recorded initial real smoke evidence:
+  - the unified 4-case batch passed under
+    `results/skill-tests/project-skill-orchestration/20260422`
+  - the batch covers benchmark routing, paper2workspace routing, mixed-task
+    routing, and phase-gated workspace-report helper generation
+- Extended the harness from a two-surface prompt/rubric prototype into a
+  five-surface configuration:
+  - `one_shot_prompt`
+  - `completion_rubric`
+  - `planning_guide_skill`
+  - `benchmark_report_policy`
+  - `paper2workspace_phase_gate`
+- Added a deterministic `stratum_surface_proposer.py` smoke path and verified
+  in tests that a real proposer iteration can accept a candidate by editing
+  phase-gate / report-policy surfaces based on visible `stratum` labels.
+- Ran the checked-in deterministic smoke optimize path end to end:
+  - command:
+    `PYTHONPATH=. uv run --project libs/cli python experiments/harness/run_stratum_smoke.py`
+  - result root:
+    `results/harness-smoke/stratum-surface-smoke/20260422T003336Z`
+  - accepted candidate:
+    `iter-001`
+  - changed surfaces:
+    `benchmark_report_policy`, `paper2workspace_phase_gate`,
+    `planning_guide_skill`
+  - combined delta:
+    `+2` (`0/2 -> 2/2`)
+- Added a more realistic local-repo smoke optimize path:
+  - command:
+    `PYTHONPATH=. uv run --project libs/cli python experiments/harness/run_local_repo_stratum_smoke.py`
+  - result root:
+    `results/harness-local-repo-smoke-fixture/runs/local-repo-stratum-smoke/20260422T020117Z`
+  - this path materializes checked-in tiny repo fixtures and still goes through
+    the real `run_repo_task()` clone / prompt / manifest / completion flow
+  - accepted candidate:
+    `iter-001`
+  - combined delta:
+    `+2` (`0/2 -> 2/2`)
+- Started a reduced two-hour real-repository evaluation set to judge whether
+  the harness is worth continuing for the current thesis task:
+  - clean harness baseline on `spades` completed end to end with real Docker
+    build, real container test, and real Cromwell `Succeeded` evidence under
+    `results/harness-two-hour-eval/code2workspace-two-hour-eval/20260422T033624Z/.../spades/20260422T033624Z`
+  - a later direct retry on `megahit` completed end to end with real Docker
+    build, explicit-input container validation, and real Cromwell `Succeeded`
+    evidence under `results/two-hour-spotcheck5/megahit/20260422T063109Z`
+  - clean harness baseline on `megahit` failed fast due a model-side
+    `APIError`, which is useful because it separates model service instability
+    from repository/task blockers
+  - direct spotcheck on `fieldbioinformatics` timed out only after real image
+    build and a real container validation attempt that reproduced the `artic`
+    PATH/runtime blocker
+  - direct spotcheck on `v-pipe` timed out only after entering real Docker
+    build plus Snakemake/conda environment creation
+- This is useful thesis evidence because it already supports a practical
+  methodological judgment: the current harness is good enough to push the agent
+  into multiple real build/test/workflow completions and real blocker
+  discovery, even
+  before every repository in the reduced set fully settles.
+- Wrote a thesis-facing summary memo for this reduced evaluation under
+  `experiments/harness/TWO_HOUR_EVAL_20260422_ZH.md`, so the current “keep or
+  stop using harness” judgment is no longer spread only across raw result
+  directories.
+- Added `experiments/harness/summarize_two_hour_eval.py` and generated
+  `results/harness-two-hour-eval/summary-20260422/` so the reduced evaluation
+  now also has one machine-readable / one markdown summary bundle instead of
+  only scattered case-local `summary.json` files.
+- Added `experiments/harness/summarize_project_skill_eval.py` and generated
+  `results/project-skill-summary-20260422/`, so the project-skill
+  orchestration lane now also has a plotting-friendly summary bundle.
+- Promoted the `megahit` direct retry into a full `COMPLETED` case under
+  `results/two-hour-spotcheck5/megahit/20260422T063109Z`, so the reduced
+  evaluation now has two strong positive samples (`spades`, `megahit`) rather
+  than only one.
+- Added `experiments/harness/summarize_benchmark_snapshot.py` and generated
+  `results/benchmark-summary-20260421/` from the checked-in benchmark report,
+  so the benchmark line now also has a stable machine-readable / markdown
+  summary bundle rather than only prose markdown.
+- This is useful thesis evidence because it introduces a second experimental
+  layer below expensive repo execution:
+  - heavy repo-url tasks still measure real Docker/WDL/workflow execution
+  - low-cost skill-orchestration cases now measure whether planner contracts,
+    lane summaries, and phase-gate/report semantics are stable and observable
+
 ### 2026-04-21
 
 - Updated the repo-tracked local development gateway baseline to the current
@@ -87,6 +236,28 @@ harness-style iteration.
     repository root
   - long benchmark tasks finishing execution but failing to synthesize results
     because no report-first guidance was present in the orchestration layer
+- Tightened the soft-routing contract into a more thesis-usable execution layer:
+  - `planning-guide` now emits an explicit `execution_contract` with fresh-run,
+    no-reuse, shared-dataset, no-interruption, phase-gate, and final-report
+    expectations for benchmark / paper2workspace style tasks
+  - mixed prompts now include lane dependencies plus a final synthesis lane
+    rather than only a flat helper suggestion
+  - `paper2workspace-orchestrator` now exposes structured `status` and `report`
+    helper entrypoints so two-phase workspace runs can be summarized as real
+    artifacts instead of ad hoc notes
+- This matters for the thesis because it strengthens the methodological claim
+  that success-rate improvements can come from externalized skills and planning
+  contracts, not only from heavier changes to the core agent architecture.
+- Extended the local harness case model with optional `stratum` labels and
+  propagated them into split manifests plus proposer-visible train failure
+  artifacts:
+  - the harness can now preserve failure-mode tags such as cold-build,
+    reporting, or phase-gate issues instead of only listing repository ids
+  - this aligns the local outer loop more closely with the better-harness idea
+    of optimizing against failure classes, not only against sample names
+- This is useful thesis evidence because it supports a stronger future
+  experimental claim: outer-loop improvements can be analyzed by failure mode
+  and report completeness, not only by per-repo pass count.
 - Root-caused and fixed a web-layer concurrency issue revealed during live
   API validation:
   - submitting a quick one-shot task through the web API and polling its status
@@ -188,6 +359,95 @@ harness-style iteration.
     real build execution but still expose reliability and budget limits
   - this strengthens the thesis claim that the central problem is harnessing and
     execution reliability rather than task impossibility
+
+### 2026-04-23
+
+- Added a real `SWE-bench Lite` pilot line under `experiments/swebench/`:
+  - new runner: `run_swebench_lite_pilot.py`
+  - new summary helper: `summarize_swebench_lite.py`
+  - default pilot subset: `pilot_instances.txt`
+- Verified the official local harness path on this machine:
+  - the first local `gold` control run failed because the default remote-image
+    path hit Docker Hub unauthenticated pull rate limits (`429`)
+  - forcing `--namespace none` switched the harness to local image builds and
+    fixed that blocker
+  - the follow-up local `gold` control on
+    `marshmallow-code__marshmallow-1359` reached `resolved=1/1`
+- Recorded the first non-gold `code2workspace` pilot result:
+  - run root:
+    `results/swebench-lite-pilot/runs/20260422T212019Z`
+  - the agent produced a real patch plus a new regression test for
+    `marshmallow-code__marshmallow-1359`
+  - the first official evaluation attempt failed during instance-image build
+    because container-internal `git clone` hit a transient HTTP2 framing error
+  - a direct retry on the same `predictions.jsonl` succeeded and reached
+    `resolved=1/1`
+- Refreshed thesis-facing outputs so table 5-3 and figure 5-3 are now backed
+  by real data:
+  - summary bundle: `results/swebench-lite-summary-20260423/`
+  - table CSV: `results/thesis-table-data-20260422/table_5_3.csv`
+  - plot CSV: `results/thesis-plot-data-20260422/figure_5_3_counts.csv`
+  - asset-note bundle now includes `table_5_3` and `figure_5_3`
+- Expanded the pilot from a single-instance proof point to a 3-run dev-split
+  mini-batch:
+  - second run: `results/swebench-lite-pilot/runs/20260422T213823Z`
+    (`pylint-dev__astroid-1268`)
+    - the agent produced a real patch and ran targeted pytest successfully
+    - official eval remained blocked after direct retry because the generated
+      instance-image build repeatedly hit container-internal `git clone`
+      HTTP2 framing errors
+  - third run: `results/swebench-lite-pilot/runs/20260422T214632Z`
+    (`pydicom__pydicom-1694`)
+    - the agent produced a real patch plus a new regression test
+    - official eval completed cleanly and reached `resolved=1/1`
+  - the refreshed summary bundle now aggregates 3 real pilot runs with
+    3/3 patch generation and 2/3 official resolved outcomes
+- Hardened the pilot runner against official-eval flakiness:
+  - `run_swebench_lite_pilot.py` now supports `official_eval_retries`,
+    per-attempt evaluation logs, and `evaluation_attempts` metadata
+  - the summary helper now deduplicates reruns by `instance_ids` and keeps the
+    latest completed run for each pilot instance in the thesis-facing bundle
+  - reran `pylint-dev__astroid-1268` under
+    `results/swebench-lite-pilot/runs/20260423T025929Z`
+    - the new run no longer fails in official eval due to transient Docker
+      build/network issues
+    - official harness now completes cleanly and judges the patch as
+      `unresolved=1/1`
+  - this changes the interpretation of the third pilot from
+    “evaluation blocked by external network error” to
+    “evaluation completed, but patch still did not resolve the benchmark task”
+- Continued expanding and hardening the pilot set:
+  - new resolved run:
+    `results/swebench-lite-pilot/runs/20260423T030947Z`
+    (`marshmallow-code__marshmallow-1343`)
+    - the agent produced a real patch plus a regression test
+    - official harness completed and reached `resolved=1/1`
+  - added agent-side transient retry support to
+    `run_swebench_lite_pilot.py`
+    - new flag: `--agent-retries`
+    - retry condition: empty patch plus transient model-side errors such as
+      `InternalServerError` / `RemoteProtocolError`
+    - per-instance output now records `agent_attempts`
+  - new empty-patch/service-instability run:
+    `results/swebench-lite-pilot/runs/20260423T033502Z`
+    (`sqlfluff__sqlfluff-2419`)
+    - two agent attempts both ended in `InternalServerError`
+    - final official harness report is `empty_patch_instances=1`
+  - the refreshed summary bundle now aggregates 5 unique pilot instances with
+    4/5 patch generation, 3/5 official resolved, 1/5 official unresolved, and
+    1/5 empty-patch service failure
+- Reworked the thesis literature framing so it reads more like a software
+  engineering agent paper than a repository diary:
+  - chapter 1 now compares the project explicitly to `SWE-agent`,
+    `AutoCodeRover`, `Agentless`, `OpenHands`, `Multi-SWE-bench`,
+    `Saving SWE-Bench`, `SWE-EVO`, `Ambig-SWE`, and recent asynchronous
+    software-engineering agent work
+  - chapter 2 now includes a stronger comparison table that separates
+    runtime-heavy, issue-resolving, benchmark-realism, and
+    repository-to-workspace / harness-centric approaches
+  - the reference list now carries those representative papers directly, so the
+    thesis can be revised toward a more journal-like “related work +
+    contribution positioning” style rather than staying as an engineering log
 
 ### 2026-04-16
 
@@ -379,3 +639,36 @@ harness-style iteration.
   evaluation section of the thesis.
 - When running repo experiments, save prompts, logs, outputs, and final
   judgments in reusable form.
+
+### 2026-04-22
+
+- The thesis-facing asset pipeline now also covers the soft-routing /
+  orchestration-comparison slot:
+  - `experiments/harness/generate_thesis_asset_notes.py` now emits a seventh
+    ready asset note for table 5-7 in addition to table 5-2, figure 5-1,
+    figure 5-2, table 5-8, table 5-9, and table 5-10
+  - `results/thesis-asset-notes-20260422/` was regenerated from the current
+    checked-in summaries, so the soft-routing observability table now has a
+    caption-ready interpretation grounded in real `Planner:` logs rather than
+    in an invented "old router vs new router" comparison
+- The thesis asset pipeline now also emits direct table CSVs:
+  - `experiments/harness/generate_thesis_table_data.py` now generates
+    `results/thesis-table-data-20260422/`
+  - the bundle currently contains ready-to-format `table_5_2.csv`,
+    `table_5_7.csv`, `table_5_8.csv`, `table_5_9.csv`, and `table_5_10.csv`
+  - this reduces one more manual step between repository evidence and the final
+    school-format manuscript
+- The Chinese thesis drafts were tightened to align with those assets:
+  - `THESIS_FULL_DRAFT_ZH.md`, `THESIS_CHAPTER_ZH.md`, and
+    `THESIS_EXPERIMENT_DESIGN_ZH.md` now describe table 5-7 as a low-cost
+    observability / regression layer backed by existing project-skill logs
+  - stale mixed-English phrases such as "fresh completed", "runtime blocker",
+    and "snapshot" were reduced or translated in the Chinese-facing sections
+- An attempted subagent-assisted prose sweep failed for a platform-side reason
+  unrelated to the repository:
+  - the delegation path first returned transient `502 Bad Gateway` responses
+    from `https://llm.yunhaoli.top/v1/responses`
+  - a direct minimal retry then returned `403 Forbidden: This account only
+    allows Codex official clients`
+  - this is recorded as an environment/tooling limitation, not as a repository
+    blocker or a thesis-system runtime regression
