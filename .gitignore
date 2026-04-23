@@ -219,6 +219,7 @@ jobs/
 TEXTUAL_REFACTOR_PLAN.md
 libs/cli/TEXTUAL_PROGRESS.md
 
+.worktrees/
 .workspaces/
 /.benchmarks/
 /cromwell-workflow-logs/
