@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import subprocess
 import json
@@ -81,6 +82,86 @@ expected_outputs = []
     )
 
     with pytest.raises(ValueError):
+        load_case(case_path)
+
+
+def test_load_case_rejects_scalar_complex_metadata_list(tmp_path: Path) -> None:
+    case_path = tmp_path / "bad-metadata.toml"
+    case_path.write_text(
+        """
+target = "question"
+name = "bad-metadata"
+prompt = "hello"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+preferred_skills = "planning-guide"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="preferred_skills"):
+        load_case(case_path)
+
+
+def test_load_case_rejects_non_string_metadata_items(tmp_path: Path) -> None:
+    case_path = tmp_path / "bad-metadata-items.toml"
+    case_path.write_text(
+        """
+target = "question"
+name = "bad-metadata-items"
+prompt = "hello"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+source_urls = ["https://example.invalid", 42]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="source_urls"):
+        load_case(case_path)
+
+
+def test_load_case_rejects_non_boolean_allow_timeout_flag(tmp_path: Path) -> None:
+    case_path = tmp_path / "bad-allow-timeout.toml"
+    case_path.write_text(
+        """
+target = "question"
+name = "bad-allow-timeout"
+prompt = "hello"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+allow_timeout_after_expectations = "false"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="allow_timeout_after_expectations"):
+        load_case(case_path)
+
+
+def test_load_case_rejects_non_string_task_family(tmp_path: Path) -> None:
+    case_path = tmp_path / "bad-task-family.toml"
+    case_path.write_text(
+        """
+target = "question"
+name = "bad-task-family"
+prompt = "hello"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+task_family = 123
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="task_family"):
         load_case(case_path)
 
 
@@ -172,6 +253,19 @@ def test_load_batch_cases_reads_case_names_from_markdown(tmp_path: Path) -> None
         "academic-search-positive.toml",
         "epietl-api-channels-positive.toml",
     ]
+
+
+def test_load_batch_cases_supports_complex_qa_suite() -> None:
+    batch_file = (
+        Path(__file__).resolve().parents[1]
+        / "batches"
+        / "complex-qa-suite-v1.md"
+    )
+
+    cases = load_batch_cases(batch_file)
+
+    assert len(cases) == 12
+    assert cases[0].path.parts[-2] == "complex_qa"
 
 
 def test_run_case_writes_to_custom_output_root_and_extracts_answer(
@@ -273,6 +367,8 @@ def test_run_case_writes_trace_file(
     assert payload["tool_invocation_count"] == 1
     assert payload["answer_char_count"] >= 1
     assert payload["tool_names"] == ["fetch_url"]
+    assert payload["summary_lines"] == ["最终回答"]
+    assert payload["trace_warnings"] == []
 
 
 def test_extract_run_dir_prefers_report_run_root_over_nested_dirs(tmp_path: Path) -> None:
@@ -287,6 +383,94 @@ def test_extract_run_dir_prefers_report_run_root_over_nested_dirs(tmp_path: Path
     )
 
     assert extracted == run_dir
+
+
+def test_run_case_missing_env_still_writes_trace_file(tmp_path: Path) -> None:
+    case = LiveEvalCase(
+        target="question",
+        name="trace-missing-env",
+        prompt="hello",
+        required_env=("MISSING_COMPLEX_QA_ENV",),
+        expected_behaviors=(),
+        expected_outputs=(),
+        known_issues=(),
+        timeout_minutes=10,
+        allow_timeout_after_expectations=False,
+        command=None,
+        artifact_root=None,
+        path=tmp_path / "trace-missing-env.toml",
+        task_family="trend-analysis",
+        question_type="forecast",
+        preferred_skills=(),
+        source_hints=(),
+        source_urls=(),
+        judge_focus=(),
+        prior_case_refs=(),
+        weight=1.0,
+    )
+
+    result = run_case(
+        case,
+        run_date="20260421",
+        output_root=tmp_path / "runs" / "batch-a",
+    )
+
+    trace_path = Path(result["trace_path"])
+    payload = json.loads(trace_path.read_text(encoding="utf-8"))
+    assert result["status"] == "infra_blocked"
+    assert payload["tool_invocation_count"] == 0
+    assert payload["answer_char_count"] == 0
+    assert payload["tool_names"] == []
+
+
+def test_run_case_timeout_writes_trace_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = LiveEvalCase(
+        target="question",
+        name="trace-timeout",
+        prompt="hello",
+        required_env=(),
+        expected_behaviors=(),
+        expected_outputs=(),
+        known_issues=(),
+        timeout_minutes=10,
+        allow_timeout_after_expectations=False,
+        command=None,
+        artifact_root=None,
+        path=tmp_path / "trace-timeout.toml",
+        task_family="trend-analysis",
+        question_type="forecast",
+        preferred_skills=(),
+        source_hints=(),
+        source_urls=(),
+        judge_focus=(),
+        prior_case_refs=(),
+        weight=1.0,
+    )
+
+    def fake_run(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise subprocess.TimeoutExpired(
+            cmd=kwargs.get("args", args[0] if args else []),
+            timeout=600,
+            output="最终回答\n🔧 Calling tool: fetch_url\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("experiments.skill_tests.runner.subprocess.run", fake_run)
+
+    result = run_case(
+        case,
+        run_date="20260421",
+        output_root=tmp_path / "runs" / "batch-a",
+    )
+
+    trace_path = Path(result["trace_path"])
+    payload = json.loads(trace_path.read_text(encoding="utf-8"))
+    assert result["status"] == "runner_error"
+    assert payload["tool_invocation_count"] == 1
+    assert payload["tool_names"] == ["fetch_url"]
+    assert payload["answer_char_count"] == len("最终回答")
 
 
 def test_run_case_nonzero_returncode_becomes_runner_error(

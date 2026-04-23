@@ -1,0 +1,35 @@
+target = "question"
+name = "complex-qa-01-may-mainland-dominant-lineage"
+title = "May mainland dominant lineage"
+prompt = "今年 5 月，中国大陆的主要流行新冠毒株（占比最高的毒株）会是哪一株？请基于中国大陆近期官方监测与变异株动态判断，并说明你主要依据的是当前占比、近期增速，还是两者结合。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "trend_analysis"
+question_type = "dominant_lineage_forecast"
+source_hints = [
+  "China CDC monthly SARS-CoV-2 situation updates for mainland lineage shares",
+  "China CDC weekly acute respiratory surveillance for recent positivity changes",
+  "variant prevalence or growth trackers with China filters for short-term momentum",
+]
+source_urls = [
+  "https://www.chinacdc.cn/jksj/xgbdyq/",
+  "https://www.chinacdc.cn/jksj/jksj04_14275/",
+  "https://data.who.int/dashboards/covid19/variants",
+  "https://api.outbreak.info/",
+]
+preferred_skills = [
+  "planning-guide",
+  "respiratory-disease-data-fetcher",
+  "virus-variation-query",
+]
+judge_focus = [
+  "china_specific_recentness",
+  "forecast_reasoning",
+  "share_vs_growth_tradeoff",
+  "uncertainty_calibration",
+]
+prior_case_refs = ["covid-monitoring-08-may-mainland-dominant-lineage"]
+weight = 1.0
+timeout_minutes = 12

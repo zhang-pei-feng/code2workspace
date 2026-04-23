@@ -1,0 +1,324 @@
+{
+  "suite_name": "complex-qa-suite-v1",
+  "suite_version": 1,
+  "spec_ref": "docs/superpowers/specs/2026-04-23-complex-qa-benchmark-design.md",
+  "case_dir": "experiments/skill_tests/cases/complex_qa",
+  "batch_manifest": "experiments/skill_tests/batches/complex-qa-suite-v1.md",
+  "case_count": 12,
+  "split_suggestions": {
+    "train": [
+      "complex-qa-01-may-mainland-dominant-lineage",
+      "complex-qa-02-fastest-growing-sublineage-two-weeks",
+      "complex-qa-04-china-jn1-share-trend",
+      "complex-qa-05-pq2-rbd-mutations",
+      "complex-qa-06-ba32-xfg-descendants-vs-kp2-vaccine-immunity",
+      "complex-qa-07-ba32-vaccine-clinical-trials",
+      "complex-qa-09-clinical-positivity-vs-wastewater-trend",
+      "complex-qa-11-next-covid-influenza-peak"
+    ],
+    "holdout": [
+      "complex-qa-03-ba32-vs-xfg11-rbd-convergent-evolution",
+      "complex-qa-08-latest-covid-vaccine-company-strain",
+      "complex-qa-10-ba32-xfg-descendants-immune-escape-risk",
+      "complex-qa-12-xfg11-risk-assessment-report"
+    ],
+    "scorecard": []
+  },
+  "family_counts": {
+    "trend_analysis": 4,
+    "database_lookup": 1,
+    "literature_search": 1,
+    "cross_source_synthesis": 5,
+    "report_generation": 1
+  },
+  "cases": [
+    {
+      "id": 1,
+      "slug": "complex-qa-01-may-mainland-dominant-lineage",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-01-may-mainland-dominant-lineage.toml",
+      "title": "May mainland dominant lineage",
+      "split": "train",
+      "task_family": "trend_analysis",
+      "question_type": "dominant_lineage_forecast",
+      "is_repacked_prior_case": true,
+      "prior_case_refs": [
+        "covid-monitoring-08-may-mainland-dominant-lineage"
+      ],
+      "source_types": [
+        "official_surveillance",
+        "variant_tracker"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "respiratory-disease-data-fetcher",
+        "virus-variation-query"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 12
+    },
+    {
+      "id": 2,
+      "slug": "complex-qa-02-fastest-growing-sublineage-two-weeks",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-02-fastest-growing-sublineage-two-weeks.toml",
+      "title": "Fastest-growing sublineage in past two weeks",
+      "split": "train",
+      "task_family": "trend_analysis",
+      "question_type": "recent_growth_ranking",
+      "is_repacked_prior_case": true,
+      "prior_case_refs": [
+        "covid-monitoring-09-fastest-growing-sublineage"
+      ],
+      "source_types": [
+        "variant_tracker",
+        "official_variant_monitoring"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "virus-variation-query"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 12
+    },
+    {
+      "id": 3,
+      "slug": "complex-qa-03-ba32-vs-xfg11-rbd-convergent-evolution",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-03-ba32-vs-xfg11-rbd-convergent-evolution.toml",
+      "title": "BA.3.2 vs XFG.1.1 future convergent evolution in RBD",
+      "split": "holdout",
+      "task_family": "cross_source_synthesis",
+      "question_type": "future_convergent_evolution_assessment",
+      "is_repacked_prior_case": false,
+      "prior_case_refs": [],
+      "source_types": [
+        "variant_database",
+        "literature",
+        "expert_reasoning"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "virus-variation-query",
+        "academic-search"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 15
+    },
+    {
+      "id": 4,
+      "slug": "complex-qa-04-china-jn1-share-trend",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-04-china-jn1-share-trend.toml",
+      "title": "Current China JN.1 share and recent trend",
+      "split": "train",
+      "task_family": "trend_analysis",
+      "question_type": "share_and_trend_judgment",
+      "is_repacked_prior_case": false,
+      "prior_case_refs": [
+        "capability-snapshot-07-monitor-china-cdc"
+      ],
+      "source_types": [
+        "official_surveillance",
+        "variant_monitoring"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "respiratory-disease-data-fetcher",
+        "virus-variation-query"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 12
+    },
+    {
+      "id": 5,
+      "slug": "complex-qa-05-pq2-rbd-mutations",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-05-pq2-rbd-mutations.toml",
+      "title": "PQ.2 RBD amino-acid mutations",
+      "split": "train",
+      "task_family": "database_lookup",
+      "question_type": "rbd_mutation_listing",
+      "is_repacked_prior_case": false,
+      "prior_case_refs": [
+        "virus-variation-query-positive",
+        "capability-snapshot-05-virus-site-484-501"
+      ],
+      "source_types": [
+        "variant_database"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "virus-variation-query"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 10
+    },
+    {
+      "id": 6,
+      "slug": "complex-qa-06-ba32-xfg-descendants-vs-kp2-vaccine-immunity",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-06-ba32-xfg-descendants-vs-kp2-vaccine-immunity.toml",
+      "title": "BA.3.2 / XFG descendants vs KP.2-vaccinated immunity barrier",
+      "split": "train",
+      "task_family": "cross_source_synthesis",
+      "question_type": "immune_barrier_assessment",
+      "is_repacked_prior_case": false,
+      "prior_case_refs": [
+        "covid-monitoring-05-ba32-vs-xfg-severity",
+        "covid-monitoring-10-s-protein-escape-sites"
+      ],
+      "source_types": [
+        "variant_database",
+        "literature",
+        "population_immunity_context"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "virus-variation-query",
+        "academic-search",
+        "multi-source-report"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 15
+    },
+    {
+      "id": 7,
+      "slug": "complex-qa-07-ba32-vaccine-clinical-trials",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-07-ba32-vaccine-clinical-trials.toml",
+      "title": "New BA.3.2 vaccine clinical trials",
+      "split": "train",
+      "task_family": "literature_search",
+      "question_type": "clinical_trial_status_search",
+      "is_repacked_prior_case": true,
+      "prior_case_refs": [
+        "covid-monitoring-06-ba32-vaccine-trials"
+      ],
+      "source_types": [
+        "clinical_trial_registry",
+        "developer_announcement"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "academic-search"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 15
+    },
+    {
+      "id": 8,
+      "slug": "complex-qa-08-latest-covid-vaccine-company-strain",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-08-latest-covid-vaccine-company-strain.toml",
+      "title": "Latest COVID vaccine company and strain",
+      "split": "holdout",
+      "task_family": "cross_source_synthesis",
+      "question_type": "latest_product_identification",
+      "is_repacked_prior_case": false,
+      "prior_case_refs": [],
+      "source_types": [
+        "regulatory_announcement",
+        "variant_tracking"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "academic-search"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 12
+    },
+    {
+      "id": 9,
+      "slug": "complex-qa-09-clinical-positivity-vs-wastewater-trend",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-09-clinical-positivity-vs-wastewater-trend.toml",
+      "title": "Clinical positivity vs wastewater trend",
+      "split": "train",
+      "task_family": "cross_source_synthesis",
+      "question_type": "trend_alignment_comparison",
+      "is_repacked_prior_case": true,
+      "prior_case_refs": [
+        "covid-monitoring-04-clinical-vs-wastewater-trends"
+      ],
+      "source_types": [
+        "clinical_surveillance",
+        "wastewater_surveillance"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "respiratory-disease-data-fetcher"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 12
+    },
+    {
+      "id": 10,
+      "slug": "complex-qa-10-ba32-xfg-descendants-immune-escape-risk",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-10-ba32-xfg-descendants-immune-escape-risk.toml",
+      "title": "Integrated BA.3.2 / XFG descendant immune-escape risk question",
+      "split": "holdout",
+      "task_family": "cross_source_synthesis",
+      "question_type": "integrated_immune_escape_risk_assessment",
+      "is_repacked_prior_case": false,
+      "prior_case_refs": [
+        "covid-monitoring-05-ba32-vs-xfg-severity",
+        "covid-monitoring-10-s-protein-escape-sites",
+        "virus-variation-query-positive"
+      ],
+      "source_types": [
+        "variant_database",
+        "literature",
+        "antibody_escape_reasoning"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "virus-variation-query",
+        "academic-search",
+        "multi-source-report"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 18
+    },
+    {
+      "id": 11,
+      "slug": "complex-qa-11-next-covid-influenza-peak",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-11-next-covid-influenza-peak.toml",
+      "title": "Next COVID / influenza positivity peak timing",
+      "split": "train",
+      "task_family": "trend_analysis",
+      "question_type": "peak_timing_forecast",
+      "is_repacked_prior_case": true,
+      "prior_case_refs": [
+        "covid-monitoring-01-next-covid-flu-peak"
+      ],
+      "source_types": [
+        "official_surveillance",
+        "historical_seasonality"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "respiratory-disease-data-fetcher"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 12
+    },
+    {
+      "id": 12,
+      "slug": "complex-qa-12-xfg11-risk-assessment-report",
+      "path": "experiments/skill_tests/cases/complex_qa/complex-qa-12-xfg11-risk-assessment-report.toml",
+      "title": "XFG.1.1 risk assessment report",
+      "split": "holdout",
+      "task_family": "report_generation",
+      "question_type": "variant_risk_report",
+      "is_repacked_prior_case": false,
+      "prior_case_refs": [
+        "capability-snapshot-06-monitor-who-covid"
+      ],
+      "source_types": [
+        "who_framework",
+        "variant_tracker",
+        "literature"
+      ],
+      "focus_skills": [
+        "planning-guide",
+        "virus-variation-query",
+        "academic-search",
+        "multi-source-report"
+      ],
+      "weight": 1.0,
+      "timeout_minutes": 18
+    }
+  ]
+}

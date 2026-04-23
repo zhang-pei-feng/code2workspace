@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shlex
@@ -94,17 +95,29 @@ def load_case(path: Path) -> LiveEvalCase:
     target = str(payload["target"])
     if target not in VALID_TARGETS:
         raise ValueError(f"{path} has invalid target {target!r}")
-    required_env = tuple(str(item) for item in payload["required_env"])
-    expected_behaviors = tuple(str(item) for item in payload["expected_behaviors"])
-    expected_outputs = tuple(str(item) for item in payload["expected_outputs"])
-    known_issues = tuple(str(item) for item in payload.get("known_issues", []))
+    required_env = _string_tuple(payload["required_env"], field="required_env", path=path)
+    expected_behaviors = _string_tuple(
+        payload["expected_behaviors"], field="expected_behaviors", path=path
+    )
+    expected_outputs = _string_tuple(
+        payload["expected_outputs"], field="expected_outputs", path=path
+    )
+    known_issues = _string_tuple(payload.get("known_issues", []), field="known_issues", path=path)
     timeout_minutes = int(payload.get("timeout_minutes", 8))
     if timeout_minutes < 1:
         raise ValueError(f"{path} timeout_minutes must be >= 1")
-    allow_timeout_after_expectations = bool(payload.get("allow_timeout_after_expectations", False))
+    allow_timeout_after_expectations = _optional_bool(
+        payload,
+        "allow_timeout_after_expectations",
+        default=False,
+        path=path,
+    )
     raw_command = payload.get("command")
-    command = None if raw_command is None else tuple(str(item) for item in raw_command)
+    command = None if raw_command is None else _string_tuple(raw_command, field="command", path=path)
     artifact_root = str(payload["artifact_root"]) if "artifact_root" in payload else None
+    weight = float(payload.get("weight", 1.0))
+    if not math.isfinite(weight):
+        raise ValueError(f"{path} weight must be finite")
     return LiveEvalCase(
         target=target,
         name=str(payload["name"]),
@@ -118,14 +131,14 @@ def load_case(path: Path) -> LiveEvalCase:
         command=command,
         artifact_root=artifact_root,
         path=path,
-        task_family=str(payload["task_family"]) if "task_family" in payload else None,
-        question_type=str(payload["question_type"]) if "question_type" in payload else None,
-        preferred_skills=tuple(str(item) for item in payload.get("preferred_skills", [])),
-        source_hints=tuple(str(item) for item in payload.get("source_hints", [])),
-        source_urls=tuple(str(item) for item in payload.get("source_urls", [])),
-        judge_focus=tuple(str(item) for item in payload.get("judge_focus", [])),
-        prior_case_refs=tuple(str(item) for item in payload.get("prior_case_refs", [])),
-        weight=float(payload.get("weight", 1.0)),
+        task_family=_optional_string_value(payload, "task_family", path=path),
+        question_type=_optional_string_value(payload, "question_type", path=path),
+        preferred_skills=_optional_string_tuple(payload, "preferred_skills", path=path),
+        source_hints=_optional_string_tuple(payload, "source_hints", path=path),
+        source_urls=_optional_string_tuple(payload, "source_urls", path=path),
+        judge_focus=_optional_string_tuple(payload, "judge_focus", path=path),
+        prior_case_refs=_optional_string_tuple(payload, "prior_case_refs", path=path),
+        weight=weight,
     )
 
 
@@ -187,6 +200,7 @@ def run_case(
         prompt_path.write_text(case.prompt, encoding="utf-8")
         answer_path.write_text("", encoding="utf-8")
         parsed = _parsed_log("")
+        _write_trace(trace_path, case=case, parsed=parsed, answer_text="")
         result = _finalize_result(
             case=case,
             status="infra_blocked",
@@ -218,11 +232,10 @@ def run_case(
         )
         log_text = _combine_output(completed.stdout, completed.stderr)
         log_path.write_text(log_text, encoding="utf-8")
-        answer_path.write_text(
-            extract_final_answer_from_log(log_text),
-            encoding="utf-8",
-        )
+        answer_text = extract_final_answer_from_log(log_text)
+        answer_path.write_text(answer_text, encoding="utf-8")
         parsed = _parsed_log(log_text)
+        _write_trace(trace_path, case=case, parsed=parsed, answer_text=answer_text)
         return _finalize_result(
             case=case,
             status=None,
@@ -240,11 +253,10 @@ def run_case(
     except subprocess.TimeoutExpired as exc:
         log_text = _combine_output(exc.stdout or "", exc.stderr or "")
         log_path.write_text(log_text, encoding="utf-8")
-        answer_path.write_text(
-            extract_final_answer_from_log(log_text),
-            encoding="utf-8",
-        )
+        answer_text = extract_final_answer_from_log(log_text)
+        answer_path.write_text(answer_text, encoding="utf-8")
         parsed = _parsed_log(log_text)
+        _write_trace(trace_path, case=case, parsed=parsed, answer_text=answer_text)
         timeout_status = "runner_error"
         timeout_error = f"Timed out after {case.timeout_minutes} minute(s)"
         if case.allow_timeout_after_expectations:
@@ -402,7 +414,39 @@ def _finalize_result(
         "summary_lines": parsed["summary_lines"],
         "artifact_context": artifact_context,
         "conclusion_zh": conclusion,
+        "task_family": case.task_family,
+        "question_type": case.question_type,
+        "preferred_skills": list(case.preferred_skills),
+        "source_hints": list(case.source_hints),
+        "source_urls": list(case.source_urls),
+        "judge_focus": list(case.judge_focus),
+        "prior_case_refs": list(case.prior_case_refs),
+        "weight": case.weight,
     }
+
+
+def _write_trace(
+    path: Path,
+    *,
+    case: LiveEvalCase,
+    parsed: dict[str, Any],
+    answer_text: str,
+) -> None:
+    payload = {
+        "case_name": case.name,
+        "tool_invocations": parsed["tool_invocations"],
+        "tool_names": parsed["tool_names"],
+        "subagents": parsed["subagents"],
+        "summary_lines": parsed["summary_lines"],
+        "repo_paths": parsed["repo_paths"],
+        "tool_invocation_count": len(parsed["tool_invocations"]),
+        "answer_char_count": len(answer_text.strip()),
+        "trace_warnings": [],
+    }
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _build_artifact_context(
@@ -587,6 +631,53 @@ def _coerce_text(payload: str | bytes | None) -> str:
     if isinstance(payload, bytes):
         return payload.decode("utf-8", errors="replace")
     return str(payload)
+
+
+def _optional_string_tuple(
+    payload: dict[str, Any],
+    field: str,
+    *,
+    path: Path,
+) -> tuple[str, ...]:
+    raw = payload.get(field, [])
+    return _string_tuple(raw, field=field, path=path)
+
+
+def _string_tuple(
+    raw: Any,
+    *,
+    field: str,
+    path: Path,
+) -> tuple[str, ...]:
+    if isinstance(raw, str) or not isinstance(raw, list | tuple):
+        raise ValueError(f"{path} field {field!r} must be a list of strings")
+    if any(not isinstance(item, str) for item in raw):
+        raise ValueError(f"{path} field {field!r} must contain only strings")
+    return tuple(raw)
+
+
+def _optional_string_value(payload: dict[str, Any], field: str, *, path: Path) -> str | None:
+    if field not in payload:
+        return None
+    raw = payload[field]
+    if not isinstance(raw, str):
+        raise ValueError(f"{path} field {field!r} must be a string")
+    return raw
+
+
+def _optional_bool(
+    payload: dict[str, Any],
+    field: str,
+    *,
+    default: bool,
+    path: Path,
+) -> bool:
+    if field not in payload:
+        return default
+    raw = payload[field]
+    if not isinstance(raw, bool):
+        raise ValueError(f"{path} field {field!r} must be a boolean")
+    return raw
 
 
 def _list_dirs(root: Path) -> set[Path]:

@@ -1,0 +1,36 @@
+target = "question"
+name = "complex-qa-05-pq2-rbd-mutations"
+title = "PQ.2 RBD amino-acid mutations"
+prompt = "PQ.2 毒株在 RBD 区域上有哪些氨基酸突变？请只列出 RBD 范围内的氨基酸替换，尽量使用标准突变记法，并简要说明这些突变是否主要来自定义位点还是高频伴随位点。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "database_lookup"
+question_type = "rbd_mutation_listing"
+source_hints = [
+  "variant mutation database or lineage-defining mutation tables are preferred",
+  "restrict the answer to RBD residues only",
+  "prefer explicit amino-acid substitutions over prose summaries",
+]
+source_urls = [
+  "https://api.outbreak.info/",
+  "https://cov-spectrum.org/",
+  "https://www.who.int/activities/tracking-SARS-CoV-2-variants",
+]
+preferred_skills = [
+  "planning-guide",
+  "virus-variation-query",
+]
+judge_focus = [
+  "rbd_only_filtering",
+  "mutation_notation_accuracy",
+  "completeness_without_padding",
+  "database_grounding",
+]
+prior_case_refs = [
+  "virus-variation-query-positive",
+  "capability-snapshot-05-virus-site-484-501",
+]
+weight = 1.0
+timeout_minutes = 10

@@ -1,0 +1,33 @@
+target = "question"
+name = "complex-qa-09-clinical-positivity-vs-wastewater-trend"
+title = "Clinical positivity vs wastewater trend"
+prompt = "近期临床阳性率趋势与污水监测趋势是否一致？请说明你比较的是哪个地区、哪个时间窗口，以及两类指标是一致、部分一致，还是存在明显背离。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "cross_source_synthesis"
+question_type = "trend_alignment_comparison"
+source_hints = [
+  "use one clinical surveillance source and one wastewater source for the same geography",
+  "time-window alignment matters more than raw level comparison",
+  "partial agreement is acceptable if lag effects are explained",
+]
+source_urls = [
+  "https://www.cdc.gov/covid/php/surveillance/",
+  "https://www.cdc.gov/wastewater/index.html",
+  "https://www.cdc.gov/nwss/rv/covid19-statetrend.html",
+]
+preferred_skills = [
+  "planning-guide",
+  "respiratory-disease-data-fetcher",
+]
+judge_focus = [
+  "matched_geography_and_window",
+  "trend_vs_level_distinction",
+  "lag_explanation",
+  "cross_source_consistency",
+]
+prior_case_refs = ["covid-monitoring-04-clinical-vs-wastewater-trends"]
+weight = 1.0
+timeout_minutes = 12

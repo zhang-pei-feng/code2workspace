@@ -1,0 +1,39 @@
+target = "question"
+name = "complex-qa-06-ba32-xfg-descendants-vs-kp2-vaccine-immunity"
+title = "BA.3.2 / XFG descendants vs KP.2-vaccinated immunity barrier"
+prompt = "BA.3.2 和 XFG 毒株的子代，是否可能突破接种了 KP.2 毒株疫苗人群的免疫屏障？请结合变异位点、近期中和或免疫逃逸研究，以及中国人群既往感染/免疫背景进行判断，并明确哪些结论是有直接证据、哪些只是推断。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "cross_source_synthesis"
+question_type = "immune_barrier_assessment"
+source_hints = [
+  "use mutation evidence plus neutralization literature rather than severity news",
+  "KP.2-vaccine protection should be separated into infection protection and severe-disease protection",
+  "China population immunity discussion should acknowledge uncertainty and mixed exposure histories",
+]
+source_urls = [
+  "https://api.outbreak.info/",
+  "https://pubmed.ncbi.nlm.nih.gov/",
+  "https://www.biorxiv.org/search/covid%20variant%20neutralization",
+  "https://www.who.int/activities/tracking-SARS-CoV-2-variants",
+]
+preferred_skills = [
+  "planning-guide",
+  "virus-variation-query",
+  "academic-search",
+  "multi-source-report",
+]
+judge_focus = [
+  "immune_escape_vs_severity",
+  "evidence_hierarchy",
+  "china_immunity_context",
+  "uncertainty_handling",
+]
+prior_case_refs = [
+  "covid-monitoring-05-ba32-vs-xfg-severity",
+  "covid-monitoring-10-s-protein-escape-sites",
+]
+weight = 1.0
+timeout_minutes = 15

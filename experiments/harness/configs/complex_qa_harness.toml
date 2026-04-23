@@ -1,0 +1,120 @@
+[experiment]
+name = "complex-qa-harness"
+batch_file = "experiments/skill_tests/batches/complex-qa-suite-v1.md"
+output_root = "results/harness"
+max_iterations = 3
+
+[proposer]
+command = [
+  "python3",
+  "experiments/harness/proposers/complex_qa_surface_proposer.py",
+]
+max_runtime_minutes = 20
+
+[surfaces.planning_skill]
+kind = "workspace_file"
+target = ".code2workspace/skills/planning-guide/SKILL.md"
+filename = "planning-guide-SKILL.md"
+base_file = ".code2workspace/skills/planning-guide/SKILL.md"
+
+[surfaces.planning_source_selection]
+kind = "workspace_file"
+target = ".code2workspace/skills/planning-guide/references/source-selection.md"
+filename = "planning-guide-source-selection.md"
+base_file = ".code2workspace/skills/planning-guide/references/source-selection.md"
+
+[surfaces.planning_cross_source_case]
+kind = "workspace_file"
+target = ".code2workspace/skills/planning-guide/references/case-cross-source-synthesis.md"
+filename = "planning-guide-case-cross-source-synthesis.md"
+base_file = ".code2workspace/skills/planning-guide/references/case-cross-source-synthesis.md"
+
+[surfaces.planning_tool]
+kind = "workspace_file"
+target = ".code2workspace/skills/planning-guide/scripts/planning_tool.py"
+filename = "planning-guide-tool.py"
+base_file = ".code2workspace/skills/planning-guide/scripts/planning_tool.py"
+
+[surfaces.academic_search_skill]
+kind = "workspace_file"
+target = ".code2workspace/skills/academic-search/SKILL.md"
+filename = "academic-search-SKILL.md"
+base_file = ".code2workspace/skills/academic-search/SKILL.md"
+
+[surfaces.respiratory_fetcher_skill]
+kind = "workspace_file"
+target = ".code2workspace/skills/respiratory-disease-data-fetcher/SKILL.md"
+filename = "respiratory-disease-data-fetcher-SKILL.md"
+base_file = ".code2workspace/skills/respiratory-disease-data-fetcher/SKILL.md"
+
+[surfaces.virus_variation_skill]
+kind = "workspace_file"
+target = ".code2workspace/skills/virus-variation-query/SKILL.md"
+filename = "virus-variation-query-SKILL.md"
+base_file = ".code2workspace/skills/virus-variation-query/SKILL.md"
+
+[surfaces.multi_source_report_skill]
+kind = "workspace_file"
+target = ".code2workspace/skills/multi-source-report/SKILL.md"
+filename = "multi-source-report-SKILL.md"
+base_file = ".code2workspace/skills/multi-source-report/SKILL.md"
+
+[[cases]]
+case_name = "complex-qa-01-may-mainland-dominant-lineage"
+split = "train"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-02-fastest-growing-sublineage-two-weeks"
+split = "train"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-03-ba32-vs-xfg11-rbd-convergent-evolution"
+split = "holdout"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-04-china-jn1-share-trend"
+split = "train"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-05-pq2-rbd-mutations"
+split = "train"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-06-ba32-xfg-descendants-vs-kp2-vaccine-immunity"
+split = "train"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-07-ba32-vaccine-clinical-trials"
+split = "train"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-08-latest-covid-vaccine-company-strain"
+split = "holdout"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-09-clinical-positivity-vs-wastewater-trend"
+split = "train"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-10-ba32-xfg-descendants-immune-escape-risk"
+split = "holdout"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-11-next-covid-influenza-peak"
+split = "train"
+weight = 1.0
+
+[[cases]]
+case_name = "complex-qa-12-xfg11-risk-assessment-report"
+split = "holdout"
+weight = 1.0

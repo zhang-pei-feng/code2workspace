@@ -1,0 +1,34 @@
+target = "question"
+name = "complex-qa-04-china-jn1-share-trend"
+title = "Current China JN.1 share and recent trend"
+prompt = "当前中国 JN.1 毒株占比是多少？它在中国近期的流行趋势是上升、下降还是接近消失？是否可以认为它几乎没有了？请给出占比、趋势判断和依据。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "trend_analysis"
+question_type = "share_and_trend_judgment"
+source_hints = [
+  "China CDC monthly lineage share summaries are the main anchor",
+  "recent respiratory surveillance can help contextualize whether low share means low circulation overall",
+  "the answer should separate 'declining' from 'almost gone'",
+]
+source_urls = [
+  "https://www.chinacdc.cn/jksj/xgbdyq/",
+  "https://www.chinacdc.cn/jksj/jksj04_14275/",
+  "https://data.who.int/dashboards/covid19/variants",
+]
+preferred_skills = [
+  "planning-guide",
+  "respiratory-disease-data-fetcher",
+  "virus-variation-query",
+]
+judge_focus = [
+  "numeric_share_reporting",
+  "trend_interpretation",
+  "claim_calibration",
+  "china_specific_evidence",
+]
+prior_case_refs = ["capability-snapshot-07-monitor-china-cdc"]
+weight = 1.0
+timeout_minutes = 12

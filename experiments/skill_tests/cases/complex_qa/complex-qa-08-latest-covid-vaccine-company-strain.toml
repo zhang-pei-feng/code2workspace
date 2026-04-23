@@ -1,0 +1,33 @@
+target = "question"
+name = "complex-qa-08-latest-covid-vaccine-company-strain"
+title = "Latest COVID vaccine company and strain"
+prompt = "最新的新冠疫苗是哪个公司生产的？使用的是什么毒株或毒株谱系？请先说明你所说的“最新”是按最新获批/授权产品，还是按最近一次更新的配方，再给出公司与毒株信息。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "cross_source_synthesis"
+question_type = "latest_product_identification"
+source_hints = [
+  "regulatory announcements are preferred over promotional copy",
+  "distinguish latest product authorization from latest strain-composition update",
+  "name both the company and the strain or lineage basis",
+]
+source_urls = [
+  "https://www.fda.gov/vaccines-blood-biologics/industry-biologics/coronavirus-covid-19-cber-regulated-biologics",
+  "https://www.fda.gov/vaccines-blood-biologics/industry-biologics/covid-19-vaccines-2025-2026-formula-use-united-states-beginning-fall-2025",
+  "https://www.who.int/activities/tracking-SARS-CoV-2-variants",
+]
+preferred_skills = [
+  "planning-guide",
+  "academic-search",
+]
+judge_focus = [
+  "latest_definition_clarity",
+  "company_accuracy",
+  "strain_composition_accuracy",
+  "date_awareness",
+]
+prior_case_refs = []
+weight = 1.0
+timeout_minutes = 12
