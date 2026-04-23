@@ -3,6 +3,7 @@ name = "complex-qa-harness"
 batch_file = "experiments/skill_tests/batches/complex-qa-suite-v1.md"
 output_root = "results/harness"
 max_iterations = 3
+max_parallel_cases = 4
 
 [proposer]
 command = [

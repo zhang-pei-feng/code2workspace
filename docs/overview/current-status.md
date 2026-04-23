@@ -172,9 +172,9 @@ Status: first local optimization loop exists, with both a phase-1 benchmark-auto
     `docker_canu_meryl.log`
 - Two more focused fixes are now in place on top of the earlier freshness and
   `Flye`-judge fixes:
-  - the one-shot runner retries exactly once on narrow
+  - the one-shot runner now retries up to two times on narrow
     `Unexpected error (RemoteException)` / internal-error signatures while
-    preserving the first failed attempt as `agent.retry1.log`
+    preserving prior failed attempts as `agent.retry*.log`
   - the completion judge now accepts fresh non-standard Docker execution logs
     under `results/docker_test/` instead of only the earlier hard-coded log
     names
@@ -240,6 +240,10 @@ Remaining gaps:
 - `fieldbioinformatics` is now the main remaining real-task miss; the latest
   holdout run shows it still stops before producing fresh Docker/WDL artifacts,
   so the next optimization loop should target that repository specifically
+- independent repro work has already narrowed the likely repo-level cause:
+  Docker and the shortest real container validation can be reached, but the
+  WDL path is brittle because Cromwell launches the image with `/bin/bash`,
+  bypassing environment activation and leaving `artic` unavailable on `PATH`
 - the benchmark-autonomy ladder currently verifies contract/report behavior
   through focused tests, but it still needs real phase-1 matrix runs to gather
   completion/time/cost evidence

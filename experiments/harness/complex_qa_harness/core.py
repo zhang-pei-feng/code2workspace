@@ -79,6 +79,7 @@ class Experiment:
     batch_file: Path
     output_root: Path
     max_iterations: int
+    max_parallel_cases: int
     proposer_command: tuple[str, ...] | None
     proposer_max_runtime_minutes: int
     surfaces: dict[str, Surface]
@@ -293,6 +294,7 @@ class RunLayout:
             "batch_file": str(experiment.batch_file),
             "output_root": str(experiment.output_root),
             "max_iterations": experiment.max_iterations,
+            "max_parallel_cases": experiment.max_parallel_cases,
             "proposer_mode": experiment.proposer_mode,
             "proposer_command": None
             if experiment.proposer_command is None
@@ -412,6 +414,7 @@ def load_experiment(path: Path) -> Experiment:
         batch_file=batch_file,
         output_root=resolve_repo_path(str(experiment_payload["output_root"])),
         max_iterations=int(experiment_payload.get("max_iterations", 3)),
+        max_parallel_cases=int(experiment_payload.get("max_parallel_cases", 4)),
         proposer_command=proposer_command,
         proposer_max_runtime_minutes=int(proposer.get("max_runtime_minutes", 10)),
         surfaces=surfaces,

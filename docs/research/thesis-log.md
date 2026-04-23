@@ -163,6 +163,19 @@ harness-style iteration.
   the outer loop no longer needs broad prompt or runtime surgery first; it can
   focus directly on why `fieldbioinformatics` still fails to transition from
   early repository inspection into real artifact-producing execution.
+- Follow-up isolated repros further narrowed the remaining miss:
+  - one retry on transient remote/internal agent failures was still not enough
+    for `fieldbioinformatics`, so the one-shot runner now allows two such
+    retries
+  - after those retries, the repo can be pushed through real Docker build,
+    real container validation, and into real Cromwell execution
+  - the current repo-level failure is therefore no longer “the agent never gets
+    going”, but a narrower Cromwell-shell-environment issue: the image is
+    started under `/bin/bash`, which bypasses environment activation and leaves
+    `artic` unavailable on `PATH`
+- This is useful thesis evidence because it shows the remaining gap is now a
+  specific integration-contract problem between image construction and the WDL
+  execution model, not a general prompting or runtime-collapse problem.
 
 ### 2026-04-22
 

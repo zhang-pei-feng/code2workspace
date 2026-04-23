@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 from code2workspace_cli.config import create_model
+from dotenv import load_dotenv
 
 
 def build_rule_score(result: dict[str, Any]) -> dict[str, Any]:
@@ -61,7 +64,14 @@ def build_judge_prompt(*, result: dict[str, Any], rule_score: dict[str, Any]) ->
 
 def invoke_judge_model(prompt: str, model_spec: str = "openai:gpt-5.4") -> str:
     """Invoke the configured chat model for offline judging."""
-    model = create_model(model_spec).model
+    load_dotenv(_repo_root() / ".env")
+    model = create_model(
+        model_spec,
+        extra_kwargs={
+            "reasoning_effort": "low",
+            "timeout": 90.0,
+        },
+    ).model
     response = model.invoke(prompt)
     return _message_text(response.content)
 
@@ -73,16 +83,23 @@ def parse_judge_output(text: str) -> dict[str, Any]:
         stripped = stripped.strip("`")
         if stripped.startswith("json"):
             stripped = stripped[4:].strip()
-    payload = json.loads(stripped)
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        payload = json.loads(stripped[start : end + 1])
     return {
-        "overall_score": int(payload["overall_score"]),
-        "judge_score": int(payload["judge_score"]),
-        "rule_score": int(payload["rule_score"]),
+        "overall_score": _coerce_int_value(payload["overall_score"]),
+        "judge_score": _coerce_int_value(payload["judge_score"]),
+        "rule_score": _coerce_int_value(payload["rule_score"]),
         "dimension_scores": {
-            "accuracy": int(payload["dimension_scores"]["accuracy"]),
-            "completeness": int(payload["dimension_scores"]["completeness"]),
-            "reasonableness": int(payload["dimension_scores"]["reasonableness"]),
-            "trace_rationality": int(payload["dimension_scores"]["trace_rationality"]),
+            "accuracy": _coerce_int_value(payload["dimension_scores"]["accuracy"]),
+            "completeness": _coerce_int_value(payload["dimension_scores"]["completeness"]),
+            "reasonableness": _coerce_int_value(payload["dimension_scores"]["reasonableness"]),
+            "trace_rationality": _coerce_int_value(payload["dimension_scores"]["trace_rationality"]),
         },
         "verdict": str(payload["verdict"]),
         "major_issues": [str(item) for item in payload.get("major_issues", [])],
@@ -94,8 +111,36 @@ def parse_judge_output(text: str) -> dict[str, Any]:
 def judge_case(result: dict[str, Any], model_spec: str = "openai:gpt-5.4") -> dict[str, Any]:
     """Combine structural checks with a model judge for one case."""
     rule_score = build_rule_score(result)
-    raw = invoke_judge_model(build_judge_prompt(result=result, rule_score=rule_score), model_spec=model_spec)
-    parsed = parse_judge_output(raw)
+    prompt = build_judge_prompt(result=result, rule_score=rule_score)
+    raw = None
+    for attempt in range(2):
+        try:
+            raw = invoke_judge_model(prompt, model_spec=model_spec)
+            break
+        except Exception as exc:  # noqa: BLE001
+            if attempt == 1 or not _is_transient_judge_error(str(exc)):
+                raise
+            time.sleep(2)
+    if raw is None:  # pragma: no cover - defensive fallback
+        raise RuntimeError("judge produced no response")
+    try:
+        parsed = parse_judge_output(raw)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        parsed = {
+            "overall_score": 0,
+            "judge_score": 0,
+            "rule_score": 0,
+            "dimension_scores": {
+                "accuracy": 0,
+                "completeness": 0,
+                "reasonableness": 0,
+                "trace_rationality": 0,
+            },
+            "verdict": "judge_parse_failed",
+            "major_issues": ["judge output was not valid JSON"],
+            "trace_findings": [],
+            "improvement_hints": [],
+        }
     parsed["rule_score"] = rule_score["total"]
     parsed["overall_score"] = int(parsed["judge_score"]) + int(rule_score["total"])
     parsed["rule_checks"] = rule_score["checks"]
@@ -109,25 +154,38 @@ def judge_results(
     *,
     run_date: str,
     model_spec: str = "openai:gpt-5.4",
+    max_parallel: int = 4,
 ) -> list[dict[str, Any]]:
     """Judge all case results and persist per-case judge artifacts."""
-    judged_results: list[dict[str, Any]] = []
-    for result in results:
-        judged = judge_case(result, model_spec=model_spec)
+    def _judge_one(result: dict[str, Any]) -> dict[str, Any]:
         judge_path = _judge_path(result)
-        judge_path.write_text(
-            json.dumps(judged, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        judged_results.append(
-            {
-                **result,
-                **judged,
-                "judge_path": str(judge_path),
-                "run_date": run_date,
-            }
-        )
-    return judged_results
+        if judge_path.exists():
+            judged = json.loads(judge_path.read_text(encoding="utf-8"))
+        else:
+            judged = judge_case(result, model_spec=model_spec)
+            judge_path.write_text(
+                json.dumps(judged, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        return {
+            **result,
+            **judged,
+            "judge_path": str(judge_path),
+            "run_date": run_date,
+        }
+
+    if max_parallel <= 1 or len(results) <= 1:
+        return [_judge_one(result) for result in results]
+
+    indexed_results: list[dict[str, Any] | None] = [None] * len(results)
+    with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+        future_to_index = {
+            executor.submit(_judge_one, result): index
+            for index, result in enumerate(results)
+        }
+        for future in as_completed(future_to_index):
+            indexed_results[future_to_index[future]] = future.result()
+    return [item for item in indexed_results if item is not None]
 
 
 def build_judge_summary_payload(results: list[dict[str, Any]], *, run_date: str) -> dict[str, Any]:
@@ -232,3 +290,30 @@ def _judge_path(result: dict[str, Any]) -> Path:
     if answer_path.name.endswith(".answer.txt"):
         return answer_path.with_name(answer_path.name.removesuffix(".answer.txt") + ".judge.json")
     return answer_path.with_suffix(".judge.json")
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _is_transient_judge_error(message: str) -> bool:
+    lowered = message.lower()
+    return any(
+        token in lowered
+        for token in (
+            "error code: 502",
+            "502",
+            "bad gateway",
+            "overloaded",
+            "timeout",
+        )
+    )
+
+
+def _coerce_int_value(value: Any) -> int:
+    if isinstance(value, dict):
+        for key in ("total", "score", "value"):
+            if key in value:
+                return _coerce_int_value(value[key])
+        raise TypeError(f"Cannot coerce dict {value!r} to int")
+    return int(value)

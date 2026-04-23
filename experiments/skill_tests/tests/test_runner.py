@@ -517,3 +517,82 @@ def test_run_case_nonzero_returncode_becomes_runner_error(
 
     assert result["status"] == "runner_error"
     assert result["returncode"] == 1
+
+
+def test_run_cases_supports_parallel_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from experiments.skill_tests.runner import run_cases
+
+    cases = [
+        LiveEvalCase(
+            target="question",
+            name="case-a",
+            prompt="a",
+            required_env=(),
+            expected_behaviors=(),
+            expected_outputs=(),
+            known_issues=(),
+            timeout_minutes=10,
+            allow_timeout_after_expectations=False,
+            command=None,
+            artifact_root=None,
+            path=tmp_path / "case-a.toml",
+            task_family=None,
+            question_type=None,
+            preferred_skills=(),
+            source_hints=(),
+            source_urls=(),
+            judge_focus=(),
+            prior_case_refs=(),
+            weight=1.0,
+        ),
+        LiveEvalCase(
+            target="question",
+            name="case-b",
+            prompt="b",
+            required_env=(),
+            expected_behaviors=(),
+            expected_outputs=(),
+            known_issues=(),
+            timeout_minutes=10,
+            allow_timeout_after_expectations=False,
+            command=None,
+            artifact_root=None,
+            path=tmp_path / "case-b.toml",
+            task_family=None,
+            question_type=None,
+            preferred_skills=(),
+            source_hints=(),
+            source_urls=(),
+            judge_focus=(),
+            prior_case_refs=(),
+            weight=1.0,
+        ),
+    ]
+
+    def fake_run_case(case, *, run_date, output_root):  # noqa: ANN001
+        return {
+            "name": case.name,
+            "target": case.target,
+            "status": "passed",
+            "conclusion_zh": "ok",
+            "log_path": str(output_root / run_date / f"{case.name}.log"),
+            "prompt": case.prompt,
+            "prompt_path": str(output_root / run_date / f"{case.name}.prompt.txt"),
+            "answer_path": str(output_root / run_date / f"{case.name}.answer.txt"),
+            "trace_path": str(output_root / run_date / f"{case.name}.trace.json"),
+            "failed_expectations": [],
+            "known_issue_hits": [],
+        }
+
+    monkeypatch.setattr("experiments.skill_tests.runner.run_case", fake_run_case)
+
+    bundle = run_cases(
+        cases,
+        run_date="20260423",
+        output_root=tmp_path / "runs",
+        max_parallel=2,
+    )
+
+    assert [item["name"] for item in bundle["results"]] == ["case-a", "case-b"]

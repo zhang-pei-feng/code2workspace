@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import shutil
@@ -101,8 +102,25 @@ def run_split(
     variant.save(layout.variant_path(variant.key))
     outcomes: list[CaseScoreResult] = []
     with workspace_override_context(experiment, variant):
-        for case in experiment.cases_for_split(split):
-            outcomes.append(evaluate_case(case=case, split_dir=split_dir, run_date=layout.run_id))
+        cases = experiment.cases_for_split(split)
+        if experiment.max_parallel_cases <= 1 or len(cases) <= 1:
+            for case in cases:
+                outcomes.append(evaluate_case(case=case, split_dir=split_dir, run_date=layout.run_id))
+        else:
+            indexed_results: list[CaseScoreResult | None] = [None] * len(cases)
+            with ThreadPoolExecutor(max_workers=experiment.max_parallel_cases) as executor:
+                future_to_index = {
+                    executor.submit(
+                        evaluate_case,
+                        case=case,
+                        split_dir=split_dir,
+                        run_date=layout.run_id,
+                    ): index
+                    for index, case in enumerate(cases)
+                }
+                for future in as_completed(future_to_index):
+                    indexed_results[future_to_index[future]] = future.result()
+            outcomes = [item for item in indexed_results if item is not None]
     result = aggregate_split_scores(split=split, variant=variant.key, outcomes=outcomes)
     result.save(split_dir / "result.json")
     (split_dir / "summary.json").write_text(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import math
 import os
@@ -387,7 +388,10 @@ def _finalize_result(
         "tool_invocation_count": len(parsed["tool_invocations"]),
         "tool_names": parsed["tool_names"],
         "subagents": parsed["subagents"],
+        "summary_lines": parsed["summary_lines"],
+        "repo_paths": parsed["repo_paths"],
         "answer_char_count": len(extract_final_answer_from_log(log_text).strip()),
+        "trace_warnings": [],
     }
     trace_path.write_text(
         json.dumps(trace_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -706,8 +710,20 @@ def run_cases(
     run_date: str,
     output_root: Path,
     pinned_snapshot_root: Path | None = None,
+    max_parallel: int = 1,
 ) -> dict[str, Any]:
-    results = [run_case(case, run_date=run_date, output_root=output_root) for case in cases]
+    if max_parallel <= 1 or len(cases) <= 1:
+        results = [run_case(case, run_date=run_date, output_root=output_root) for case in cases]
+    else:
+        indexed_results: list[dict[str, Any] | None] = [None] * len(cases)
+        with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+            future_to_index = {
+                executor.submit(run_case, case, run_date=run_date, output_root=output_root): index
+                for index, case in enumerate(cases)
+            }
+            for future in as_completed(future_to_index):
+                indexed_results[future_to_index[future]] = future.result()
+        results = [item for item in indexed_results if item is not None]
     result_dir = output_root / run_date
     summary_payload = {
         "date": run_date,

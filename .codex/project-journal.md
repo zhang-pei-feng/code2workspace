@@ -300,6 +300,16 @@
 - Validation: Confirmed `result.json` for the holdout rerun (`2/3`); confirmed `v-pipe` summary is `completed=true`; inspected `fieldbioinformatics` summary and agent log, which still show no fresh Docker/WDL artifacts.
 - Next step: Focus the next optimization loop narrowly on `fieldbioinformatics`, using the current `7/8` effective baseline as the new reference point.
 
+### 2026-04-23 15:20 CST
+- Session goal: Reduce the last clear miss (`fieldbioinformatics`) from a vague holdout failure into a concrete runner/image integration bug, while integrating the parallel complex-QA work back into `main`.
+- Major changes:
+  - Merged `feature/complex-qa-benchmark` into `main` and carried over the worktree-only follow-up changes for the complex-QA harness, judge, and runner.
+  - Replaced the earlier one-shot single retry with two transient remote/internal retries after isolated `fieldbioinformatics` repros showed the repository could progress materially further on the third attempt.
+  - Confirmed the integrated regression set passes after the merge (`142 passed` across the targeted oneshot/harness/skill-tests/CLI suites).
+  - Drove `fieldbioinformatics` far enough in isolated repro to identify the current repo-level blocker precisely: Cromwell launches the image under `/bin/bash`, bypassing environment activation so `artic` is not on `PATH`, even though Docker build and the shortest real container validation both succeed.
+- Validation: targeted integrated regression suite passed (`142 passed`); isolated `fieldbioinformatics` repro now reaches real Docker build, real `artic guppyplex`, and real Cromwell execution before failing with `artic: command not found` inside the Cromwell task shell.
+- Next step: push the integrated `main` branch, then resume from the narrower `fieldbioinformatics` PATH/Cromwell-shell issue instead of broad harness work.
+
 ### 2026-04-23 11:33 CST
 - Session goal: Consolidate report generation into one generic multi-source report skill and remove the earlier overlapping report surfaces.
 - Major changes:
