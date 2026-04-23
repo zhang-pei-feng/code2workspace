@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shlex
@@ -105,6 +106,9 @@ def load_case(path: Path) -> LiveEvalCase:
     raw_command = payload.get("command")
     command = None if raw_command is None else tuple(str(item) for item in raw_command)
     artifact_root = str(payload["artifact_root"]) if "artifact_root" in payload else None
+    weight = float(payload.get("weight", 1.0))
+    if not math.isfinite(weight):
+        raise ValueError(f"{path} weight must be finite")
     return LiveEvalCase(
         target=target,
         name=str(payload["name"]),
@@ -120,12 +124,12 @@ def load_case(path: Path) -> LiveEvalCase:
         path=path,
         task_family=str(payload["task_family"]) if "task_family" in payload else None,
         question_type=str(payload["question_type"]) if "question_type" in payload else None,
-        preferred_skills=tuple(str(item) for item in payload.get("preferred_skills", [])),
-        source_hints=tuple(str(item) for item in payload.get("source_hints", [])),
-        source_urls=tuple(str(item) for item in payload.get("source_urls", [])),
-        judge_focus=tuple(str(item) for item in payload.get("judge_focus", [])),
-        prior_case_refs=tuple(str(item) for item in payload.get("prior_case_refs", [])),
-        weight=float(payload.get("weight", 1.0)),
+        preferred_skills=_optional_string_tuple(payload, "preferred_skills", path=path),
+        source_hints=_optional_string_tuple(payload, "source_hints", path=path),
+        source_urls=_optional_string_tuple(payload, "source_urls", path=path),
+        judge_focus=_optional_string_tuple(payload, "judge_focus", path=path),
+        prior_case_refs=_optional_string_tuple(payload, "prior_case_refs", path=path),
+        weight=weight,
     )
 
 
@@ -578,6 +582,18 @@ def _coerce_text(payload: str | bytes | None) -> str:
     if isinstance(payload, bytes):
         return payload.decode("utf-8", errors="replace")
     return str(payload)
+
+
+def _optional_string_tuple(
+    payload: dict[str, Any],
+    field: str,
+    *,
+    path: Path,
+) -> tuple[str, ...]:
+    raw = payload.get(field, [])
+    if isinstance(raw, str) or not isinstance(raw, list | tuple):
+        raise ValueError(f"{path} field {field!r} must be a list")
+    return tuple(str(item) for item in raw)
 
 
 def _list_dirs(root: Path) -> set[Path]:
