@@ -1,0 +1,34 @@
+target = "question"
+name = "complex-qa-07-ba32-vaccine-clinical-trials"
+title = "New BA.3.2 vaccine clinical trials"
+prompt = "近期是否有新的针对新冠 BA.3.2 的疫苗进入临床试验？请优先查临床试验注册信息或正式研发公告，给出是否存在、研发方、试验阶段、以及靶株是否真的是 BA.3.2。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "literature_search"
+question_type = "clinical_trial_status_search"
+source_hints = [
+  "clinical trial registries are stronger evidence than general news coverage",
+  "do not confuse BA.3.2-targeted vaccines with broader JN.1-lineage updates",
+  "if no fresh BA.3.2 trial exists, the answer should say so clearly",
+]
+source_urls = [
+  "https://clinicaltrials.gov/",
+  "https://clinicaltrials.gov/search?term=COVID%20vaccine",
+  "https://pubmed.ncbi.nlm.nih.gov/",
+  "https://trialsearch.who.int/",
+]
+preferred_skills = [
+  "planning-guide",
+  "academic-search",
+]
+judge_focus = [
+  "fresh_trial_status",
+  "target_strain_disambiguation",
+  "sponsor_and_phase_accuracy",
+  "negative_result_honesty",
+]
+prior_case_refs = ["covid-monitoring-06-ba32-vaccine-trials"]
+weight = 1.0
+timeout_minutes = 15

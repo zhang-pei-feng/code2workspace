@@ -1,0 +1,35 @@
+target = "question"
+name = "complex-qa-03-ba32-vs-xfg11-rbd-convergent-evolution"
+title = "BA.3.2 vs XFG.1.1 future convergent evolution in RBD"
+prompt = "未来 BA.3.2 和 XFG.1.1 毒株在 RBD 区域是否可能出现趋同进化？请结合两者当前的 RBD 突变背景、近期相关文献或预印本，以及常见免疫逃逸位点的选择压力来判断，并明确区分证据支持与推测部分。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "cross_source_synthesis"
+question_type = "future_convergent_evolution_assessment"
+source_hints = [
+  "compare current RBD mutation sets for BA.3.2 and XFG.1.1",
+  "look for recent literature on convergent spike evolution and immune selection",
+  "future-looking claims should be hedged and evidence-backed",
+]
+source_urls = [
+  "https://api.outbreak.info/",
+  "https://pubmed.ncbi.nlm.nih.gov/",
+  "https://www.biorxiv.org/search/covid%20variant%20RBD",
+  "https://www.who.int/activities/tracking-SARS-CoV-2-variants",
+]
+preferred_skills = [
+  "planning-guide",
+  "virus-variation-query",
+  "academic-search",
+]
+judge_focus = [
+  "mutation_level_comparison",
+  "mechanistic_reasoning",
+  "evidence_vs_speculation",
+  "rbd_scope_discipline",
+]
+prior_case_refs = []
+weight = 1.0
+timeout_minutes = 15

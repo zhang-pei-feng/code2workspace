@@ -1,0 +1,33 @@
+target = "question"
+name = "complex-qa-02-fastest-growing-sublineage-two-weeks"
+title = "Fastest-growing sublineage in past two weeks"
+prompt = "近两周增长最快的亚型是哪一株？它在近两周涉及的序列数大约有多少？请明确你的时间窗口、增长判据，以及你引用的序列规模是全球还是特定地区。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "trend_analysis"
+question_type = "recent_growth_ranking"
+source_hints = [
+  "recent 14-day lineage growth-rate tables or prevalence deltas",
+  "sequence counts should be paired with the stated geography",
+  "do not confuse current prevalence with recent growth speed",
+]
+source_urls = [
+  "https://api.outbreak.info/",
+  "https://data.who.int/dashboards/covid19/variants",
+  "https://www.who.int/activities/tracking-SARS-CoV-2-variants",
+]
+preferred_skills = [
+  "planning-guide",
+  "virus-variation-query",
+]
+judge_focus = [
+  "two_week_window",
+  "growth_metric_correctness",
+  "sequence_count_context",
+  "source_transparency",
+]
+prior_case_refs = ["covid-monitoring-09-fastest-growing-sublineage"]
+weight = 1.0
+timeout_minutes = 12

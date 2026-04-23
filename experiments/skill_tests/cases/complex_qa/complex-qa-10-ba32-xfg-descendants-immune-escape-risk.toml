@@ -1,0 +1,40 @@
+target = "question"
+name = "complex-qa-10-ba32-xfg-descendants-immune-escape-risk"
+title = "Integrated BA.3.2 / XFG descendant immune-escape risk question"
+prompt = "请综合判断 BA.3.2 和 XFG 毒株的子代中，哪一种更可能具有更强的免疫逃逸能力、可能由哪些位点驱动、是否可能突破中国人群当前免疫屏障、以及单抗 BD55-1205 是否仍可能有效。请给出一个整合后的结论，并把证据、推断和不确定性分开写。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "cross_source_synthesis"
+question_type = "integrated_immune_escape_risk_assessment"
+source_hints = [
+  "needs mutation comparison, neutralization evidence, and monoclonal escape reasoning in one answer",
+  "do not reduce the task to a single severity or prevalence comparison",
+  "BD55-1205 effectiveness claims should be explicit about whether evidence is direct or inferred",
+]
+source_urls = [
+  "https://api.outbreak.info/",
+  "https://pubmed.ncbi.nlm.nih.gov/",
+  "https://www.biorxiv.org/search/covid%20monoclonal%20antibody%20escape",
+  "https://www.who.int/activities/tracking-SARS-CoV-2-variants",
+]
+preferred_skills = [
+  "planning-guide",
+  "virus-variation-query",
+  "academic-search",
+  "multi-source-report",
+]
+judge_focus = [
+  "integrated_synthesis",
+  "driver_site_identification",
+  "china_barrier_assessment",
+  "bd55_1205_reasoning",
+]
+prior_case_refs = [
+  "covid-monitoring-05-ba32-vs-xfg-severity",
+  "covid-monitoring-10-s-protein-escape-sites",
+  "virus-variation-query-positive",
+]
+weight = 1.0
+timeout_minutes = 18

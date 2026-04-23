@@ -1,0 +1,33 @@
+target = "question"
+name = "complex-qa-11-next-covid-influenza-peak"
+title = "Next COVID / influenza positivity peak timing"
+prompt = "下一波新冠和流感阳性率高峰大概会在什么时间？请结合最近监测曲线、季节性与近几轮波动节律来判断，并说明你的预测适用的是哪个地区。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "trend_analysis"
+question_type = "peak_timing_forecast"
+source_hints = [
+  "recent clinical monitoring plus historical seasonality should both be considered",
+  "predictive answers should include approximate timing rather than false precision",
+  "region needs to be stated explicitly",
+]
+source_urls = [
+  "https://www.chinacdc.cn/jksj/jksj04_14275/",
+  "https://www.chinacdc.cn/jksj/jksj04_14249/",
+  "https://www.cdc.gov/flu/weekly/",
+]
+preferred_skills = [
+  "planning-guide",
+  "respiratory-disease-data-fetcher",
+]
+judge_focus = [
+  "forecast_calibration",
+  "seasonality_reasoning",
+  "region_scope_clarity",
+  "uses_recent_curve_not_just_history",
+]
+prior_case_refs = ["covid-monitoring-01-next-covid-flu-peak"]
+weight = 1.0
+timeout_minutes = 12

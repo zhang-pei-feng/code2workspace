@@ -1,0 +1,36 @@
+target = "question"
+name = "complex-qa-12-xfg11-risk-assessment-report"
+title = "XFG.1.1 risk assessment report"
+prompt = "请按 WHO 风格写一份 XFG.1.1 毒株风险评估报告，至少覆盖三个维度：相对增长速率、临床重症率风险、免疫逃逸能力。每个维度都要说明证据强弱与主要不确定性，并在结尾给出总体风险判断。"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+known_issues = []
+task_family = "report_generation"
+question_type = "variant_risk_report"
+source_hints = [
+  "WHO variant risk framework is the style anchor",
+  "growth, severity, and immune escape evidence should be handled as separate dimensions",
+  "missing direct clinical severity evidence should be called out rather than invented",
+]
+source_urls = [
+  "https://www.who.int/activities/tracking-SARS-CoV-2-variants",
+  "https://www.who.int/publications/i/item/WHO-2019-nCoV-Variants-Risk-assessment-2023.1",
+  "https://api.outbreak.info/",
+  "https://pubmed.ncbi.nlm.nih.gov/",
+]
+preferred_skills = [
+  "planning-guide",
+  "virus-variation-query",
+  "academic-search",
+  "multi-source-report",
+]
+judge_focus = [
+  "who_style_structure",
+  "three_dimension_coverage",
+  "severity_uncertainty_handling",
+  "overall_risk_synthesis",
+]
+prior_case_refs = ["capability-snapshot-06-monitor-who-covid"]
+weight = 1.0
+timeout_minutes = 18
