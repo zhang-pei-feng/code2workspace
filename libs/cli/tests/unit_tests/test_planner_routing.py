@@ -32,6 +32,17 @@ def test_build_planner_recommendation_for_paper2workspace() -> None:
     assert recommendation["selected_skill"] == "paper2workspace-orchestrator"
 
 
+def test_build_planner_recommendation_for_multi_source_report() -> None:
+    recommendation = build_planner_recommendation(
+        "写一份正式风险评估报告，综合监测、文献和本地结构化证据"
+    )
+
+    assert recommendation is not None
+    assert recommendation["task_type"] == "report"
+    assert recommendation["selected_skill"] == "multi-source-report"
+    assert recommendation["fresh_run_required"] is True
+
+
 def test_build_planner_recommendation_for_ambiguous_task() -> None:
     recommendation = build_planner_recommendation("检查一下当前目录并总结")
     assert recommendation is None

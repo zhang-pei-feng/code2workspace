@@ -61,6 +61,9 @@ expand ad hoc baseline runs.
   - the current artifact contract between one-shot runs and future harness loops
 - `configs/code2workspace_harness.toml`
   - the first local harness config for `validate`, `run-baseline`, and `optimize`
+- `configs/benchmark_repo_harness.toml`
+  - the first eight-repository real-task harness config driven by
+    `configs/repo_splits.toml`
 - `proposers/noop_proposer.py`
   - a no-op local proposer command for smoke-testing the proposer workspace contract
 - `THESIS_METHOD.md`
@@ -71,7 +74,7 @@ expand ad hoc baseline runs.
   - imported OpenClaw skills and guides, trimmed to reusable skill content instead of local caches or tarballs
 - `code2workspace_harness/`
   - the first local harness package modeled after `better-harness`
-  - now includes config loading, surface patching, proposer workspace materialization, keep/discard decisions, run reports, and CLI entrypoints
+  - now includes config loading, surface patching, proposer workspace materialization, keep/discard decisions, run reports, CLI entrypoints, and the phase-1 benchmark-autonomy ladder
 
 ## Current commands
 
@@ -82,11 +85,26 @@ uv run --project libs/cli python experiments/harness/code2workspace_harness/runn
   validate experiments/harness/configs/code2workspace_harness.toml
 ```
 
+Validate the eight-repository benchmark harness config:
+
+```bash
+PYTHONPATH=. uv run --project libs/cli python experiments/harness/code2workspace_harness/runner.py \
+  validate experiments/harness/configs/benchmark_repo_harness.toml
+```
+
 Run the baseline surfaces through the current train/holdout split:
 
 ```bash
 uv run --project libs/cli python experiments/harness/code2workspace_harness/runner.py \
   run-baseline experiments/harness/configs/code2workspace_harness.toml
+```
+
+Run the real benchmark-repository baseline over the train split:
+
+```bash
+PYTHONPATH=. uv run --project libs/cli python experiments/harness/code2workspace_harness/runner.py \
+  run-baseline experiments/harness/configs/benchmark_repo_harness.toml \
+  --split train
 ```
 
 Run the full keep/discard loop after wiring either a proposer command or a
@@ -95,6 +113,22 @@ Run the full keep/discard loop after wiring either a proposer command or a
 ```bash
 uv run --project libs/cli python experiments/harness/code2workspace_harness/runner.py \
   optimize experiments/harness/configs/code2workspace_harness.toml
+```
+
+Validate the phase-1 benchmark-autonomy ladder config:
+
+```bash
+PYTHONPATH=. uv run --project libs/cli python experiments/harness/code2workspace_harness/runner.py \
+  validate-benchmark-autonomy experiments/harness/configs/benchmark_autonomy_phase1.toml
+```
+
+Run one or more phase-1 benchmark-autonomy combinations:
+
+```bash
+PYTHONPATH=. uv run --project libs/cli python experiments/harness/code2workspace_harness/runner.py \
+  run-benchmark-autonomy experiments/harness/configs/benchmark_autonomy_phase1.toml \
+  --family short-read-assembly \
+  --level level1
 ```
 
 Import OpenClaw skills again if the source side changes:
@@ -129,6 +163,29 @@ The outer loop now supports two proposer modes:
 
 The preferred path is `[better_agent]`, but the command mode remains useful for
 tests and offline contract checks.
+
+## Real Benchmark Task Split
+
+The current real-task harness split uses the eight target repositories already
+tracked under `experiments/oneshot/targets.txt`.
+
+- `train`
+  - `spades`
+  - `canu`
+  - `megahit`
+  - `Flye`
+  - `trinityrnaseq`
+- `holdout` (validation)
+  - `v-pipe`
+  - `covid-19-signal`
+  - `fieldbioinformatics`
+
+The reasoning is intentionally simple:
+
+- keep the five assembly-heavy repositories in train because they are closest
+  to the original Docker+WDL task surface
+- reserve the three workflow/virus-pipeline repositories for validation so the
+  harness has a harder out-of-sample check
 
 ## Why This Is Not Bloated
 

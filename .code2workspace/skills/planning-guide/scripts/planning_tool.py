@@ -44,6 +44,23 @@ PAPER2WORKSPACE_MARKERS = (
     "workflow workspace",
 )
 
+REPORT_MARKERS = (
+    "deep research",
+    "深度研究",
+    "formal report",
+    "正式报告",
+    "write a report",
+    "写一份报告",
+    "风险评估报告",
+    "risk assessment report",
+    "monitoring brief",
+    "监测简报",
+    "预警报告",
+    "warning report",
+    "cross-source synthesis",
+    "多来源综述",
+)
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -138,6 +155,9 @@ def _classify_task(task: str) -> dict[str, Any]:
     paper_match = _contains_any(task, PAPER2WORKSPACE_MARKERS) and (
         "paper2workspace-orchestrator" in helpers
     )
+    report_match = _contains_any(task, REPORT_MARKERS) and (
+        "multi-source-report" in helpers
+    )
 
     if benchmark_match and paper_match:
         return {
@@ -172,6 +192,17 @@ def _classify_task(task: str) -> dict[str, Any]:
             "selected_skill": "benchmark-workflow-orchestrator",
             "fresh_run_required": True,
             "needs_isolated_workspace": True,
+            "subtasks": [],
+        }
+    if report_match:
+        return {
+            "domain": "report",
+            "task_type": "report",
+            "recommended_skill": "multi-source-report",
+            "dispatch_candidate": "multi-source-report",
+            "selected_skill": "multi-source-report",
+            "fresh_run_required": True,
+            "needs_isolated_workspace": False,
             "subtasks": [],
         }
     if paper_match:
@@ -287,6 +318,15 @@ def _recommended_lanes(task: str, classification: dict[str, Any]) -> list[dict[s
                 "purpose": "Report workspace status, artifacts, and remaining blockers.",
                 "selected_skill": "paper2workspace-orchestrator",
             },
+        ]
+    if classification["domain"] == "report":
+        return [
+            {
+                "lane_id": "research",
+                "title": "Research",
+                "purpose": "Gather evidence and write a user-facing multi-source report.",
+                "selected_skill": "multi-source-report",
+            }
         ]
     if classification["domain"] == "multi-lane":
         return list(classification["subtasks"])

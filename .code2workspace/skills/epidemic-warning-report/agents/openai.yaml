@@ -1,4 +1,0 @@
-interface:
-  display_name: "疫情预警报告"
-  short_description: "组合监测、变异库和文献证据，生成疫情预防预警报告"
-  default_prompt: "使用 $epidemic-warning-report 生成 source-backed 的疫情预警或监测简报；默认结合 official monitoring、variant/local DB、literature 或 source catalog 层，先写各个 lane，再用 compose 生成 `final_report.md` 与 `report_diagnostics.json`。"

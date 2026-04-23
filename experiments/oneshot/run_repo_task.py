@@ -60,6 +60,11 @@ def default_max_runtime_minutes() -> int:
     return 30
 
 
+def default_transient_remote_retries() -> int:
+    """Return how many transient remote failures should be retried."""
+    return 2
+
+
 def cli_project_root() -> Path:
     """Return the absolute path to the local CLI project."""
     return repo_root() / "libs" / "cli"
@@ -80,6 +85,125 @@ def append_log(path: Path, content: str) -> None:
         handle.write(content)
 
 
+def retry_log_path(log_path: Path, retry_index: int) -> Path:
+    """Return the archived log path for one retry attempt."""
+    return log_path.with_name(f"{log_path.stem}.retry{retry_index}{log_path.suffix}")
+
+
+def remove_path(path: Path) -> None:
+    """Remove one generated file or directory if it exists."""
+    if not path.exists():
+        return
+    if path.is_dir():
+        try:
+            shutil.rmtree(path)
+        except PermissionError:
+            quarantine_path(path)
+        return
+    try:
+        path.unlink()
+    except PermissionError:
+        quarantine_path(path)
+
+
+def quarantine_path(path: Path) -> Path:
+    """Move one stale artifact aside when direct removal is blocked."""
+    suffix = f".stale.{utc_stamp()}"
+    candidate = path.with_name(f"{path.name}{suffix}")
+    counter = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}{suffix}.{counter}")
+        counter += 1
+    path.rename(candidate)
+    return candidate
+
+
+def clear_generated_repo_artifacts(target_repo: Path, spec: Any) -> None:
+    """Remove generated experiment artifacts before starting a fresh run."""
+    generated_paths = (
+        target_repo / spec.dockerfile_name,
+        target_repo / spec.wdl_name,
+        target_repo / "inputs.json",
+        target_repo / "cromwell.local.conf",
+        target_repo / "cromwell-executions",
+        target_repo / "cromwell-workflow-logs",
+        target_repo / "results" / "docker_test",
+        target_repo / "results" / "wdl_result",
+        target_repo / "results" / "wdl_file",
+    )
+    for path in generated_paths:
+        remove_path(path)
+
+
+def is_transient_remote_error(
+    *,
+    output: str,
+    returncode: int,
+    interrupted: bool,
+    timed_out: bool,
+) -> bool:
+    """Return whether one failed run looks like a transient remote/internal error."""
+    if returncode == 0 or interrupted or timed_out:
+        return False
+    lowered = output.lower()
+    if "unexpected error (remoteexception)" not in lowered:
+        return False
+    return "internal error occurred" in lowered
+
+
+def run_agent_command_with_retries(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    log_path: Path,
+    max_runtime_seconds: int | None,
+    target_repo: Path,
+    spec: Any,
+    transient_remote_retries: int = default_transient_remote_retries(),
+) -> tuple[int, str, bool, bool, int, list[str]]:
+    """Run the agent command and retry transient remote failures once."""
+    combined_outputs: list[str] = []
+    retry_logs: list[str] = []
+    started = time.monotonic()
+
+    for attempt in range(transient_remote_retries + 1):
+        remaining_seconds = max_runtime_seconds
+        if max_runtime_seconds is not None:
+            elapsed = int(time.monotonic() - started)
+            remaining_seconds = max(max_runtime_seconds - elapsed, 1)
+
+        returncode, output, interrupted, timed_out = stream_command(
+            cmd,
+            cwd=cwd,
+            log_path=log_path,
+            max_runtime_seconds=remaining_seconds,
+        )
+        combined_outputs.append(output)
+
+        if attempt >= transient_remote_retries or not is_transient_remote_error(
+            output=output,
+            returncode=returncode,
+            interrupted=interrupted,
+            timed_out=timed_out,
+        ):
+            return (
+                returncode,
+                "".join(combined_outputs),
+                interrupted,
+                timed_out,
+                attempt,
+                retry_logs,
+            )
+
+        archived_log_path = retry_log_path(log_path, attempt + 1)
+        if log_path.exists():
+            shutil.move(log_path, archived_log_path)
+            retry_logs.append(str(archived_log_path))
+        clear_generated_repo_artifacts(target_repo, spec)
+
+    return 1, "".join(combined_outputs), False, False, transient_remote_retries, retry_logs
+
+
 def summarize_result(
     spec: Any,
     *,
@@ -97,6 +221,8 @@ def summarize_result(
     manifest_path: Path,
     max_runtime_minutes: int,
     completion_judgment: dict[str, Any] | None = None,
+    retry_count: int = 0,
+    retry_logs: list[str] | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
     """Write stable summary and manifest files for one run result."""
@@ -110,6 +236,8 @@ def summarize_result(
         "started_at": started_at,
         "finished_at": finished_at,
         "completion_judgment": completion_judgment,
+        "retry_count": retry_count,
+        "retry_logs": retry_logs or [],
     }
     if error is not None:
         summary["error"] = error
@@ -129,6 +257,8 @@ def summarize_result(
             log_path=log_path,
             summary_path=summary_path,
             completion_judgment=completion_judgment,
+            retry_count=retry_count,
+            retry_logs=retry_logs,
         ),
     )
     return {
@@ -156,6 +286,8 @@ def build_manifest_payload(
     summary_path: Path,
     completion_judgment: dict[str, Any] | None,
     max_runtime_minutes: int,
+    retry_count: int = 0,
+    retry_logs: list[str] | None = None,
     finished_at: str | None = None,
 ) -> dict[str, Any]:
     """Build one stable manifest payload."""
@@ -174,6 +306,8 @@ def build_manifest_payload(
         "log_file": str(log_path),
         "summary_file": str(summary_path),
         "completion_rubric_file": str(completion_rubric_path()),
+        "retry_count": retry_count,
+        "retry_logs": retry_logs or [],
     }
     if completion_judgment is not None:
         payload["completed"] = completion_judgment["completed"]
@@ -375,6 +509,8 @@ def run_repo_task(
             log_path=log_path,
             summary_path=summary_path,
             completion_judgment=None,
+            retry_count=0,
+            retry_logs=[],
         ),
     )
 
@@ -400,16 +536,21 @@ def run_repo_task(
             manifest_path=manifest_path,
             max_runtime_minutes=max_runtime_minutes,
             completion_judgment=None,
+            retry_count=0,
+            retry_logs=[],
             error=str(error),
         )
 
     rubric_text = load_completion_rubric()
+    clear_generated_repo_artifacts(target_repo, spec)
     before_snapshot = capture_completion_snapshot(target_repo, spec)
-    returncode, output, interrupted, timed_out = stream_command(
+    returncode, output, interrupted, timed_out, retry_count, retry_logs = run_agent_command_with_retries(
         command,
         cwd=target_repo,
         log_path=log_path,
         max_runtime_seconds=max_runtime_minutes * 60,
+        target_repo=target_repo,
+        spec=spec,
     )
     finished_at = datetime.now(tz=UTC).isoformat()
     completion_judgment = judge_completion(
@@ -440,6 +581,8 @@ def run_repo_task(
         manifest_path=manifest_path,
         max_runtime_minutes=max_runtime_minutes,
         completion_judgment=completion_judgment,
+        retry_count=retry_count,
+        retry_logs=retry_logs,
     )
 
 

@@ -17,9 +17,8 @@ def test_project_superagent_skills_are_discoverable() -> None:
         "academic-search",
         "benchmark-workflow-orchestrator",
         "data-governance-ops",
-        "deep-research-report",
-        "epidemic-warning-report",
         "epietl-api",
+        "multi-source-report",
         "paper2workspace-orchestrator",
         "planning-guide",
         "respiratory-disease-data-fetcher",
@@ -30,6 +29,8 @@ def test_project_superagent_skills_are_discoverable() -> None:
         assert by_name[name]["source"] == "project"
         assert Path(by_name[name]["path"]).exists()
     assert "planning-orchestrator" not in by_name
+    assert "deep-research-report" not in by_name
+    assert "epidemic-warning-report" not in by_name
 
 
 def test_planning_guide_assets_present_and_soft_routing_only() -> None:
@@ -109,8 +110,7 @@ def test_superagent_scripts_expose_help() -> None:
     scripts = [
         Path("/mnt/data1/zhangpf/code2workspace/.code2workspace/skills/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py"),
         Path("/mnt/data1/zhangpf/code2workspace/.code2workspace/skills/data-governance-ops/scripts/governance_ops.py"),
-        Path("/mnt/data1/zhangpf/code2workspace/.code2workspace/skills/deep-research-report/scripts/report_tool.py"),
-        Path("/mnt/data1/zhangpf/code2workspace/.code2workspace/skills/epidemic-warning-report/scripts/epidemic_report_tool.py"),
+        Path("/mnt/data1/zhangpf/code2workspace/.code2workspace/skills/multi-source-report/scripts/report_tool.py"),
         Path("/mnt/data1/zhangpf/code2workspace/.code2workspace/skills/paper2workspace-orchestrator/scripts/workspace_tool.py"),
     ]
 

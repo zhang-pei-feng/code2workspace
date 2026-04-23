@@ -15,6 +15,11 @@ from experiments.harness.code2workspace_harness.patching import build_baseline_v
 from experiments.harness.code2workspace_harness.runner import run_baseline, run_experiment
 
 
+BENCHMARK_REPO_CONFIG = (
+    repo_root() / "experiments" / "harness" / "configs" / "benchmark_repo_harness.toml"
+)
+
+
 def write_config(
     tmp_path: Path,
     *,
@@ -78,6 +83,58 @@ max_runtime_minutes = 15
     return config
 
 
+def write_repo_splits_config(
+    tmp_path: Path,
+    *,
+    surface_relpath: str,
+) -> Path:
+    prompt = tmp_path / "prompt.txt"
+    workspace_root = tmp_path / "workspace"
+    output_root = tmp_path / "output"
+    surface_filename = Path(surface_relpath).name
+    prompt.write_text("prompt\n", encoding="utf-8")
+    repo_splits = tmp_path / "repo_splits.toml"
+    repo_splits.write_text(
+        """
+[splits]
+train = [
+  "https://github.com/ablab/spades",
+  "https://github.com/marbl/canu",
+]
+holdout = [
+  "https://github.com/cbg-ethz/v-pipe",
+]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "repo_split_experiment.toml"
+    config.write_text(
+        f"""
+[experiment]
+name = "repo-split-harness"
+workspace_root = "{workspace_root}"
+output_root = "{output_root}"
+max_iterations = 2
+repo_splits = "{repo_splits}"
+default_max_runtime_minutes = 45
+
+[repo_case_runtime_minutes]
+spades = 120
+v-pipe = 75
+
+[surfaces.prompt]
+kind = "workspace_file"
+target = "{surface_relpath}"
+filename = "{surface_filename}"
+base_file = "{prompt}"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return config
+
+
 def test_load_experiment_reads_surfaces_and_cases(tmp_path: Path) -> None:
     surface_relpath = f"experiments/harness/surfaces/{tmp_path.name}_prompt.txt"
     config = write_config(tmp_path, surface_relpath=surface_relpath)
@@ -107,6 +164,44 @@ def test_load_experiment_reads_better_agent_config(tmp_path: Path) -> None:
     assert experiment.better_agent_model == "gpt-test"
     assert experiment.better_agent_max_turns == 12
     assert experiment.better_agent_deepagents_root == Path("/tmp/deepagents")
+
+
+def test_load_experiment_reads_cases_from_repo_splits(tmp_path: Path) -> None:
+    surface_relpath = f"experiments/harness/surfaces/{tmp_path.name}_prompt.txt"
+    config = write_repo_splits_config(tmp_path, surface_relpath=surface_relpath)
+
+    experiment = load_experiment(config)
+
+    assert experiment.name == "repo-split-harness"
+    assert len(experiment.cases) == 3
+    assert [case.split for case in experiment.cases] == ["train", "train", "holdout"]
+    assert experiment.cases[0].case_id == "spades-train"
+    assert experiment.cases[0].max_runtime_minutes == 120
+    assert experiment.cases[1].case_id == "canu-train"
+    assert experiment.cases[1].max_runtime_minutes == 45
+    assert experiment.cases[2].case_id == "v-pipe-holdout"
+    assert experiment.cases[2].max_runtime_minutes == 75
+
+
+def test_benchmark_repo_harness_config_loads_all_eight_real_cases() -> None:
+    experiment = load_experiment(BENCHMARK_REPO_CONFIG)
+
+    assert experiment.name == "benchmark-repo-harness"
+    assert len(experiment.cases) == 8
+    assert len(experiment.cases_for_split("train")) == 5
+    assert len(experiment.cases_for_split("holdout")) == 3
+    assert {case.case_id for case in experiment.cases_for_split("train")} == {
+        "spades-train",
+        "canu-train",
+        "megahit-train",
+        "Flye-train",
+        "trinityrnaseq-train",
+    }
+    assert {case.case_id for case in experiment.cases_for_split("holdout")} == {
+        "v-pipe-holdout",
+        "covid-19-signal-holdout",
+        "fieldbioinformatics-holdout",
+    }
 
 
 def test_workspace_override_context_restores_file(tmp_path: Path) -> None:
@@ -276,20 +371,20 @@ proposal.write_text("# Proposal\\n\\n- Summary: improve visible repo outcomes\\n
     assert run_root.joinpath("report.json").exists()
 
 
-def test_epidemic_warning_report_helper_survives_surface_override(tmp_path: Path) -> None:
+def test_multi_source_report_helper_survives_surface_override(tmp_path: Path) -> None:
     helper = (
         repo_root()
         / ".code2workspace"
         / "skills"
-        / "epidemic-warning-report"
+        / "multi-source-report"
         / "scripts"
-        / "epidemic_report_tool.py"
+        / "report_tool.py"
     )
     skill_file = (
         repo_root()
         / ".code2workspace"
         / "skills"
-        / "epidemic-warning-report"
+        / "multi-source-report"
         / "SKILL.md"
     )
     config = tmp_path / "experiment.toml"
@@ -343,7 +438,7 @@ max_runtime_minutes = 15
 
     assert completed.returncode == 0
     assert out_dir.joinpath("manifest.json").exists()
-    assert out_dir.joinpath("lanes", "01_official-monitoring.md").exists()
+    assert out_dir.joinpath("lanes", "01_monitoring.md").exists()
 
 
 def test_run_experiment_supports_deepagents_proposer(tmp_path: Path, monkeypatch) -> None:

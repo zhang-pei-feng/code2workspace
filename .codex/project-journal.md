@@ -218,11 +218,105 @@
   - Split the local benchmark assets/helper rewrite into `b486e23 feat: add local benchmark assets and helper`.
   - Split the workflow-skill localization and report-composer cleanup into `107a10b refactor: localize workflow skills and reports`.
   - Split the web backend-only reduction into `badc272 refactor: reduce webapp to api backend`.
+
+### 2026-04-22 00:40 CST
+- Session goal: Add a harness-native phase-1 benchmark-autonomy ladder for the local benchmark assets under `experiments/benchmark`.
+- Major changes:
+  - Added `experiments/harness/code2workspace_harness/benchmark_autonomy.py` plus `experiments/harness/configs/benchmark_autonomy_phase1.toml` to model two phase-1 families (`short-read-assembly`, `long-read-assembly`) across four autonomy levels.
+  - Implemented isolated run staging that copies only the required benchmark WDL/input assets and staged dataset files into a fresh workspace-local `experiments/benchmark` tree, while preserving original project skill visibility through `.code2workspace/project-root.txt`.
+  - Added report-first prompt generation and fallback run summaries so each benchmark-autonomy run leaves `summary.json` / `summary.md` with selected tools, selected inputs, WDL-change state, cost counters, and normalized failure taxonomy even when the agent only writes a partial report.
+  - Extended the harness runner with `validate-benchmark-autonomy` and `run-benchmark-autonomy`, and documented the new commands in `experiments/harness/README.md`.
+- Validation: `PYTHONPATH=. uv run --project libs/cli pytest experiments/harness/tests -q` passed (`29 passed`); `PYTHONPATH=. uv run --project libs/cli python experiments/harness/code2workspace_harness/runner.py validate-benchmark-autonomy experiments/harness/configs/benchmark_autonomy_phase1.toml` returned the expected two-family/four-level contract.
+- Next step: Run real phase-1 family/level combinations to collect completion/time/cost evidence and see where the agent first fails when tool choice, input choice, and WDL editing are gradually unlocked.
+
+### 2026-04-22 13:15 CST
+- Session goal: Stop the autonomy-ladder expansion, record the results reached so far, and switch the harness back to the thesis-critical eight-repository real-task surface.
+- Major changes:
+  - Stopped the remaining benchmark-autonomy runs after collecting enough evidence to characterize the short-read levels and the first two long-read levels.
+  - Recorded the autonomy-ladder pattern reached so far: short-read levels 1-4 all succeeded without any staged WDL edits; long-read levels 1-2 both showed `canu` success while `Flye` failed consistently because the staged Flye image is broken.
+  - Extended the harness config loader so it can materialize cases directly from `experiments/harness/configs/repo_splits.toml` with simple per-repo runtime overrides.
+  - Added `experiments/harness/configs/benchmark_repo_harness.toml` as the first simple eight-repository real-task harness config, reusing the existing one-shot prompt/completion surfaces and the 5-train / 3-holdout split.
+- Validation: Focused config-loader tests passed; the new benchmark repo config loads 8 real repo cases with the expected train/holdout composition and runtime overrides.
+- Next step: Run the new `benchmark_repo_harness.toml` baseline on the train split, then start the simplest keep/discard loop on that real-task surface instead of continuing the autonomy ladder.
+
+### 2026-04-22 18:45 CST
+- Session goal: Run the first real train baseline for the eight-repository harness and make the measurement path trustworthy enough for later optimization.
+- Major changes:
+  - Fixed one-shot workspace freshness by clearing prior generated Docker/WDL/Cromwell artifacts before each run and quarantining permission-blocked stale directories as `*.stale.<timestamp>` instead of aborting on old root-owned files.
+  - Tightened the completion judge so real successful runs like `Flye` are no longer missed when the agent writes `results/docker_test/docker_run.log` and only the copied WDL under `results/wdl_file/`.
+  - Ran the real train baseline under `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T090923Z` and collected the first full five-repo result set.
+- Validation: `experiments/oneshot/tests/test_tasks.py` passed (`14 passed`); `experiments/harness/tests/test_code2workspace_harness.py` passed (`11 passed`); the persisted train split recorded `1/5` completed, and after the judge fix the existing `Flye` artifacts recompute as a second true completion.
+- Next step: Rerun the train split cleanly with the updated judge, then run the first holdout baseline so the harness has a trustworthy real-task baseline before any proposer loop.
+
+### 2026-04-22 19:14 CST
+- Session goal: Finish the clean real-task baseline cycle by rerunning train and then collecting the first holdout baseline on the same harness surface.
+- Major changes:
+  - Completed the clean train rerun under `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T105103Z`, which now records `3/5` passes: `spades`, `megahit`, and `trinityrnaseq`.
+  - Completed the first holdout baseline under `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T105606Z`, which records `2/3` passes: `covid-19-signal` and `fieldbioinformatics`.
+  - Established the first full simple real-task harness baseline across all eight repos: `5/8` combined, leaving `canu`, `Flye`, and `v-pipe` as the first concrete optimization targets.
+- Validation: The new persisted split results are `train 3/5` and `holdout 2/3`; `experiments/oneshot/tests/test_tasks.py` still passes (`14 passed`) and `experiments/harness/tests/test_code2workspace_harness.py` still passes (`11 passed`).
+- Next step: Start the first small optimization loop on the explicit miss set (`canu`, `Flye`, `v-pipe`) instead of collecting more baseline-only runs.
   - Split the repo layout/documentation cleanup into `0796d94 docs: sync repo layout and roadmap`.
   - Split the repo-tracked gateway baseline into `1b5c9e4 chore: point repo config at remote gateway`.
+
+### 2026-04-22 23:46 CST
+- Session goal: Tighten the live one-shot prompt surface against the known `canu` / `Flye` / `v-pipe` miss pattern and verify it on a fresh train rerun.
+- Major changes:
+  - Updated `experiments/harness/surfaces/one_shot_prompt.txt` so the “do not treat old artifacts as completion evidence” instruction matches the new regression test exactly.
+  - Added a focused prompt-surface regression and confirmed the refreshed prompt now explicitly pushes the agent from discovery into the first real `docker build`.
+  - Started a fresh train baseline under `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T153031Z`; early live evidence from `spades` shows the agent now reaches `write_file` plus real `docker build` instead of staying in open-ended repository reading.
+- Validation: `experiments/oneshot/tests/test_tasks.py` passed (`15 passed`); `experiments/harness/tests/test_code2workspace_harness.py` passed (`11 passed`); current live artifacts include `.workspaces/oneshot/spades/spades_Dockerfile` and `.workspaces/oneshot/spades/results/docker_test/docker_build.log`.
+- Next step: Let the new train rerun finish, then compare whether the miss set improved from “stopped before fresh artifacts” to real build/run attempts or full completions.
   - Split the capability snapshot test/report additions into `012df4c feat: add capability snapshot skill tests`.
 - Validation: Ran the focused test commands for the soft-routing, benchmark-helper, webapp backend, workflow-skill, and capability-snapshot groups before committing each batch.
 - Next step: Only `.codex/` and `docs/superpowers/plans/` remain untracked locally; keep them uncommitted unless there is a deliberate reason to publish local planning/journal artifacts.
+
+### 2026-04-23 04:19 CST
+- Session goal: Convert the remaining train misses from a prompt-only problem into a runner-level stability fix after the latest rerun exposed transient remote internal errors.
+- Major changes:
+  - Confirmed the latest train rerun stayed at `3/5`, but the failure shape changed materially: `canu` and `megahit` now failed with early `RemoteProtocolError` / `RemoteException` internal errors rather than ordinary repo-task execution failures, while `Flye` flipped to a full pass.
+  - Added one-shot retry handling in `experiments/oneshot/run_repo_task.py` that retries exactly once on a narrow transient-remote-error signature, preserves the first failed attempt as `agent.retry1.log`, clears partial generated artifacts, and keeps the same overall runtime budget.
+  - Added focused regression coverage proving that transient remote/internal failures are retried once while ordinary non-zero repo failures are not retried.
+  - Started independent live reproductions for `megahit` and `canu`; both current runs progressed into real build/download stages, which strengthens the hypothesis that the earlier baseline misses were at least partly transient runtime instability rather than irreducible repo failures.
+- Validation: `experiments/oneshot/tests/test_tasks.py` passed (`17 passed`); `experiments/harness/tests/test_code2workspace_harness.py` passed (`11 passed`); live repro artifacts now include fresh `.workspaces/oneshot/megahit/results/docker_test/docker_build.log` and `.workspaces/oneshot/canu/results/docker_test/{download.log,docker_build.log}`.
+- Next step: Finish monitoring the live repros, then launch a fresh train baseline with the retry-enabled runner and compare it against `20260422T153031Z`.
+
+### 2026-04-23 11:11 CST
+- Session goal: Convert the runner/judge fixes into a cleaner harness baseline and then push the same fixes onto the holdout split.
+- Major changes:
+  - Completed the next train rerun under `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T203210Z`; the persisted result improved from `3/5` to `4/5` by flipping `canu` and `megahit` into full passes.
+  - Found a further completion-judge false negative on `trinityrnaseq`: its real run produced `cromwell_run_retry2.log` plus `metadata_retry2.json`, but the old judge only recognized fixed retry filenames; generalized Cromwell success detection to fresh `cromwell_run*.log` and `metadata*.json`, and the same run now recomputes as a full pass under the fixed judge.
+  - The train split is therefore effectively `5/5` under current code semantics: `spades`, `canu`, `megahit`, `Flye`, and `trinityrnaseq` all have real Docker + WDL success evidence.
+  - Started the next holdout rerun under `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260423T023441Z`; `v-pipe` has already flipped into a real full pass in that run, and the session is continuing with the remaining holdout cases.
+- Validation: `experiments/oneshot/tests/test_tasks.py` passed (`19 passed`); `experiments/harness/tests/test_code2workspace_harness.py` passed (`11 passed`); rejudging the persisted `trinityrnaseq` train artifacts with the updated completion logic now returns `completed=True` and no failed checks.
+- Next step: Let the holdout rerun finish, then record the updated train/holdout totals and reassess whether any remaining miss is a true repo limitation or another measurement/runtime issue.
+
+### 2026-04-23 11:11 CST
+- Session goal: Finish reading out the holdout rerun and reduce the repo-wide harness picture to the smallest remaining miss set.
+- Major changes:
+  - The holdout rerun under `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260423T023441Z` has settled at `2/3`, with `v-pipe` and `covid-19-signal` completed and `fieldbioinformatics` still failing.
+  - `v-pipe` is now a full real Docker + WDL pass in the holdout split, which confirms the recent runner/judge fixes generalize beyond the train repositories.
+  - `fieldbioinformatics` remains the only clear repo-level miss in the eight-repository surface; the latest holdout evidence shows it still stops before producing fresh Docker/WDL artifacts.
+- Validation: Confirmed `result.json` for the holdout rerun (`2/3`); confirmed `v-pipe` summary is `completed=true`; inspected `fieldbioinformatics` summary and agent log, which still show no fresh Docker/WDL artifacts.
+- Next step: Focus the next optimization loop narrowly on `fieldbioinformatics`, using the current `7/8` effective baseline as the new reference point.
+
+### 2026-04-23 11:33 CST
+- Session goal: Consolidate report generation into one generic multi-source report skill and remove the earlier overlapping report surfaces.
+- Major changes:
+  - Replaced `.code2workspace/skills/deep-research-report` and `.code2workspace/skills/epidemic-warning-report` with one new `.code2workspace/skills/multi-source-report` entrypoint plus a unified `report_tool.py`.
+  - Replaced the old report-specific project subagents with `report-researcher`, `report-synthesizer`, and `report-web-researcher`, and updated planner routing plus nested-scope handling to target `multi-source-report`.
+  - Reworked report-related unit tests and live skill-test cases so the new report surface is covered by discovery, routing, helper-tool, harness-helper, and live artifact checks.
+- Validation: Focused pytest suite passed with `91 passed`; live skill-test runs passed for `multi-source-report` behavior, structure, and end-to-end artifact cases under `results/skill-tests/20260423-msr-{behavior,structure,e2e}/`.
+- Next step: If report UX quality matters beyond artifacts, run a dedicated non-interactive prompt evaluation to confirm the final chat reply reliably returns full report bodies instead of only paths.
+
+### 2026-04-23 13:29 CST
+- Session goal: Make `multi-source-report` behave more like a formal report writer by default, with long-form output and source-backed tables when reliable numeric evidence exists.
+- Major changes:
+  - Added table-candidate parsing to the shared report composer path and taught `multi-source-report` to render a `Key Data Tables` section from valid numeric lane rows.
+  - Added manifest defaults for long-form/table-preferred formal reports (`min_report_chars=5000`, `prefer_tables=true`, `max_tables=3`) and updated the report-agent instructions to emit `Table Candidate:` blocks when lanes contain stable numeric evidence.
+  - Restored missing `experiments/skill_tests/runner.py` metadata and `trace.json` output expected by the current skill-test suite while working in the same area.
+- Validation: `experiments/skill_tests/tests/test_multi_source_report_tool.py` passed (`7 passed`); a broader related regression set across `runner`, `parsers`, `harness`, report skill discovery, and nested-scope handling passed (`45 passed`).
+- Next step: If you want richer presentation later, the next logical step is optional chart generation built on top of the new table-candidate / diagnostics contract rather than a free-form figure generator.
 
 ### 2026-04-21 16:12 CST
 - Session goal: Reduce root-directory clutter and document a stable repository layout policy.

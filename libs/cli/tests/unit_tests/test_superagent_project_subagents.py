@@ -12,14 +12,10 @@ def test_project_superagent_subagents_are_discoverable() -> None:
     by_name = {subagent["name"]: subagent for subagent in subagents}
 
     for name in {
-        "epidemic-clinical-analyst",
-        "epidemic-monitor-analyst",
-        "epidemic-report-composer",
-        "epidemic-source-cartographer",
-        "epidemic-variant-analyst",
-        "epidemic-web-researcher",
         "governance-operator",
-        "research-lane",
+        "report-researcher",
+        "report-synthesizer",
+        "report-web-researcher",
         "workspace-builder",
     }:
         assert name in by_name
@@ -28,12 +24,12 @@ def test_project_superagent_subagents_are_discoverable() -> None:
 
     assert "bioos-operator" not in by_name
 
-    assert by_name["epidemic-monitor-analyst"]["allow_nested_task"] is True
-    assert by_name["epidemic-monitor-analyst"]["nested_task_budget"] == 1
-    assert by_name["epidemic-monitor-analyst"]["max_delegation_depth"] == 3
-    assert by_name["epidemic-monitor-analyst"]["nested_subagents"] == [
-        "epidemic-web-researcher"
+    assert by_name["report-researcher"]["allow_nested_task"] is True
+    assert by_name["report-researcher"]["nested_task_budget"] == 1
+    assert by_name["report-researcher"]["max_delegation_depth"] == 3
+    assert by_name["report-researcher"]["nested_subagents"] == [
+        "report-web-researcher"
     ]
-    assert by_name["epidemic-monitor-analyst"]["nested_scope_guard"] == (
-        "epidemic-warning-report"
+    assert by_name["report-researcher"]["nested_scope_guard"] == (
+        "multi-source-report"
     )

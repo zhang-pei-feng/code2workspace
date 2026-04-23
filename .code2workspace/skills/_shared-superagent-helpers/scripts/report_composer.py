@@ -39,14 +39,48 @@ def parse_lane_file(path: Path) -> dict[str, object]:
     skills: list[str] = []
     sources: list[str] = []
     evidence_lines: list[str] = []
+    table_candidates: list[dict[str, str]] = []
+    current_table_candidate: dict[str, str] | None = None
+
+    def flush_table_candidate() -> None:
+        nonlocal current_table_candidate
+        if current_table_candidate:
+            table_candidates.append(current_table_candidate)
+            current_table_candidate = None
 
     for raw in lines[1:]:
         stripped = raw.strip()
         if not stripped:
+            flush_table_candidate()
             continue
         lowered = stripped.lower()
         if lowered.startswith("subagent:") or lowered.startswith("purpose:"):
             continue
+        if lowered.startswith("table candidate:"):
+            flush_table_candidate()
+            current_table_candidate = {
+                "title": stripped.split(":", 1)[1].strip(),
+            }
+            continue
+        if current_table_candidate is not None:
+            candidate_fields = {
+                "metric:": "metric",
+                "value:": "value",
+                "unit:": "unit",
+                "time:": "time",
+                "scope:": "scope",
+                "source:": "source",
+                "note:": "note",
+            }
+            matched_field = False
+            for prefix, key in candidate_fields.items():
+                if lowered.startswith(prefix):
+                    current_table_candidate[key] = stripped.split(":", 1)[1].strip()
+                    matched_field = True
+                    break
+            if matched_field:
+                continue
+            flush_table_candidate()
         if lowered.startswith("skill:"):
             skills.append(stripped.split(":", 1)[1].strip())
             continue
@@ -54,6 +88,8 @@ def parse_lane_file(path: Path) -> dict[str, object]:
             sources.append(stripped.split(":", 1)[1].strip())
             continue
         evidence_lines.append(stripped)
+
+    flush_table_candidate()
 
     missing_reasons: list[str] = []
     if not skills:
@@ -69,6 +105,7 @@ def parse_lane_file(path: Path) -> dict[str, object]:
         "skills": skills,
         "sources": sources,
         "evidence_lines": evidence_lines,
+        "table_candidates": table_candidates,
         "has_evidence": bool(skills and sources and evidence_lines),
         "missing_reasons": missing_reasons,
     }
@@ -218,6 +255,7 @@ def write_composed_report(
                 "title": str(info["title"]),
                 "skills": list(info["skills"]),
                 "sources": list(info["sources"]),
+                "table_candidate_count": len(info.get("table_candidates", [])),
                 "has_evidence": bool(info["has_evidence"]),
                 "missing_reasons": list(info["missing_reasons"]),
             }

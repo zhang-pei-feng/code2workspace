@@ -593,6 +593,36 @@ def _load_case(payload: dict[str, Any]) -> EvalCase:
     )
 
 
+def _repo_name_from_url(repo_url: str) -> str:
+    cleaned = repo_url.rstrip("/")
+    name = cleaned.rsplit("/", 1)[-1]
+    return name.removesuffix(".git")
+
+
+def _load_cases_from_repo_splits(
+    *,
+    splits_path: Path,
+    default_max_runtime_minutes: int,
+    runtime_overrides: dict[str, int],
+) -> tuple[EvalCase, ...]:
+    payload = tomllib.loads(splits_path.read_text(encoding="utf-8"))
+    raw_splits = payload.get("splits", {})
+    cases: list[EvalCase] = []
+    for split in VALID_SPLITS:
+        for repo_url in raw_splits.get(split, []):
+            repo = _repo_name_from_url(str(repo_url))
+            max_runtime_minutes = runtime_overrides.get(repo, default_max_runtime_minutes)
+            cases.append(
+                EvalCase(
+                    case_id=f"{repo}-{split}",
+                    repo_url=str(repo_url),
+                    split=split,
+                    max_runtime_minutes=max_runtime_minutes,
+                )
+            )
+    return tuple(cases)
+
+
 def load_experiment(path: Path) -> Experiment:
     """Load one experiment config."""
     payload = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -603,7 +633,23 @@ def load_experiment(path: Path) -> Experiment:
         name: _load_surface(name, surface_payload)
         for name, surface_payload in payload.get("surfaces", {}).items()
     }
-    cases = tuple(_load_case(item) for item in payload.get("cases", []))
+    raw_runtime_overrides = payload.get("repo_case_runtime_minutes", {})
+    runtime_overrides = {
+        str(repo): int(minutes)
+        for repo, minutes in raw_runtime_overrides.items()
+    }
+    raw_cases = payload.get("cases", [])
+    raw_repo_splits = experiment.get("repo_splits")
+    if raw_cases and raw_repo_splits:
+        raise ValueError("configure either [[cases]] or [experiment].repo_splits, not both")
+    if raw_repo_splits:
+        cases = _load_cases_from_repo_splits(
+            splits_path=resolve_repo_path(str(raw_repo_splits)),
+            default_max_runtime_minutes=int(experiment.get("default_max_runtime_minutes", 30)),
+            runtime_overrides=runtime_overrides,
+        )
+    else:
+        cases = tuple(_load_case(item) for item in raw_cases)
     if not cases:
         raise ValueError("experiment must define at least one case")
     if not surfaces:

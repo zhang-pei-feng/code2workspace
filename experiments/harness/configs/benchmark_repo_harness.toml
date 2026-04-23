@@ -1,0 +1,49 @@
+[experiment]
+name = "benchmark-repo-harness"
+workspace_root = ".workspaces/oneshot"
+output_root = "results/harness/benchmark_repo_harness"
+max_iterations = 3
+repo_splits = "experiments/harness/configs/repo_splits.toml"
+default_max_runtime_minutes = 90
+
+# Optional smoke proposer:
+#
+# [proposer]
+# command = [
+#   "uv",
+#   "run",
+#   "--project",
+#   "libs/cli",
+#   "python",
+#   "experiments/harness/proposers/noop_proposer.py",
+# ]
+# max_runtime_minutes = 10
+
+# Preferred deepagents outer proposer:
+#
+# [better_agent]
+# model = "gpt-5"
+# max_turns = 40
+# deepagents_root = "/mnt/data1/zhangpf/deepagents"
+
+[repo_case_runtime_minutes]
+spades = 120
+canu = 180
+megahit = 120
+Flye = 120
+trinityrnaseq = 120
+v-pipe = 90
+covid-19-signal = 90
+fieldbioinformatics = 90
+
+[surfaces.one_shot_prompt]
+kind = "workspace_file"
+target = "experiments/harness/surfaces/one_shot_prompt.txt"
+filename = "one_shot_prompt.txt"
+base_file = "experiments/harness/surfaces/one_shot_prompt.txt"
+
+[surfaces.completion_rubric]
+kind = "workspace_file"
+target = "experiments/harness/surfaces/completion_rubric.txt"
+filename = "completion_rubric.txt"
+base_file = "experiments/harness/surfaces/completion_rubric.txt"

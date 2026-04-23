@@ -1,0 +1,54 @@
+[experiment]
+name = "benchmark-autonomy-phase1"
+benchmark_root = "experiments/benchmark"
+output_root = "results/harness/benchmark_autonomy"
+report_md_name = "benchmark_report.md"
+report_json_name = "benchmark_report.json"
+
+[agent]
+command = ["uv", "run", "--project", "libs/cli", "code2workspace"]
+base_args = ["--no-mcp", "--session-workdir-mode", "inherit"]
+timeout_minutes = 180
+
+[levels.level1]
+tool_policy = "fixed"
+input_policy = "fixed"
+wdl_policy = "fixed"
+wdl_edit_mode = "none"
+
+[levels.level2]
+tool_policy = "agent-choice"
+input_policy = "fixed"
+wdl_policy = "fixed"
+wdl_edit_mode = "none"
+
+[levels.level3]
+tool_policy = "agent-choice"
+input_policy = "agent-choice"
+wdl_policy = "fixed"
+wdl_edit_mode = "none"
+
+[levels.level4]
+tool_policy = "agent-choice"
+input_policy = "agent-choice"
+wdl_policy = "editable"
+wdl_edit_mode = "run-copy"
+optional_wdl_edit_modes = ["direct-source"]
+
+[[families]]
+family_id = "short-read-assembly"
+label = "Short-read assembly"
+tool_candidates = ["spades", "megahit"]
+fixed_tools = ["spades", "megahit"]
+dataset_candidates = ["short-read-ecoli-srr001666"]
+fixed_dataset = "short-read-ecoli-srr001666"
+comparison_group = "shared-short-read-assembly"
+
+[[families]]
+family_id = "long-read-assembly"
+label = "Long-read assembly"
+tool_candidates = ["canu", "Flye"]
+fixed_tools = ["canu", "Flye"]
+dataset_candidates = ["long-read-ecoli-pacbio"]
+fixed_dataset = "long-read-ecoli-pacbio"
+comparison_group = "shared-long-read-assembly"

@@ -575,19 +575,19 @@ def create_workspace_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph ass
                 subagents=nested_specs,
                 system_prompt=(
                     "You may launch a narrowly scoped nested researcher only when a "
-                    "specific evidence gap blocks completion of the current epidemic "
-                    "warning lane. Prefer one nested delegate at a time, keep the "
-                    "research target concrete, and return to the current lane as "
-                    "soon as the missing evidence is filled."
+                    "specific evidence gap blocks completion of the current report "
+                    "lane. Prefer one nested delegate at a time, keep the research "
+                    "target concrete, and return to the current lane as soon as the "
+                    "missing evidence is filled."
                 ),
                 task_description=(
                     "Launch a narrowly scoped nested research helper only when the "
-                    "current epidemic warning lane has a specific unresolved evidence "
-                    "gap. Available nested agents:\n{available_agents}"
+                    "current report lane has a specific unresolved evidence gap. "
+                    "Available nested agents:\n{available_agents}"
                 ),
                 max_delegation_depth=int(spec.get("max_delegation_depth", 3)),
                 delegation_call_budget=int(spec.get("nested_task_budget", 1)),
-                scope_guard=str(spec.get("nested_scope_guard", "epidemic-warning-report")),
+                scope_guard=str(spec.get("nested_scope_guard", "multi-source-report")),
             )
         )
 

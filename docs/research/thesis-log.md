@@ -23,6 +23,262 @@ harness-style iteration.
 
 ## Chronology
 
+### 2026-04-23
+
+- Reworked the repository's report-generation surface from two partially
+  overlapping skills into one explicit multi-source report lane:
+  - removed `deep-research-report`
+  - removed `epidemic-warning-report`
+  - added `multi-source-report` as the single report-writing entrypoint
+  - replaced the old report-specific project subagents with
+    `report-researcher`, `report-synthesizer`, and `report-web-researcher`
+- This matters for the thesis because it removes a design ambiguity that would
+  otherwise weaken the narrative about what the system is actually optimizing:
+  - before this change, "deep research" and "warning report" were separate
+    skill surfaces with overlapping responsibilities
+  - after this change, the optimization object is clearer: one report
+    orchestrator, multiple evidence lanes, and one shared report artifact
+    contract
+- The new `multi-source-report` lane also pulls the report architecture closer
+  to the `deepagents` deep-research pattern while still grounding it in the
+  local repository evidence stack:
+  - plan / init / parallel lane research / synthesis / compose / verify
+  - first-class evidence layers remain the project's own skills and local
+    sources rather than a pure web-search setup
+- This is useful thesis evidence because it clarifies a hybrid design pattern:
+  - the orchestration pattern is borrowed from a frontier agent framework
+    (`deepagents`)
+  - but the evidence sources are intentionally local/project-specific, which is
+    important for controlled experiments and source traceability
+- Focused validation now covers the new consolidated report surface:
+  - discovery and routing tests now recognize `multi-source-report` instead of
+    the two earlier report skills
+  - nested subagent scope-guard tests now use `multi-source-report`
+  - the new helper tool tests verify both a general report mode and a
+    risk-oriented mode
+  - live skill-test runs now leave real artifact evidence under:
+    `results/skill-tests/20260423-msr-behavior/`,
+    `results/skill-tests/20260423-msr-structure/`, and
+    `results/skill-tests/20260423-msr-e2e/`
+- Methodologically, this helps the thesis in two ways:
+  - it makes report generation easier to evaluate because artifact layout,
+    lane names, and diagnostics are now unified
+  - it creates a cleaner bridge between "research-like" agent behavior and
+    "formal report-writing" agent behavior, which were previously split across
+    two skill identities
+- Tightened the formal-report output contract one step further after the skill
+  consolidation:
+  - formal `multi-source-report` runs now default to long-form output
+    (`5000+` Chinese characters)
+  - lanes may now emit structured `Table Candidate:` blocks for reliable
+    numeric evidence
+  - the compose step turns those into a deterministic `Key Data Tables`
+    Markdown section with source/time/scope columns
+  - if the numeric evidence is incomplete or non-comparable, the report now
+    states that no reliable table could be produced instead of inventing one
+- This is useful thesis evidence because it improves the interpretability of
+  the report artifact without needing a full visualization pipeline:
+  - the report can now surface key comparative values in a reproducible format
+  - the diagnostics explicitly distinguish between “no numeric evidence” and
+    “numeric evidence exists but was too weak to tabulate”
+  - this gives a cleaner evaluation target for future work on charts or richer
+    report presentation
+
+- Continued the real eight-repository harness optimization loop, but the next
+  train rerun showed a more specific bottleneck than the earlier
+  prompt-surface-only picture:
+  - run root:
+    `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T153031Z`
+  - the train score stayed at `3/5`, yet the failure pattern changed
+    materially:
+    - passed: `spades`, `Flye`, `trinityrnaseq`
+    - failed: `canu`, `megahit`
+  - both misses now failed via early `RemoteException` /
+    `RemoteProtocolError` internal errors rather than by simply never finding a
+    runnable repository path
+- This is useful thesis evidence because it separates two different outer-loop
+  levers that would otherwise be conflated:
+  - prompt shaping can change the agent from “reading too long” to “starting
+    real execution earlier”
+  - but once prompt behavior improves, the next ceiling may be runtime
+    stability rather than prompt quality
+- Root-caused and fixed two more measurement/stability issues after that rerun:
+  - added a one-shot runner retry for narrow transient remote/internal errors,
+    preserving the first failure as `agent.retry1.log` and rerunning once under
+    the same total runtime budget
+  - widened the completion judge so container validation is no longer limited
+    to a small hard-coded set of log filenames such as `docker_run.log`; real
+    execution logs like `docker_canu_meryl.log` now count
+- This is again useful thesis evidence because it distinguishes three classes
+  of “failure” inside the same harness:
+  - true repository/task failures
+  - transient platform/runtime failures
+  - evaluator false negatives caused by too-narrow success evidence contracts
+- Collected live post-fix repo-level evidence outside the train split to verify
+  the new hypotheses before paying for another full harness cycle:
+  - `results/oneshot-repro/megahit/20260422T201219Z` now reaches a full real
+    completion again
+  - `results/oneshot-repro/canu/20260422T201219Z` reaches real Docker plus WDL
+    success, and its original `completed=false` summary is explained entirely
+    by the old docker-log-name judge gap; under the fixed judge it recomputes
+    as `completed=true`
+- A fresh train rerun with both fixes applied is now in progress under
+  `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T203210Z`.
+  This is the first train cycle positioned to answer the more precise thesis
+  question: how much of the remaining miss set was due to transient runtime
+  instability plus evaluator undercount, rather than to task-planning quality
+  alone?
+- That train rerun has now settled and gives a clearer answer:
+  - persisted result: `4/5`
+  - repository-level outcomes:
+    - pass: `spades`, `canu`, `megahit`, `Flye`
+    - persisted miss: `trinityrnaseq`
+- The remaining `trinityrnaseq` miss is not a true execution failure:
+  - the real run produced fresh `cromwell_run_retry2.log`,
+    `metadata_retry2.json`, and real WDL output artifacts
+  - after generalizing the completion judge from fixed retry filenames to
+    fresh `cromwell_run*.log` and `metadata*.json`, the exact same persisted
+    artifacts recompute as `completed=true`
+- This is useful thesis evidence because it shows another distinct class of
+  harness undercount:
+  - not only can the evaluator be too narrow about file locations or log names
+  - it can also be too narrow about retry numbering conventions even when the
+    underlying scientific workflow actually succeeded
+- Under the current code semantics, the train split is therefore effectively
+  `5/5`, not `4/5`.
+- Ran the next holdout rerun with the same runner and evaluator fixes under
+  `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260423T023441Z`:
+  - persisted result: `2/3`
+  - pass: `v-pipe`, `covid-19-signal`
+  - fail: `fieldbioinformatics`
+- The important new holdout evidence is that `v-pipe` flipped from a persistent
+  holdout miss into a full real Docker + WDL pass after the harness changes.
+  This is useful thesis material because it shows the fixes were not merely
+  overfit to the train repositories.
+- The repository-wide picture is now:
+  - persisted totals: `6/8`
+  - effective totals under the updated completion code: `7/8`
+  - only remaining clear miss: `fieldbioinformatics`
+- This narrows the next thesis-relevant optimization step substantially:
+  the outer loop no longer needs broad prompt or runtime surgery first; it can
+  focus directly on why `fieldbioinformatics` still fails to transition from
+  early repository inspection into real artifact-producing execution.
+
+### 2026-04-22
+
+- Added a harness-native phase-1 benchmark-autonomy ladder under
+  `experiments/harness` so the repository can study how much agent freedom is
+  tolerable before benchmark reliability drops:
+  - `level1`: fixed WDL + fixed tools + fixed datasets
+  - `level2`: fixed WDL + agent-chosen tools + fixed datasets
+  - `level3`: fixed WDL + agent-chosen tools + agent-chosen input files
+  - `level4`: run-local editable WDL + agent-chosen tools + agent-chosen input
+    files, with direct-source WDL editing recorded as an optional subvariant
+- Kept the first ladder intentionally narrow to make the thesis experiment
+  easier to interpret:
+  - only the assembly families are in scope
+  - short-read family: `spades` and `megahit`
+  - long-read family: `canu` and `Flye`
+  - `trinityrnaseq` and the viral workflows are explicitly deferred so
+    reference/model/network confounders do not pollute the first autonomy study
+- Implemented isolated benchmark staging instead of relying on the original
+  repository tree at execution time:
+  - each run now copies only the required benchmark WDL/input assets and staged
+    dataset files into a fresh workspace-local `experiments/benchmark` tree
+  - the workspace writes `.code2workspace/project-root.txt` so the original
+    project skills remain visible without copying historical `results/`,
+    `.workspaces/`, or earlier `workspace/` artifacts
+  - this is useful thesis evidence because it turns the earlier “agent looked
+    at history” concern into a controlled experimental variable
+- Added report-first benchmark-autonomy outputs at the harness layer:
+  - the agent prompt now requires both a machine-readable JSON report and a
+    Markdown report before optional extra retries
+  - the harness also writes its own fallback `summary.json` / `summary.md`
+    after each run so partial executions still leave a comparable record with
+    selected tools, selected inputs, WDL-change state, basic cost counters, and
+    normalized failure taxonomy
+- Focused validation now covers the new ladder contract, isolated staging,
+  prompt-policy differences across the four levels, report synthesis, and the
+  new CLI `validate-benchmark-autonomy` entrypoint.
+- Ran the autonomy ladder far enough to establish a useful engineering pattern
+  before stopping further expansion:
+  - `short-read-assembly` completed successfully at levels 1-4
+  - `long-read-assembly` completed at levels 1-2 with `canu` success and
+    reproducible `Flye` image-packaging failure
+  - even when WDL editing became allowed at level 4, the agent did not choose
+    to modify the staged WDL copies; it continued to prefer direct Docker
+    execution of the staged task commands
+- Shifted the next harness theme back toward the thesis-critical “real repo
+  task” surface instead of continuing the autonomy ladder indefinitely:
+  - added a simple eight-repository harness config driven by
+    `experiments/harness/configs/repo_splits.toml`
+  - kept the train/holdout split explicit: five assembly-heavy repositories in
+    train and three virus/workflow repositories in holdout
+  - reused the existing one-shot prompt and completion rubric so later
+    optimization results remain directly attributable to known surfaces rather
+    than to a new execution stack
+- Ran the first real train baseline on that eight-repository harness surface:
+  - run root:
+    `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T090923Z`
+  - persisted train result: `1/5` completed, with `trinityrnaseq` as the first
+    recorded pass
+  - the run also produced high-signal failure classes instead of just “not
+    enough passes”:
+    - `spades` entered real execution and then hit a remote protocol/internal
+      agent error mid-run
+    - `canu` exited without producing fresh Docker/WDL artifacts
+    - `megahit` ended non-zero before fresh artifact production
+    - `Flye` produced real Docker and Cromwell-success artifacts, but the old
+      completion judge still marked it incomplete
+- Root-caused and fixed two harness-measurement problems revealed by that real
+  train baseline:
+  - fresh one-shot runs were being contaminated by historical generated
+    artifacts in `.workspaces/oneshot/<repo>`, so the runner now clears prior
+    Docker/WDL/Cromwell outputs before execution and quarantines permission-
+    blocked stale directories as `*.stale.<timestamp>`
+  - the completion judge was too narrow for real successful runs such as
+    `Flye`, so it now accepts `docker_run.log` as a valid real-run log and
+    accepts a fresh copied WDL under `results/wdl_file/` even when the repo
+    root no longer contains the generated WDL
+- This is useful thesis evidence because it distinguishes three different
+  sources of harness failure that would otherwise be conflated:
+  - true agent/runtime failures
+  - stale-workspace contamination from previous experiments
+  - evaluator false negatives caused by an incomplete completion rubric
+- After the evaluator fix, the recorded `Flye` artifacts from that same run now
+  recompute as a full completion, so the effective train picture is already at
+  least `2/5` (`Flye`, `trinityrnaseq`) before the next clean rerun.
+- Completed the next clean rerun cycle and obtained the first full 8-repository
+  real-task baseline split across train and holdout:
+  - `train` rerun:
+    `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T105103Z`
+  - `holdout` rerun:
+    `results/harness/benchmark_repo_harness/benchmark-repo-harness/20260422T105606Z`
+  - measured outcomes:
+    - train `3/5`: `spades`, `megahit`, `trinityrnaseq`
+    - holdout `2/3`: `covid-19-signal`, `fieldbioinformatics`
+    - combined `5/8`
+- This rerun is useful thesis evidence because it shows the earlier freshness
+  and evaluator fixes were not just local cleanup:
+  - `spades` moved from an earlier remote/internal failure into a real full
+    baseline pass once the fresh-run path became trustworthy
+  - the system now has one stable positive baseline in each major repo cluster:
+    assembly-heavy (`spades`, `megahit`, `trinityrnaseq`) and workflow/virus
+    pipelines (`covid-19-signal`, `fieldbioinformatics`)
+  - the remaining misses are now a narrower optimization target set rather than
+    a vague “the harness is not working yet” problem
+- The remaining baseline misses are themselves informative:
+  - `canu` and `v-pipe` still end without fresh Docker/WDL artifacts, which
+    points more toward early execution-path control/prompting than toward raw
+    environment breakage
+  - `Flye` still misses the rerun completion contract despite earlier direct
+    evidence that it can be run successfully, which makes it a useful case for
+    studying agent inconsistency and completion-judgment alignment under the
+    same environment
+- With `5/8` now established as the simple real-task harness baseline, the next
+  thesis-relevant step is no longer “collect more baselines”, but “run the
+  first small keep/discard optimization loop against the known miss set”.
+
 ### 2026-04-21
 
 - Updated the repo-tracked local development gateway baseline to the current

@@ -75,6 +75,14 @@ class LiveEvalCase:
     command: tuple[str, ...] | None
     artifact_root: str | None
     path: Path
+    task_family: str | None = None
+    question_type: str | None = None
+    preferred_skills: tuple[str, ...] = ()
+    source_hints: tuple[str, ...] = ()
+    source_urls: tuple[str, ...] = ()
+    judge_focus: tuple[str, ...] = ()
+    prior_case_refs: tuple[str, ...] = ()
+    weight: float = 1.0
 
 
 def load_case(path: Path) -> LiveEvalCase:
@@ -110,6 +118,14 @@ def load_case(path: Path) -> LiveEvalCase:
         command=command,
         artifact_root=artifact_root,
         path=path,
+        task_family=str(payload["task_family"]) if "task_family" in payload else None,
+        question_type=str(payload["question_type"]) if "question_type" in payload else None,
+        preferred_skills=tuple(str(item) for item in payload.get("preferred_skills", [])),
+        source_hints=tuple(str(item) for item in payload.get("source_hints", [])),
+        source_urls=tuple(str(item) for item in payload.get("source_urls", [])),
+        judge_focus=tuple(str(item) for item in payload.get("judge_focus", [])),
+        prior_case_refs=tuple(str(item) for item in payload.get("prior_case_refs", [])),
+        weight=float(payload.get("weight", 1.0)),
     )
 
 
@@ -153,6 +169,7 @@ def run_case(
     log_path = result_dir / f"{slug}.log"
     prompt_path = result_dir / f"{slug}.prompt.txt"
     answer_path = result_dir / f"{slug}.answer.txt"
+    trace_path = result_dir / f"{slug}.trace.json"
 
     runtime_env = os.environ.copy()
     runtime_env.update(discover_runtime_env())
@@ -176,6 +193,7 @@ def run_case(
             log_path=log_path,
             prompt_path=prompt_path,
             answer_path=answer_path,
+            trace_path=trace_path,
             returncode=None,
             log_text="",
             parsed=parsed,
@@ -211,6 +229,7 @@ def run_case(
             log_path=log_path,
             prompt_path=prompt_path,
             answer_path=answer_path,
+            trace_path=trace_path,
             returncode=completed.returncode,
             log_text=log_text,
             parsed=parsed,
@@ -237,6 +256,7 @@ def run_case(
             log_path=log_path,
             prompt_path=prompt_path,
             answer_path=answer_path,
+            trace_path=trace_path,
             returncode=None,
             log_text=log_text,
             parsed=parsed,
@@ -287,6 +307,7 @@ def _finalize_result(
     log_path: Path,
     prompt_path: Path,
     answer_path: Path,
+    trace_path: Path,
     returncode: int | None,
     log_text: str,
     parsed: dict[str, Any],
@@ -338,6 +359,29 @@ def _finalize_result(
             + ", ".join(failed_expectations[:4])
         )
 
+    trace_payload = {
+        "case_name": case.name,
+        "target": case.target,
+        "task_family": case.task_family,
+        "question_type": case.question_type,
+        "preferred_skills": list(case.preferred_skills),
+        "source_hints": list(case.source_hints),
+        "source_urls": list(case.source_urls),
+        "judge_focus": list(case.judge_focus),
+        "prior_case_refs": list(case.prior_case_refs),
+        "weight": case.weight,
+        "status": final_status,
+        "returncode": returncode,
+        "tool_invocation_count": len(parsed["tool_invocations"]),
+        "tool_names": parsed["tool_names"],
+        "subagents": parsed["subagents"],
+        "answer_char_count": len(extract_final_answer_from_log(log_text).strip()),
+    }
+    trace_path.write_text(
+        json.dumps(trace_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
     return {
         "name": case.name,
         "target": case.target,
@@ -346,6 +390,7 @@ def _finalize_result(
         "prompt_path": str(prompt_path),
         "log_path": str(log_path),
         "answer_path": str(answer_path),
+        "trace_path": str(trace_path),
         "status": final_status,
         "returncode": returncode,
         "missing_env": missing_env,
@@ -436,14 +481,31 @@ def _build_artifact_context(
 
 
 def _extract_run_dir(log_text: str, created_dirs: list[Path]) -> Path | None:
+    candidates: list[Path] = []
     for path in extract_repo_paths(log_text):
-        if "results/skills/epidemic-warning-report" not in str(path):
-            continue
         if path.name == "final_report.md":
-            return path.parent
+            candidates.append(path.parent)
+            continue
         if path.is_dir():
-            return path
-    return created_dirs[-1] if created_dirs else None
+            candidates.append(path)
+
+    candidates.extend(created_dirs)
+
+    preferred: list[Path] = []
+    seen: set[Path] = set()
+    for path in candidates:
+        current = path
+        while current.name in {"lanes", "research_steps", "evidence", "exports"}:
+            current = current.parent
+        if current in seen:
+            continue
+        seen.add(current)
+        if (current / "manifest.json").exists() or (current / "lanes").exists():
+            preferred.append(current)
+
+    if preferred:
+        return preferred[0]
+    return candidates[0] if candidates else None
 
 
 def _matches(expectation: str, context: dict[str, Any]) -> bool:

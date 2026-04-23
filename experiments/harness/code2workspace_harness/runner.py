@@ -12,6 +12,11 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from experiments.harness.code2workspace_harness.agent import propose_variant
+from experiments.harness.code2workspace_harness.benchmark_autonomy import (
+    load_benchmark_autonomy_experiment,
+    run_benchmark_autonomy_matrix,
+    validate_benchmark_autonomy_experiment,
+)
 from experiments.harness.code2workspace_harness.core import (
     CandidateEvaluation,
     CaseResult,
@@ -322,12 +327,57 @@ def parse_args() -> argparse.Namespace:
     optimize.add_argument("config", type=Path)
     optimize.add_argument("--max-iterations", type=int, default=None)
     optimize.add_argument("--output-root", type=Path, default=None)
+
+    validate_benchmark = subparsers.add_parser(
+        "validate-benchmark-autonomy",
+        help="Validate a benchmark-autonomy config",
+    )
+    validate_benchmark.add_argument("config", type=Path)
+
+    run_benchmark = subparsers.add_parser(
+        "run-benchmark-autonomy",
+        help="Run one or more staged benchmark-autonomy family/level combinations",
+    )
+    run_benchmark.add_argument("config", type=Path)
+    run_benchmark.add_argument("--family", action="append", default=None)
+    run_benchmark.add_argument("--level", action="append", default=None)
+    run_benchmark.add_argument("--output-root", type=Path, default=None)
     return parser.parse_args()
 
 
 def main() -> int:
     """Run the harness CLI."""
     args = parse_args()
+    if args.command == "validate-benchmark-autonomy":
+        experiment = load_benchmark_autonomy_experiment(args.config)
+        print(
+            json.dumps(
+                validate_benchmark_autonomy_experiment(experiment),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.command == "run-benchmark-autonomy":
+        experiment = load_benchmark_autonomy_experiment(args.config)
+        results = run_benchmark_autonomy_matrix(
+            experiment,
+            family_ids=None if args.family is None else tuple(args.family),
+            level_ids=None if args.level is None else tuple(args.level),
+            output_root=args.output_root,
+        )
+        print(
+            json.dumps(
+                {
+                    "run_count": len(results),
+                    "summaries": [str(result.summary_json_path) for result in results],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
     experiment = load_experiment(args.config)
     if args.command == "validate":
         print(

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Deep Research Report"
-  short_description: "并行 research lanes + 证据汇总 + 最终报告落盘"
-  default_prompt: "使用 $deep-research-report 处理深度研究和报告型任务。先拆 research lanes，优先复用 academic-search、respiratory-disease-wide-monitor、virus-variation-query；lane 必须包含 Skill/Source 元数据和真实证据，再用 report_tool.py 生成 `final_report.md` 与 `report_diagnostics.json`。禁止调用旧 open_deep_research ACP agent。"
