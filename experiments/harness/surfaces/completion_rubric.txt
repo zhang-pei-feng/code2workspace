@@ -7,7 +7,7 @@ Required checks:
 - The Docker image should match the expected repository-derived image name.
 - A real Docker-backed test or smoke execution should run and leave fresh outputs in `results/docker_test`.
 - A WDL file should be written and should reference the expected Docker image.
-- Cromwell should actually run the workflow.
+- miniwdl should actually run the workflow.
 - The workflow should reach `Succeeded`.
 - Fresh outputs should exist under both `results/wdl_result` and `results/wdl_file`.
 

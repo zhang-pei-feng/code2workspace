@@ -270,13 +270,13 @@ task GenerateSpec {
         
         cat > SPEC_config.txt << EOF
 BWA_folder	/opt/acfs/bwa-0.7.3a/
-BWA_genome_Index	/cromwell-executions/genome/genome.fa
-BWA_genome_folder	/cromwell-executions/genome/Chromosomes/
+BWA_genome_Index	__EXEC_ROOT__/genome/genome.fa
+BWA_genome_folder	__EXEC_ROOT__/genome/Chromosomes/
 ACF_folder	/opt/acfs/
 CBR_folder	/opt/acfs/CB_splice/
-Agtf	/cromwell-executions/annotation_split.gtf
-UNMAP	/cromwell-executions/UNMAP
-UNMAP_expr	/cromwell-executions/UNMAP_expr
+Agtf	__EXEC_ROOT__/annotation_split.gtf
+UNMAP	__EXEC_ROOT__/UNMAP
+UNMAP_expr	__EXEC_ROOT__/UNMAP_expr
 Seq_len	~{seq_length}
 Thread	~{thread}
 BWA_seed_length	~{bwa_seed_length}
@@ -350,48 +350,50 @@ task RunACFS {
     
     command <<<
         set -e
+        EXEC_ROOT="$(pwd)/workflow-executions"
         
         # Create execution directory structure
-        mkdir -p /cromwell-executions/genome/Chromosomes
+        mkdir -p "${EXEC_ROOT}/genome/Chromosomes"
         mkdir -p output
         
         # Copy genome files
-        cp ~{genome_index} /cromwell-executions/genome/genome.fa
+        cp ~{genome_index} "${EXEC_ROOT}/genome/genome.fa"
         for f in ~{sep=" " genome_index_files}; do
-            cp "$f" /cromwell-executions/genome/
+            cp "$f" "${EXEC_ROOT}/genome/"
         done
         
         # Extract chromosome files
-        tar -xzf ~{chromosomes_tar} -C /cromwell-executions/genome/
+        tar -xzf ~{chromosomes_tar} -C "${EXEC_ROOT}/genome/"
         
         # Copy annotation
-        cp ~{annotation_split} /cromwell-executions/annotation_split.gtf
+        cp ~{annotation_split} "${EXEC_ROOT}/annotation_split.gtf"
         
         # Copy UNMAP files
-        cp ~{unmap_file} /cromwell-executions/UNMAP
-        cp ~{unmap_expr_file} /cromwell-executions/UNMAP_expr
+        cp ~{unmap_file} "${EXEC_ROOT}/UNMAP"
+        cp ~{unmap_expr_file} "${EXEC_ROOT}/UNMAP_expr"
         
-        # Modify pipeline script to use absolute paths
-        sed -i 's|UNMAP|/cromwell-executions/UNMAP|g' ~{pipeline_script}
-        sed -i 's|unmap\.|/cromwell-executions/unmap.|g' ~{pipeline_script}
-        sed -i 's|circle_candidates|/cromwell-executions/circle_candidates|g' ~{pipeline_script}
+        # Modify pipeline script to use the workflow-local execution root
+        sed -i "s|__EXEC_ROOT__|${EXEC_ROOT}|g" ~{pipeline_script}
+        sed -i "s|UNMAP|${EXEC_ROOT}/UNMAP|g" ~{pipeline_script}
+        sed -i "s|unmap\\.|${EXEC_ROOT}/unmap.|g" ~{pipeline_script}
+        sed -i "s|circle_candidates|${EXEC_ROOT}/circle_candidates|g" ~{pipeline_script}
         
         # Run pipeline
-        cd /cromwell-executions
+        cd "${EXEC_ROOT}"
         echo "Starting ACFS pipeline at $(date)"
         bash ~{pipeline_script} 2>&1 | tee run.log
         echo "Pipeline finished at $(date)"
         
         # Copy results to output
-        cp -f /cromwell-executions/circle_candidates_MEA.bed12 output/ 2>/dev/null || echo "MEA bed file not found"
-        cp -f /cromwell-executions/circle_candidates_CBR.bed12 output/ 2>/dev/null || echo "CBR bed file not found"
-        cp -f /cromwell-executions/circle_candidates_expr output/ 2>/dev/null || echo "Expression file not found"
-        cp -f /cromwell-executions/run.log output/
+        cp -f "${EXEC_ROOT}/circle_candidates_MEA.bed12" output/ 2>/dev/null || echo "MEA bed file not found"
+        cp -f "${EXEC_ROOT}/circle_candidates_CBR.bed12" output/ 2>/dev/null || echo "CBR bed file not found"
+        cp -f "${EXEC_ROOT}/circle_candidates_expr" output/ 2>/dev/null || echo "Expression file not found"
+        cp -f "${EXEC_ROOT}/run.log" output/
         
         # Copy fusion-circRNA results if enabled
         if [[ "~{search_trans_splicing}" == "yes" ]]; then
-            cp -f /cromwell-executions/fusion_circRNAs output/ 2>/dev/null || echo "No fusion circRNAs found"
-            cp -f /cromwell-executions/unmap.trans.splicing.tsloci.fa output/ 2>/dev/null || echo "No trans-splicing sequences found"
+            cp -f "${EXEC_ROOT}/fusion_circRNAs" output/ 2>/dev/null || echo "No fusion circRNAs found"
+            cp -f "${EXEC_ROOT}/unmap.trans.splicing.tsloci.fa" output/ 2>/dev/null || echo "No trans-splicing sequences found"
         fi
         
         # Create empty files if outputs don't exist (for WDL compatibility)

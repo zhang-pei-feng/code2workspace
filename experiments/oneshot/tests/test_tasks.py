@@ -47,13 +47,13 @@ def write_completed_artifacts(repo_dir: Path, repo_url: str) -> None:
 
     wdl_result = repo_dir / "results" / "wdl_result"
     wdl_result.mkdir(parents=True, exist_ok=True)
-    (wdl_result / "cromwell_run_retry.log").write_text(
-        f"java -jar /custom/path/cromwell.jar run spades.wdl\n"
-        "workflow finished with status 'Succeeded'\n",
+    (wdl_result / "miniwdl_run_retry.log").write_text(
+        "miniwdl run spades.wdl\n"
+        "workflow done\n",
         encoding="utf-8",
     )
-    (wdl_result / "metadata_retry.json").write_text(
-        json.dumps({"status": "Succeeded"}) + "\n",
+    (wdl_result / "outputs_retry.json").write_text(
+        json.dumps({"outputs": {"spades.contigs": str(wdl_result / "contigs.fasta")}}) + "\n",
         encoding="utf-8",
     )
     (wdl_result / "contigs.fasta").write_text(">contig\nACGT\n", encoding="utf-8")
@@ -91,13 +91,13 @@ def write_flye_completed_artifacts_without_root_wdl(repo_dir: Path) -> None:
 
     wdl_result = repo_dir / "results" / "wdl_result"
     wdl_result.mkdir(parents=True, exist_ok=True)
-    (wdl_result / "cromwell_run.log").write_text(
-        "java -jar /custom/path/cromwell.jar run Flye.wdl\n"
-        "workflow finished with status 'Succeeded'\n",
+    (wdl_result / "miniwdl_run.log").write_text(
+        "miniwdl run Flye.wdl\n"
+        "workflow done\n",
         encoding="utf-8",
     )
-    (wdl_result / "metadata.json").write_text(
-        json.dumps({"status": "Succeeded"}) + "\n",
+    (wdl_result / "outputs.json").write_text(
+        json.dumps({"outputs": {"FlyeWorkflow.assembly": str(wdl_result / "assembly.fasta")}}) + "\n",
         encoding="utf-8",
     )
     (wdl_result / "assembly.fasta").write_text(">contig\nACGT\n", encoding="utf-8")
@@ -137,13 +137,13 @@ def write_canu_completed_artifacts_with_named_run_log(repo_dir: Path) -> None:
 
     wdl_result = repo_dir / "results" / "wdl_result"
     wdl_result.mkdir(parents=True, exist_ok=True)
-    (wdl_result / "cromwell_run.log").write_text(
-        "java -jar /custom/path/cromwell.jar run canu.wdl\n"
-        "workflow finished with status 'Succeeded'\n",
+    (wdl_result / "miniwdl_run.log").write_text(
+        "miniwdl run canu.wdl\n"
+        "workflow done\n",
         encoding="utf-8",
     )
-    (wdl_result / "metadata.json").write_text(
-        json.dumps({"status": "Succeeded"}) + "\n",
+    (wdl_result / "outputs.json").write_text(
+        json.dumps({"outputs": {"canu_workflow.report": str(wdl_result / "ecoli.report")}}) + "\n",
         encoding="utf-8",
     )
     (wdl_result / "ecoli.report").write_text("report\n", encoding="utf-8")
@@ -181,13 +181,13 @@ def write_trinity_completed_artifacts_with_numbered_retry_metadata(repo_dir: Pat
 
     wdl_result = repo_dir / "results" / "wdl_result"
     wdl_result.mkdir(parents=True, exist_ok=True)
-    (wdl_result / "cromwell_run_retry2.log").write_text(
-        "java -jar /custom/path/cromwell.jar run trinityrnaseq.wdl\n"
-        "workflow finished with status 'Succeeded'\n",
+    (wdl_result / "miniwdl_run_retry2.log").write_text(
+        "miniwdl run trinityrnaseq.wdl\n"
+        "workflow done\n",
         encoding="utf-8",
     )
-    (wdl_result / "metadata_retry2.json").write_text(
-        json.dumps({"status": "Succeeded"}) + "\n",
+    (wdl_result / "outputs_retry2.json").write_text(
+        json.dumps({"outputs": {"trinityrnaseq.fasta": str(wdl_result / "trinity_out_dir.Trinity.fasta")}}) + "\n",
         encoding="utf-8",
     )
     (wdl_result / "trinity_out_dir.Trinity.fasta").write_text(">contig\nACGT\n", encoding="utf-8")
@@ -213,15 +213,15 @@ def test_build_repo_task_prompt_contains_required_outputs() -> None:
 def test_build_repo_task_prompt_forces_fast_transition_from_discovery_to_build() -> None:
     prompt = build_repo_task_prompt("https://github.com/ablab/spades")
 
-    assert "不要把仓库里旧的 results、旧的 WDL、旧的 Dockerfile、旧的 Cromwell 执行痕迹当作这次任务已经完成的证据" in prompt
+    assert "不要把仓库里旧的 results、旧的 WDL、旧的 Dockerfile、旧的 miniwdl 执行痕迹当作这次任务已经完成的证据" in prompt
     assert "一旦已经定位到可运行的真实命令和输入数据，接下来的少量动作应当直接用于" in prompt
     assert "写 Dockerfile、执行第一次真实 `docker build`" in prompt
 
 
-def test_build_repo_task_prompt_warns_about_cromwell_bash_entrypoint_environment() -> None:
+def test_build_repo_task_prompt_warns_about_miniwdl_container_environment() -> None:
     prompt = build_repo_task_prompt("https://github.com/artic-network/fieldbioinformatics")
 
-    assert "Cromwell 的 docker backend 往往会用 `/bin/bash` 执行脚本" in prompt
+    assert "运行 miniwdl 时优先加 `--as-me`" in prompt
     assert "不要依赖镜像 ENTRYPOINT、登录 shell 初始化或 Conda/Mamba 自动激活来让主命令出现在 PATH 里" in prompt
 
 
@@ -326,9 +326,7 @@ def test_run_repo_task_cleans_previous_generated_artifacts_before_streaming(
     repo_dir = workspace_root / "spades"
     repo_dir.mkdir(parents=True)
     write_completed_artifacts(repo_dir, "https://github.com/ablab/spades")
-    (repo_dir / "cromwell.local.conf").write_text("backend {}\n", encoding="utf-8")
-    (repo_dir / "cromwell-executions" / "demo").mkdir(parents=True, exist_ok=True)
-    (repo_dir / "cromwell-workflow-logs").mkdir(parents=True, exist_ok=True)
+    (repo_dir / "miniwdl_run_state").mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(
         "experiments.oneshot.run_repo_task.ensure_repo",
@@ -340,9 +338,7 @@ def test_run_repo_task_cleans_previous_generated_artifacts_before_streaming(
         assert not (cwd / "spades_Dockerfile").exists()
         assert not (cwd / "spades.wdl").exists()
         assert not (cwd / "inputs.json").exists()
-        assert not (cwd / "cromwell.local.conf").exists()
-        assert not (cwd / "cromwell-executions").exists()
-        assert not (cwd / "cromwell-workflow-logs").exists()
+        assert not (cwd / "miniwdl_run_state").exists()
         assert not (cwd / "results" / "docker_test").exists()
         assert not (cwd / "results" / "wdl_result").exists()
         assert not (cwd / "results" / "wdl_file").exists()
@@ -371,8 +367,7 @@ def test_run_repo_task_quarantines_generated_directories_when_delete_fails(
     repo_dir = workspace_root / "spades"
     repo_dir.mkdir(parents=True)
     write_completed_artifacts(repo_dir, "https://github.com/ablab/spades")
-    (repo_dir / "cromwell-executions" / "demo").mkdir(parents=True, exist_ok=True)
-    (repo_dir / "cromwell-workflow-logs").mkdir(parents=True, exist_ok=True)
+    (repo_dir / "miniwdl_run_state").mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(
         "experiments.oneshot.run_repo_task.ensure_repo",
@@ -382,7 +377,7 @@ def test_run_repo_task_quarantines_generated_directories_when_delete_fails(
     original_rmtree = __import__("shutil").rmtree
 
     def flaky_rmtree(path, *args, **kwargs):
-        if Path(path).name in {"docker_test", "wdl_result", "wdl_file", "cromwell-executions", "cromwell-workflow-logs"}:
+        if Path(path).name in {"docker_test", "wdl_result", "wdl_file", "miniwdl_run_state"}:
             raise PermissionError("root-owned test fixture")
         return original_rmtree(path, *args, **kwargs)
 
@@ -393,13 +388,11 @@ def test_run_repo_task_quarantines_generated_directories_when_delete_fails(
         assert not (cwd / "results" / "docker_test").exists()
         assert not (cwd / "results" / "wdl_result").exists()
         assert not (cwd / "results" / "wdl_file").exists()
-        assert not (cwd / "cromwell-executions").exists()
-        assert not (cwd / "cromwell-workflow-logs").exists()
+        assert not (cwd / "miniwdl_run_state").exists()
         assert list((cwd / "results").glob("docker_test.stale.*"))
         assert list((cwd / "results").glob("wdl_result.stale.*"))
         assert list((cwd / "results").glob("wdl_file.stale.*"))
-        assert list(cwd.glob("cromwell-executions.stale.*"))
-        assert list(cwd.glob("cromwell-workflow-logs.stale.*"))
+        assert list(cwd.glob("miniwdl_run_state.stale.*"))
         write_completed_artifacts(cwd, "https://github.com/ablab/spades")
         return 0, "real log\nCOMPLETED\n", False, False
 
@@ -481,7 +474,7 @@ def test_run_repo_task_accepts_nonstandard_named_docker_run_log(
     assert summary["completion_judgment"]["completed"] is True
 
 
-def test_run_repo_task_accepts_numbered_retry_cromwell_metadata_and_logs(
+def test_run_repo_task_accepts_numbered_retry_miniwdl_outputs_and_logs(
     tmp_path, monkeypatch
 ) -> None:
     workspace_root = tmp_path / "workspace"
@@ -743,7 +736,7 @@ def test_run_repo_task_records_missing_execution_capability_as_incomplete(
     assert result["status"] == "finished"
     failed = set(summary["completion_judgment"]["failed_checks"])
     assert "docker_test_executed" in failed
-    assert "cromwell_ran" in failed
+    assert "miniwdl_ran" in failed
     assert "wdl_outputs_written" in failed
 
 

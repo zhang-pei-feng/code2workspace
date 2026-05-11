@@ -422,14 +422,14 @@ def test_build_worker_prompt_includes_wdl_node_guidance() -> None:
     node = TaskNode(
         node_id="wdl",
         title="Run WDL workflow",
-        objective="Generate or repair WDL inputs and run Cromwell workflow validation.",
+        objective="Generate or repair WDL inputs and run miniwdl workflow validation.",
         capability_bundles=["wdl_run", "validate"],
         metadata={
             "guidance_ids": ["github2workspace_pipeline"],
             "task": (
                 "基于仓库中涉及的真实测试数据和任务脚本信息，完成仓库镜像的构建与基础验证；"
                 "编写并保存 spades_Dockerfile，构建镜像 spades，并在容器内成功运行至少一个基于真实数据的测试案例，将结果存入 results/docker_test。"
-                "随后编写 spades.wdl，runtime 指定为 spades，实际运行 java -jar /mnt/data2/bin/cromwell.jar run 直到出现 Succeeded，"
+                "随后编写 spades.wdl，runtime 指定为 spades，实际运行 scripts/run-miniwdl.sh 直到出现 Succeeded，"
                 "并把结果分别存入 results/wdl_result 与 results/wdl_file。仓库地址：https://github.com/ablab/spades"
             ),
             "run_dir": "/tmp/supervisor-workspace/orchestration_runs/run-2",

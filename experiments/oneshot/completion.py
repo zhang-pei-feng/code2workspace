@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from experiments.oneshot.cromwell import cromwell_run_marker
+from experiments.oneshot.miniwdl import miniwdl_run_marker
 
 
 def repo_root() -> Path:
@@ -39,10 +39,10 @@ def capture_completion_snapshot(target_repo: Path, spec: Any) -> dict[str, dict[
         "docker_run_log": target_repo / "results" / "docker_test" / "docker_run.log",
         "docker_run_test_log": target_repo / "results" / "docker_test" / "docker_run_test.log",
         "test_run_log": target_repo / "results" / "docker_test" / "test_run.log",
-        "cromwell_run_log": target_repo / "results" / "wdl_result" / "cromwell_run.log",
-        "cromwell_run_retry_log": target_repo / "results" / "wdl_result" / "cromwell_run_retry.log",
-        "metadata_json": target_repo / "results" / "wdl_result" / "metadata.json",
-        "metadata_retry_json": target_repo / "results" / "wdl_result" / "metadata_retry.json",
+        "miniwdl_run_log": target_repo / "results" / "wdl_result" / "miniwdl_run.log",
+        "miniwdl_run_retry_log": target_repo / "results" / "wdl_result" / "miniwdl_run_retry.log",
+        "outputs_json": target_repo / "results" / "wdl_result" / "outputs.json",
+        "outputs_retry_json": target_repo / "results" / "wdl_result" / "outputs_retry.json",
         "copied_wdl": target_repo / "results" / "wdl_file" / spec.wdl_name,
         "copied_inputs": target_repo / "results" / "wdl_file" / "inputs.json",
     }
@@ -80,18 +80,18 @@ def judge_completion(
             "test_run_log",
         ),
     )
-    cromwell_log_texts = _read_matching_files(
+    miniwdl_log_texts = _read_matching_files(
         path=target_repo / "results" / "wdl_result",
-        pattern="cromwell_run*.log",
+        pattern="miniwdl_run*.log",
         before_state=before["wdl_result_dir"],
     )
-    cromwell_logs = "\n".join(cromwell_log_texts)
+    miniwdl_logs = "\n".join(miniwdl_log_texts)
 
     wdl_file_text = _read_text_if_exists(target_repo / spec.wdl_name)
     copied_wdl_text = _read_text_if_exists(target_repo / "results" / "wdl_file" / spec.wdl_name)
-    metadata_payload = _load_latest_matching_json(
+    outputs_payload = _load_latest_matching_json(
         path=target_repo / "results" / "wdl_result",
-        pattern="metadata*.json",
+        pattern="outputs*.json",
         before_state=before["wdl_result_dir"],
     )
     fresh_docker_outputs = _fresh_non_log_files(
@@ -172,19 +172,19 @@ def judge_completion(
             ),
             detail=f"expected image `{spec.image_name}` searched in fresh WDL files",
         ),
-        "cromwell_ran": _make_evidence(
-            passed=cromwell_run_marker() in output
-            or bool(cromwell_log_texts)
-            or _path_changed(before["cromwell_run_log"], after["cromwell_run_log"])
-            or _path_changed(before["cromwell_run_retry_log"], after["cromwell_run_retry_log"]),
-            detail="fresh Cromwell log or explicit command invocation detected",
+        "miniwdl_ran": _make_evidence(
+            passed=miniwdl_run_marker() in output
+            or bool(miniwdl_log_texts)
+            or _path_changed(before["miniwdl_run_log"], after["miniwdl_run_log"])
+            or _path_changed(before["miniwdl_run_retry_log"], after["miniwdl_run_retry_log"]),
+            detail="fresh miniwdl log or explicit command invocation detected",
         ),
         "wdl_succeeded": _make_evidence(
             passed=(
-                "Succeeded" in cromwell_logs
-                or str(metadata_payload.get("status", "")) == "Succeeded"
+                "done" in miniwdl_logs.lower()
+                or bool(outputs_payload.get("outputs"))
             ),
-            detail=f"metadata status={metadata_payload.get('status', 'missing')}",
+            detail=f"outputs keys={list(outputs_payload.get('outputs', {}).keys()) if isinstance(outputs_payload.get('outputs'), dict) else 'missing'}",
         ),
         "wdl_outputs_written": _make_evidence(
             passed=bool(fresh_wdl_outputs) and bool(fresh_wdl_inputs),
@@ -205,7 +205,7 @@ def judge_completion(
         "docker_image_matches_repo",
         "docker_test_executed",
         "wdl_written_for_expected_image",
-        "cromwell_ran",
+        "miniwdl_ran",
         "wdl_succeeded",
         "wdl_outputs_written",
     )

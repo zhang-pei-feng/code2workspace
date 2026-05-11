@@ -10,20 +10,20 @@
 7. 最终回答中明确写出 `COMPLETED`
 
 执行要求：
-- 不要把仓库里旧的 results、旧的 WDL、旧的 Dockerfile、旧的 Cromwell 执行痕迹当作这次任务已经完成的证据。
+- 不要把仓库里旧的 results、旧的 WDL、旧的 Dockerfile、旧的 miniwdl 执行痕迹当作这次任务已经完成的证据。
 - 一旦已经定位到可运行的真实命令和输入数据，接下来的少量动作应当直接用于写 Dockerfile、执行第一次真实 `docker build`、运行容器测试、编写 WDL 和跑工作流。
 - Docker 交付物名称必须与本任务一致：镜像 `{image_name}`，Dockerfile `{dockerfile_name}`。
 - WDL 交付物名称必须与本任务一致：`{wdl_name}`。
 
-关于 Cromwell：
-- 优先使用项目内入口：`scripts/run-cromwell.sh run {wdl_name} ...`
-- 如果需要直接调用 jar，优先使用 `CROMWELL_JAR` 环境变量或项目内 `.local-tools/cromwell/cromwell.jar`
-- Cromwell 的 docker backend 往往会用 `/bin/bash` 执行脚本。
-- 不要依赖镜像 ENTRYPOINT、登录 shell 初始化或 Conda/Mamba 自动激活来让主命令出现在 PATH 里。
+关于 miniwdl：
+- 优先使用项目内入口：`scripts/run-miniwdl.sh {wdl_name} -i inputs.json -o results/wdl_result/outputs.json`
+- 项目默认配置在 `experiments/oneshot/miniwdl.cfg`，当前至少包含 `chown = false`
+- 运行 miniwdl 时优先加 `--as-me`，避免容器输出权限问题
+- miniwdl 仍可能通过 Docker 运行 task，所以不要依赖镜像 ENTRYPOINT、登录 shell 初始化或 Conda/Mamba 自动激活来让主命令出现在 PATH 里。
 
 输出目录要求：
 - `results/docker_test`
 - `results/wdl_result`
 - `results/wdl_file`
 
-如果仓库里没有现成 Dockerfile 或 WDL，就自己补，但一定要以真实运行成功为准，而不是只写文件不执行。
+如果仓库里没有现成 Dockerfile 或 WDL，就自己补，但一定要以真实 miniwdl 运行成功为准，而不是只写文件不执行。

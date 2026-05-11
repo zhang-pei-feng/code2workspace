@@ -47,12 +47,14 @@ task enumerate_backsplice_junctions {
 
     command <<<
         set -e
+        EXEC_ROOT="$(pwd)/workflow-executions"
+        mkdir -p "${EXEC_ROOT}"
         # Run the enumerate_BSJs.pl script
         /app/scripts_ensembl/enumerate_BSJs.pl ~{exon_fasta} ~{gene_gtf} > ~{output_prefix}_bsj_kmers.txt 2> ~{output_prefix}_enumerate_BSJs.log
         
         # Copy outputs to execution directory (outside container)
-        cp ~{output_prefix}_bsj_kmers.txt /cromwell-executions/ 2>/dev/null || true
-        cp ~{output_prefix}_enumerate_BSJs.log /cromwell-executions/ 2>/dev/null || true
+        cp ~{output_prefix}_bsj_kmers.txt "${EXEC_ROOT}/" 2>/dev/null || true
+        cp ~{output_prefix}_enumerate_BSJs.log "${EXEC_ROOT}/" 2>/dev/null || true
         
         echo "Enumeration completed successfully"
     >>>
@@ -82,12 +84,14 @@ task create_exon_json {
 
     command <<<
         set -e
+        EXEC_ROOT="$(pwd)/workflow-executions"
+        mkdir -p "${EXEC_ROOT}"
         # Run the exons2json.pl script
         /app/scripts_ensembl/exons2json.pl ~{exon_fasta} ~{gene_gtf} > ~{output_prefix}_exons.json 2> ~{output_prefix}_exons2json.log
         
         # Copy outputs to execution directory (outside container)
-        cp ~{output_prefix}_exons.json /cromwell-executions/ 2>/dev/null || true
-        cp ~{output_prefix}_exons2json.log /cromwell-executions/ 2>/dev/null || true
+        cp ~{output_prefix}_exons.json "${EXEC_ROOT}/" 2>/dev/null || true
+        cp ~{output_prefix}_exons2json.log "${EXEC_ROOT}/" 2>/dev/null || true
         
         echo "JSON creation completed successfully"
     >>>

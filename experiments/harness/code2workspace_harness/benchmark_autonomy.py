@@ -515,7 +515,7 @@ def _categorize_failure(text: str) -> str:
         return "timeout"
     if "unknown workflow input" in lowered or "required workflow input" in lowered or "cannot coerce" in lowered:
         return "WDL interface error"
-    if "workflow failed" in lowered or "cromwell" in lowered or "wdl" in lowered:
+    if "workflow failed" in lowered or "miniwdl" in lowered or "wdl" in lowered:
         return "WDL execution/runtime error"
     if "no such file" in lowered or "not found" in lowered or "missing" in lowered or "command not found" in lowered:
         if "input" in lowered or "fastq" in lowered or "fasta" in lowered:
@@ -665,7 +665,7 @@ def run_benchmark_autonomy_case(prepared: PreparedBenchmarkAutonomyRun) -> Bench
             "command_count": _count_occurrences(combined_logs, "Calling tool:"),
             "execute_command_count": _count_occurrences(combined_logs, "Calling tool: execute"),
             "docker_command_count": _count_occurrences(combined_logs.lower(), "docker"),
-            "wdl_command_count": _count_occurrences(combined_logs.lower(), "cromwell"),
+            "wdl_command_count": _count_occurrences(combined_logs.lower(), "miniwdl"),
             "model_call_count": None,
             "token_usage": None,
         },
