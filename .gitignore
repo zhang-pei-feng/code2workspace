@@ -234,6 +234,7 @@ experiments/harness/skills/openclaw/acpx-skill/acpx-deepagents-local.sh
 experiments/harness/skills/openclaw/acpx-skill/run-deepagents-acpx.sh
 
 /tmp/
+/.local-tools/
 
 # macOS
 .DS_Store

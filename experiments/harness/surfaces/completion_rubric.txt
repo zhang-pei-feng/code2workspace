@@ -1,0 +1,16 @@
+One-shot completion rubric
+
+Required checks:
+- The run should finish without interruption or timeout.
+- The agent should explicitly declare `COMPLETED` only after real execution evidence exists.
+- A Dockerfile should be written for the target repository.
+- The Docker image should match the expected repository-derived image name.
+- A real Docker-backed test or smoke execution should run and leave fresh outputs in `results/docker_test`.
+- A WDL file should be written and should reference the expected Docker image.
+- Cromwell should actually run the workflow.
+- The workflow should reach `Succeeded`.
+- Fresh outputs should exist under both `results/wdl_result` and `results/wdl_file`.
+
+Failure handling:
+- Missing execution evidence means the run is incomplete even if the final answer sounds confident.
+- Old artifacts do not count unless this run refreshed them.

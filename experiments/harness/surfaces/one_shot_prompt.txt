@@ -1,0 +1,29 @@
+你要把仓库 `{repo_url}` 完成到一个真实可验证的 Docker + WDL 交付状态。
+
+最低交付要求：
+1. 编写并保存 `{dockerfile_name}`
+2. 构建镜像 `{image_name}`
+3. 在容器内成功运行至少一个基于真实数据或仓库自带真实 smoke 数据的测试案例，并把结果存入 `results/docker_test`
+4. 编写并保存 `{wdl_name}`
+5. 让 WDL 实际跑通，直到工作流状态出现 `Succeeded`
+6. 把 WDL 相关结果分别存入 `results/wdl_result` 与 `results/wdl_file`
+7. 最终回答中明确写出 `COMPLETED`
+
+执行要求：
+- 不要把仓库里旧的 results、旧的 WDL、旧的 Dockerfile、旧的 Cromwell 执行痕迹当作这次任务已经完成的证据。
+- 一旦已经定位到可运行的真实命令和输入数据，接下来的少量动作应当直接用于写 Dockerfile、执行第一次真实 `docker build`、运行容器测试、编写 WDL 和跑工作流。
+- Docker 交付物名称必须与本任务一致：镜像 `{image_name}`，Dockerfile `{dockerfile_name}`。
+- WDL 交付物名称必须与本任务一致：`{wdl_name}`。
+
+关于 Cromwell：
+- 优先使用项目内入口：`scripts/run-cromwell.sh run {wdl_name} ...`
+- 如果需要直接调用 jar，优先使用 `CROMWELL_JAR` 环境变量或项目内 `.local-tools/cromwell/cromwell.jar`
+- Cromwell 的 docker backend 往往会用 `/bin/bash` 执行脚本。
+- 不要依赖镜像 ENTRYPOINT、登录 shell 初始化或 Conda/Mamba 自动激活来让主命令出现在 PATH 里。
+
+输出目录要求：
+- `results/docker_test`
+- `results/wdl_result`
+- `results/wdl_file`
+
+如果仓库里没有现成 Dockerfile 或 WDL，就自己补，但一定要以真实运行成功为准，而不是只写文件不执行。

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from experiments.oneshot.cromwell import cromwell_run_marker
+
 
 def repo_root() -> Path:
     """Return the project repository root."""
@@ -171,7 +173,7 @@ def judge_completion(
             detail=f"expected image `{spec.image_name}` searched in fresh WDL files",
         ),
         "cromwell_ran": _make_evidence(
-            passed="/mnt/data2/bin/cromwell.jar run" in output
+            passed=cromwell_run_marker() in output
             or bool(cromwell_log_texts)
             or _path_changed(before["cromwell_run_log"], after["cromwell_run_log"])
             or _path_changed(before["cromwell_run_retry_log"], after["cromwell_run_retry_log"]),

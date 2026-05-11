@@ -48,7 +48,7 @@ def write_completed_artifacts(repo_dir: Path, repo_url: str) -> None:
     wdl_result = repo_dir / "results" / "wdl_result"
     wdl_result.mkdir(parents=True, exist_ok=True)
     (wdl_result / "cromwell_run_retry.log").write_text(
-        "java -jar /mnt/data2/bin/cromwell.jar run spades.wdl\n"
+        f"java -jar /custom/path/cromwell.jar run spades.wdl\n"
         "workflow finished with status 'Succeeded'\n",
         encoding="utf-8",
     )
@@ -92,7 +92,7 @@ def write_flye_completed_artifacts_without_root_wdl(repo_dir: Path) -> None:
     wdl_result = repo_dir / "results" / "wdl_result"
     wdl_result.mkdir(parents=True, exist_ok=True)
     (wdl_result / "cromwell_run.log").write_text(
-        "java -jar /mnt/data2/bin/cromwell.jar run Flye.wdl\n"
+        "java -jar /custom/path/cromwell.jar run Flye.wdl\n"
         "workflow finished with status 'Succeeded'\n",
         encoding="utf-8",
     )
@@ -138,7 +138,7 @@ def write_canu_completed_artifacts_with_named_run_log(repo_dir: Path) -> None:
     wdl_result = repo_dir / "results" / "wdl_result"
     wdl_result.mkdir(parents=True, exist_ok=True)
     (wdl_result / "cromwell_run.log").write_text(
-        "java -jar /mnt/data2/bin/cromwell.jar run canu.wdl\n"
+        "java -jar /custom/path/cromwell.jar run canu.wdl\n"
         "workflow finished with status 'Succeeded'\n",
         encoding="utf-8",
     )
@@ -182,7 +182,7 @@ def write_trinity_completed_artifacts_with_numbered_retry_metadata(repo_dir: Pat
     wdl_result = repo_dir / "results" / "wdl_result"
     wdl_result.mkdir(parents=True, exist_ok=True)
     (wdl_result / "cromwell_run_retry2.log").write_text(
-        "java -jar /mnt/data2/bin/cromwell.jar run trinityrnaseq.wdl\n"
+        "java -jar /custom/path/cromwell.jar run trinityrnaseq.wdl\n"
         "workflow finished with status 'Succeeded'\n",
         encoding="utf-8",
     )
