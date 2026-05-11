@@ -19,7 +19,6 @@ source_urls = [
   "https://www.who.int/activities/tracking-SARS-CoV-2-variants",
 ]
 preferred_skills = [
-  "planning-guide",
   "academic-search",
 ]
 judge_focus = [

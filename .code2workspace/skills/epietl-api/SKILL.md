@@ -19,7 +19,7 @@ Use this skill when users ask for:
 - Hong Kong CHP / 香港卫生防护中心 / 香港疾控 COVID/influenza surveillance reports or structured XLS data such as `flux_data.xlsx` and `covidx_data.xlsx`.
 - Taiwan CDC / 台湾疾控 COVID report collections / 报告集合.
 
-Do not use this skill as a replacement for local `virus_variation` SQL queries or pure literature search. If the user asks for a finished written report, gather EpiETL evidence if relevant, then route report writing through `report_agent`.
+Do not use this skill as a replacement for local `virus_variation` SQL queries or pure literature search. If the user asks for a finished written report, gather EpiETL evidence if relevant, then route report writing through `multi-source-report` or the current supervisor report flow.
 
 ## Source Types
 

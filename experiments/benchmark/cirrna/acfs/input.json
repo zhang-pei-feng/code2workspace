@@ -1,0 +1,27 @@
+{
+  "ACFS_CircRNA_Discovery.unmap_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/test/UNMAP",
+  "ACFS_CircRNA_Discovery.unmap_expr_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/test/UNMAP_expr",
+  "ACFS_CircRNA_Discovery.genome_fasta": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/genome/genome.fa",
+  "ACFS_CircRNA_Discovery.genome_index_files": [
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/genome/genome.fa.amb",
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/genome/genome.fa.ann",
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/genome/genome.fa.bwt",
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/genome/genome.fa.pac",
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/genome/genome.fa.sa"
+  ],
+  "ACFS_CircRNA_Discovery.chromosomes_tar": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/genome/Chromosomes.tar.gz",
+  "ACFS_CircRNA_Discovery.annotation_gtf": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/002_acfs/real_test_data/test/Mus_musculus.NCBIM37.67.1_split_exon.gtf",
+  "ACFS_CircRNA_Discovery.seq_length": 102,
+  "ACFS_CircRNA_Discovery.thread": 2,
+  "ACFS_CircRNA_Discovery.min_jump": 100,
+  "ACFS_CircRNA_Discovery.max_jump": 1000000,
+  "ACFS_CircRNA_Discovery.min_splicing_score": 1,
+  "ACFS_CircRNA_Discovery.min_sample_cnt": 1,
+  "ACFS_CircRNA_Discovery.min_read_cnt": 1,
+  "ACFS_CircRNA_Discovery.min_mapping_quality": 30,
+  "ACFS_CircRNA_Discovery.coverage": 0.9,
+  "ACFS_CircRNA_Discovery.min_span_junc": 6,
+  "ACFS_CircRNA_Discovery.error_rate": 0.05,
+  "ACFS_CircRNA_Discovery.strandness": "-",
+  "ACFS_CircRNA_Discovery.search_trans_splicing": "no"
+}

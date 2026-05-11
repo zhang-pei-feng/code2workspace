@@ -1,0 +1,8 @@
+{
+  "ImaPEpWorkflow.pdb_files": [
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/22免疫逃逸benchmark/006_ImaPEp/ImaPEp/data/test/1h0d_BA_C.pdb",
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/22免疫逃逸benchmark/006_ImaPEp/ImaPEp/data/test/1a14_HL_N.pdb"
+  ],
+  "ImaPEpWorkflow.job_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/22免疫逃逸benchmark/006_ImaPEp/ImaPEp/data/test/job.txt",
+  "ImaPEpWorkflow.device": "cpu"
+}

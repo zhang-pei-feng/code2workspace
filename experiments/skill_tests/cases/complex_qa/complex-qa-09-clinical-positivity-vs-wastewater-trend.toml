@@ -19,7 +19,6 @@ source_urls = [
   "https://www.cdc.gov/nwss/rv/covid19-statetrend.html",
 ]
 preferred_skills = [
-  "planning-guide",
   "respiratory-disease-data-fetcher",
 ]
 judge_focus = [

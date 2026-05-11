@@ -1,0 +1,9 @@
+{
+  "ESMWorkflow.model_name": "esm2_t6_8M_UR50D",
+  "ESMWorkflow.input_fasta": "/mnt/data1/zhangpf/code/deepagent/evuluate/22免疫逃逸benchmark/005_esm/esm/examples/data/few_proteins.fasta",
+  "ESMWorkflow.extract_output_dir": "esm_embeddings",
+  "ESMWorkflow.repr_layers": [0, 6],
+  "ESMWorkflow.include_options": ["mean", "per_tok"],
+  "ESMWorkflow.run_extract": true,
+  "ESMWorkflow.run_fold": false
+}

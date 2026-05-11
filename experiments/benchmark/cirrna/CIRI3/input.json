@@ -1,0 +1,5 @@
+{
+  "CIRI3_Workflow.single_sam": "/mnt/data1/zhangpf/code/deepagent/evuluate/10要求测试的3个简单任务分治/001_CIRI3/CIRI3/data/circRNA/Single/sample.sam",
+  "CIRI3_Workflow.ref_fasta": "/mnt/data1/zhangpf/code/deepagent/evuluate/10要求测试的3个简单任务分治/001_CIRI3/CIRI3/data/circRNA/ref.fa",
+  "CIRI3_Workflow.output_prefix": "test1_single"
+}

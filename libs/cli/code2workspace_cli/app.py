@@ -393,15 +393,18 @@ class TextualSessionState:
         *,
         auto_approve: bool = False,
         thread_id: str | None = None,
+        plain_chat_mode: bool = False,
     ) -> None:
         """Initialize session state.
 
         Args:
             auto_approve: Whether to auto-approve tool calls
             thread_id: Optional thread ID (generates UUID7 if not provided)
+            plain_chat_mode: Whether normal messages should bypass supervisor
         """
         self.auto_approve = auto_approve
         self.thread_id = thread_id or _new_thread_id()
+        self.plain_chat_mode = plain_chat_mode
 
     def reset_thread(self) -> str:
         """Reset to a new thread.
@@ -410,6 +413,7 @@ class TextualSessionState:
             The new thread_id.
         """
         self.thread_id = _new_thread_id()
+        self.plain_chat_mode = False
         return self.thread_id
 
 
@@ -2075,6 +2079,28 @@ class Code2WorkspaceApp(App):
                 exc_info=True,
             )
 
+    async def _replace_ask_user_with_transcript(
+        self,
+        widget: AskUserMenu,
+        transcript: Widget,
+        *,
+        context: str,
+    ) -> None:
+        """Replace an interactive ask_user widget with a read-only transcript."""
+        try:
+            parent = widget.parent
+            if parent is not None and widget.is_attached:
+                await parent.mount(transcript, before=widget)
+            else:
+                await self._mount_message(transcript)
+        except Exception:
+            logger.debug(
+                "Failed to mount ask-user transcript during %s",
+                context,
+                exc_info=True,
+            )
+        await self._remove_ask_user_widget(widget, context=context)
+
     async def _request_ask_user(
         self,
         questions: list[Question],
@@ -2137,13 +2163,25 @@ class Code2WorkspaceApp(App):
 
     async def on_ask_user_menu_answered(
         self,
-        event: Any,  # noqa: ARG002, ANN401
+        event: Any,  # noqa: ANN401
     ) -> None:
-        """Handle ask_user menu answers - remove widget and refocus input."""
+        """Handle ask_user answers by preserving a read-only transcript."""
         if self._pending_ask_user_widget:
             widget = self._pending_ask_user_widget
             self._pending_ask_user_widget = None
-            await self._remove_ask_user_widget(widget, context="ask-user answered")
+            answers = getattr(event, "answers", [])
+            if not isinstance(answers, list):
+                answers = []
+            to_transcript = getattr(widget, "to_transcript", None)
+            if callable(to_transcript):
+                transcript = to_transcript([str(answer) for answer in answers])
+                await self._replace_ask_user_with_transcript(
+                    widget,
+                    transcript,
+                    context="ask-user answered",
+                )
+            else:
+                await self._remove_ask_user_widget(widget, context="ask-user answered")
 
         if self._chat_input:
             self.call_after_refresh(self._chat_input.focus_input)
@@ -2156,7 +2194,16 @@ class Code2WorkspaceApp(App):
         if self._pending_ask_user_widget:
             widget = self._pending_ask_user_widget
             self._pending_ask_user_widget = None
-            await self._remove_ask_user_widget(widget, context="ask-user cancelled")
+            to_transcript = getattr(widget, "to_transcript", None)
+            if callable(to_transcript):
+                transcript = to_transcript([], status="cancelled")
+                await self._replace_ask_user_with_transcript(
+                    widget,
+                    transcript,
+                    context="ask-user cancelled",
+                )
+            else:
+                await self._remove_ask_user_widget(widget, context="ask-user cancelled")
 
         if self._chat_input:
             self.call_after_refresh(self._chat_input.focus_input)
@@ -2638,10 +2685,19 @@ class Code2WorkspaceApp(App):
 
         if cmd in {"/quit", "/q"}:
             self.exit()
+        elif cmd == "/chat":
+            await self._mount_message(UserMessage(command))
+            if self._session_state is not None:
+                self._session_state.plain_chat_mode = True
+            await self._mount_message(
+                AppMessage(
+                    "Plain chat mode enabled. New messages will bypass supervisor until you use /supervisor."
+                )
+            )
         elif cmd == "/help":
             await self._mount_message(UserMessage(command))
             help_body = (
-                "Commands: /quit, /clear, /offload, /editor, /mcp, "
+                "Commands: /quit, /clear, /chat, /supervisor, /offload, /editor, /mcp, "
                 "/model [--model-params JSON] [--default], /notifications, "
                 "/reload, /skill:<name>, /remember, /skill-creator, /theme, "
                 "/tokens, /threads, /trace, "
@@ -2885,6 +2941,15 @@ class Code2WorkspaceApp(App):
                 self._discover_skills(),
                 exclusive=True,
                 group="startup-skill-discovery",
+            )
+        elif cmd == "/supervisor":
+            await self._mount_message(UserMessage(command))
+            if self._session_state is not None:
+                self._session_state.plain_chat_mode = False
+            await self._mount_message(
+                AppMessage(
+                    "Supervisor mode enabled. New messages will use the orchestration runtime again."
+                )
             )
         elif cmd.startswith("/skill:"):
             await self._handle_skill_command(command)
@@ -3252,7 +3317,12 @@ class Code2WorkspaceApp(App):
         """
         # Mount the user message
         await self._mount_message(UserMessage(message))
-        await self._send_to_agent(message)
+        message_kwargs: dict[str, Any] | None = None
+        if self._session_state and self._session_state.plain_chat_mode:
+            message_kwargs = {
+                "additional_kwargs": {"code2workspace_route": "fallback"}
+            }
+        await self._send_to_agent(message, message_kwargs=message_kwargs)
 
     async def _send_to_agent(
         self,
@@ -4422,11 +4492,11 @@ class Code2WorkspaceApp(App):
             return
         self.call_after_refresh(self._chat_input.focus_input)
 
-    def on_mouse_up(self, event: MouseUp) -> None:  # noqa: ARG002  # Textual event handler signature
+    def on_mouse_up(self, event: MouseUp) -> None:
         """Copy selection to clipboard on mouse release."""
         from code2workspace_cli.clipboard import copy_selection_to_clipboard
 
-        copy_selection_to_clipboard(self)
+        copy_selection_to_clipboard(self, source_widget=event.widget)
 
     # =========================================================================
     # Model Switching

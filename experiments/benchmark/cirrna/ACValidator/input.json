@@ -1,0 +1,8 @@
+{
+  "ACValidatorWorkflow.input_sam": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/003_ACValidator/real_test_data/clean_test.sam",
+  "ACValidatorWorkflow.coordinate": "1:586821-608056",
+  "ACValidatorWorkflow.window_size": 300,
+  "ACValidatorWorkflow.sam_basename": "clean_test",
+  "ACValidatorWorkflow.reference_fasta": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/003_ACValidator/real_test_data/ref.fa",
+  "ACValidatorWorkflow.chromosome": "1"
+}

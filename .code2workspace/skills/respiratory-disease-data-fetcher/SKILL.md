@@ -1,6 +1,6 @@
 ---
 name: respiratory-disease-data-fetcher
-description: 获取少量固定官方来源的数据，包括 WHO COVID-19 Cases、WHO Variants、U.S. CDC Trends、中国疾控全国新型冠状病毒感染疫情情况、WHO Africa Weekly Bulletin。仅当用户明确要这些固定来源或快速查看 WHO/CDC/中国疾控等少量源时使用本 skill；如果用户要查的呼吸道病原、COVID/新冠、流感、RSV、变异株、毒株谱系、病毒监测、周报、月报、疾控/卫生部门通报、原始网页/PDF、跨地区监测信息可能存在于整理后的来源表中，应优先改用 `respiratory-disease-wide-monitor` 筛选并抓取相关来源。不适合本地 virus_variation 变异风险 SQL 查询或纯论文检索作为唯一来源。若用户要求生成正式报告，可先获取数据，再结合 report_agent 路由。
+description: 获取少量固定官方来源的数据，包括 WHO COVID-19 Cases、WHO Variants、U.S. CDC Trends、中国疾控全国新型冠状病毒感染疫情情况、WHO Africa Weekly Bulletin。仅当用户明确要这些固定来源或快速查看 WHO/CDC/中国疾控等少量源时使用本 skill；如果用户要查的呼吸道病原、COVID/新冠、流感、RSV、变异株、毒株谱系、病毒监测、周报、月报、疾控/卫生部门通报、原始网页/PDF、跨地区监测信息可能存在于整理后的来源表中，应优先改用 `respiratory-disease-wide-monitor` 筛选并抓取相关来源。不适合本地 virus_variation 变异风险 SQL 查询或纯论文检索作为唯一来源。若用户要求生成正式报告，可先获取数据，再结合 `multi-source-report` 或当前 supervisor 报告流程整合。
 ---
 
 # 概述

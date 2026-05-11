@@ -22,7 +22,7 @@ LANE_SPECS = (
     {
         "file": "01_monitoring.md",
         "title": "Monitoring And Operational Evidence",
-        "subagent": "report-researcher",
+        "worker_label": "evidence-lane-worker",
         "purpose": "Gather official monitoring signals, operational changes, and concrete surveillance interpretation.",
         "recommended_skills": [
             "respiratory-disease-data-fetcher",
@@ -32,7 +32,7 @@ LANE_SPECS = (
     {
         "file": "02_source-catalog.md",
         "title": "Source Catalog And Coverage Evidence",
-        "subagent": "report-researcher",
+        "worker_label": "evidence-lane-worker",
         "purpose": "Map source provenance, source types, dashboards, channels, coverage gaps, and evidence reliability.",
         "recommended_skills": [
             "epietl-api",
@@ -42,7 +42,7 @@ LANE_SPECS = (
     {
         "file": "03_local-data.md",
         "title": "Local Structured Data Or Database Evidence",
-        "subagent": "report-researcher",
+        "worker_label": "evidence-lane-worker",
         "purpose": "Use local structured data, local DB evidence, or repository-local curated tables where relevant.",
         "recommended_skills": [
             "virus-variation-query",
@@ -51,7 +51,7 @@ LANE_SPECS = (
     {
         "file": "04_literature-web.md",
         "title": "Literature, Technical, And Web Evidence",
-        "subagent": "report-researcher",
+        "worker_label": "evidence-lane-worker",
         "purpose": "Collect paper, technical, and primary-source web evidence that complements the monitoring and data lanes.",
         "recommended_skills": [
             "academic-search",
@@ -60,7 +60,7 @@ LANE_SPECS = (
     {
         "file": "05_synthesis.md",
         "title": "Synthesis And Recommendations",
-        "subagent": "report-synthesizer",
+        "worker_label": "synthesis-pass",
         "purpose": "Synthesize agreements, disagreements, implications, and practical recommendations across the evidence lanes.",
         "recommended_skills": [
             "multi-source-report",
@@ -92,7 +92,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             path,
             (
                 f"# {lane['title']}\n\n"
-                f"Subagent: {lane['subagent']}\n"
+                f"Worker: {lane['worker_label']}\n"
                 f"Purpose: {lane['purpose']}\n"
                 "Recommended Skills:\n"
                 f"{recommended}\n"
@@ -111,9 +111,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         "max_tables": DEFAULT_MAX_TABLES,
         "lanes_dir": str(lanes_dir),
         "required_lane_files": list(REQUIRED_LANE_FILES),
-        "recommended_subagents": [
+        "recommended_lane_workers": [
             {
-                "name": lane["subagent"],
+                "label": lane["worker_label"],
                 "lane_file": lane["file"],
                 "purpose": lane["purpose"],
                 "recommended_skills": list(lane["recommended_skills"]),

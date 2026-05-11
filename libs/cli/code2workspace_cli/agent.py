@@ -8,10 +8,12 @@ import re
 import shutil
 import tempfile
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from code2workspace import create_workspace_agent
+from code2workspace._models import resolve_model
 from code2workspace.backends import CompositeBackend, LocalShellBackend
 from code2workspace.backends.filesystem import FilesystemBackend
 from code2workspace.middleware import MemoryMiddleware, SkillsMiddleware
@@ -55,10 +57,10 @@ from code2workspace_cli.local_context import (
     _AsyncExecutableBackend,
     _ExecutableBackend,
 )
-from code2workspace_cli.planner_routing import PlannerRoutingMiddleware
 from code2workspace_cli.project_utils import ProjectContext, get_server_project_context
 from code2workspace_cli.project_utils import find_reference_project_root
 from code2workspace_cli.subagents import list_subagents
+from code2workspace_cli.supervisor_runtime import build_supervisor_enabled_agent
 from code2workspace_cli.unicode_security import (
     check_url_safety,
     detect_dangerous_unicode,
@@ -621,6 +623,18 @@ def get_system_prompt(
             f"- Never use relative paths - always construct full absolute paths\n\n"
         )
 
+    now_utc = datetime.now(UTC)
+    local_now = now_utc.astimezone()
+    current_time_section = (
+        "### Current Time\n\n"
+        f"- Current UTC time: `{now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}`\n"
+        f"- Current local time: `{local_now.strftime('%Y-%m-%d %H:%M:%S %Z')}`\n\n"
+        "For tasks involving latest, recent, today, this week, or freshness-sensitive analysis:\n"
+        "- Treat these timestamps as the time anchor for your reasoning.\n"
+        "- Prefer citing absolute dates over ambiguous relative time phrases.\n"
+        "- If freshness matters, verify the latest information rather than relying on memory.\n\n"
+    )
+
     result = (
         template.replace("{mode_description}", mode_description)
         .replace("{interactive_preamble}", interactive_preamble)
@@ -628,6 +642,7 @@ def get_system_prompt(
         .replace("{todo_guidance}", todo_guidance)
         .replace("{model_identity_section}", model_identity_section)
         .replace("{working_dir_section}", working_dir_section)
+        .replace("{current_time_section}", current_time_section)
         .replace("{skills_path}", skills_path)
     )
 
@@ -1137,7 +1152,6 @@ def create_cli_agent(
                 sources=sources,
             )
         )
-        agent_middleware.append(PlannerRoutingMiddleware())
 
     # CONDITIONAL SETUP: Local vs Remote Sandbox
     if sandbox is None:
@@ -1239,14 +1253,40 @@ def create_cli_agent(
         *custom_subagents,
         *(async_subagents or []),
     ]
-    agent = create_workspace_agent(
-        model=model,
-        system_prompt=system_prompt,
-        tools=tools,
-        backend=composite_backend,
-        middleware=agent_middleware,
-        interrupt_on=interrupt_on,
+    def _build_workspace_agent(
+        *,
+        middleware_stack: Sequence[AgentMiddleware],
+    ):
+        return create_workspace_agent(
+            model=model,
+            system_prompt=system_prompt,
+            tools=tools,
+            backend=composite_backend,
+            middleware=middleware_stack,
+            interrupt_on=interrupt_on,
+            checkpointer=None,
+            subagents=all_subagents or None,
+        )
+
+    base_agent = _build_workspace_agent(middleware_stack=agent_middleware)
+
+    # Plain chat mode intentionally bypasses project memory/skills layers while
+    # keeping the same model, tools, shell policy, and local context.
+    plain_chat_middleware = [
+        middleware
+        for middleware in agent_middleware
+        if middleware.__class__.__name__ not in {"MemoryMiddleware", "SkillsMiddleware"}
+    ]
+    fallback_agent = _build_workspace_agent(middleware_stack=plain_chat_middleware)
+    classifier_model = resolve_model(model)
+
+    root_dir = effective_cwd if effective_cwd is not None else Path.cwd()
+    agent = build_supervisor_enabled_agent(
+        base_agent=base_agent,
+        fallback_agent=fallback_agent,
+        workspace_root=root_dir,
+        classifier_model=classifier_model,
+        enable_generic_ask_user=enable_ask_user,
         checkpointer=checkpointer,
-        subagents=all_subagents or None,
     ).with_config(config)
     return agent, composite_backend

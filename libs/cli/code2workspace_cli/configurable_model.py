@@ -83,6 +83,10 @@ def _apply_overrides(request: ModelRequest) -> ModelRequest:
 
     overrides: dict[str, Any] = {}
 
+    system_prompt_override = ctx.get("system_prompt")
+    if isinstance(system_prompt_override, str) and system_prompt_override.strip():
+        overrides["system_prompt"] = system_prompt_override
+
     # Model swap
     new_model = None
     model = ctx.get("model")

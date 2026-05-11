@@ -367,7 +367,7 @@ class TestToolDisplayInLogs:
                 "id": "tc-task",
                 "index": 0,
                 "args": {
-                    "subagent_type": "report-researcher",
+                    "subagent_type": "research-helper",
                     "description": "Collect official monitoring evidence.",
                 },
             }
@@ -377,7 +377,7 @@ class TestToolDisplayInLogs:
 
         rendered = console_output.getvalue()
         assert "Calling tool:" in rendered
-        assert "task [report-researcher]" in rendered
+        assert "task [research-helper]" in rendered
 
     async def test_quiet_stdout_contains_only_agent_text(self) -> None:
         """In quiet mode, stdout should have only agent text."""

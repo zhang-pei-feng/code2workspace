@@ -56,6 +56,12 @@ class SlashCommand:
 
 COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand(
+        name="/chat",
+        description="Switch this session to plain chat mode",
+        bypass_tier=BypassTier.QUEUED,
+        hidden_keywords="fallback normal plain conversation",
+    ),
+    SlashCommand(
         name="/clear",
         description="Clear chat and start new thread",
         bypass_tier=BypassTier.QUEUED,
@@ -122,6 +128,12 @@ COMMANDS: tuple[SlashCommand, ...] = (
         description="Reload config from environment variables and .env",
         bypass_tier=BypassTier.QUEUED,
         hidden_keywords="refresh",
+    ),
+    SlashCommand(
+        name="/supervisor",
+        description="Switch this session back to supervisor mode",
+        bypass_tier=BypassTier.QUEUED,
+        hidden_keywords="orchestration planner graph",
     ),
     SlashCommand(
         name="/theme",

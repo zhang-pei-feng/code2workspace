@@ -2,36 +2,37 @@
 
 This file defines the current implementation target for the repository.
 
-## Goal 1: Minimal Web API Backend
+## Goal 1: Web Workbench Control Plane
 
-Keep the lightweight `apps/webapp` API backend minimal and reusable after the
-checked-in browser frontend was removed.
+Keep `apps/webapp` as a lightweight but usable Web Workbench: a Starlette
+backend, a vendored Next.js chat frontend, a same-origin `/langgraph/*` proxy to
+the shared local LangGraph server, and pragmatic `/api/*` management routes.
 
 ### Current scope
 
-- session list
-- create session
-- select session
-- delete session
-- submit one-shot task
-- poll run status and show terminal output
-- show persisted user and assistant messages
-- inspect historical runs
+- browser chat UI backed by the local LangGraph server
+- static frontend export served by the Python backend
+- same-origin `/langgraph/*` proxy so the browser does not need the dynamic
+  upstream port
+- model and appearance settings APIs
+- thread list/create/update/delete
+- persisted history and run/event lookup
+- workspace tree/file upload/download/delete helpers
 
 ### Explicit non-goals
 
-- rebuilding a browser frontend right now
 - full multi-turn collaborative chat UX
 - auth and multi-user isolation
 - MCP management UI
-- rich artifact browsing
+- production-hardening the shared local LangGraph server
 
 ### Direction
 
-- backend: lightweight ASGI app in this repo
-- execution: reuse the existing non-interactive `code2workspace` path
-- frontend: intentionally absent for now
-- state: pragmatic lightweight web store for now
+- backend: lightweight Starlette app in this repo
+- frontend: vendored `agent-chat-ui` Next.js app, with static export served by
+  the backend
+- execution: reuse the existing local LangGraph/CLI server bridge
+- state: pragmatic lightweight web store plus checkpoint-backed thread history
 
 ## Goal 2: One-Shot Repo Task Experiments
 
@@ -99,27 +100,30 @@ Treat repository evolution as thesis material.
 
 1. One-shot runner and prompt standardization
 2. Harness structure and baseline experiments
-3. Keep the web API backend minimal
+3. Keep the Web Workbench control plane thin and honest
 4. Iterative refinement using real repo tasks
 
 ## Phased Plan
 
-### Phase A: Keep The Web API Thin And Honest
+### Phase A: Keep The Web Workbench Thin And Honest
 
 Objective:
-keep the remaining web layer simple after frontend removal, without letting it
-become a second runtime or an undocumented side path.
+keep the web layer simple and reusable without letting it become a second
+runtime or an undocumented side path.
 
 Planned work:
 
-- keep the API contract small and documented
-- preserve one-shot submission and run lookup
-- avoid rebuilding frontend concerns into backend routes
+- keep the `/langgraph/*` proxy and `/api/*` management contracts documented
+- preserve browser chat, model settings, thread lookup, workspace file helpers,
+  and run/event lookup
+- keep execution delegated to the shared local LangGraph server rather than a
+  separate web-only runtime
 
 Acceptance:
 
-- the API can create, inspect, and delete sessions and runs
-- no checked-in browser frontend is assumed by the backend
+- the Web Workbench can serve the built frontend, proxy LangGraph chat traffic,
+  and expose settings/thread/workspace/run management routes
+- the frontend and backend use the same local agent runtime path as CLI/TUI
 
 ### Phase B: Make The One-Shot Runner A Repeatable Experiment Entrypoint
 
@@ -184,8 +188,9 @@ Acceptance:
 
 - the local OpenAI-compatible gateway still requires
   `use_responses_api = false` for the working baseline
-- the remaining web API backend still has its own session store instead of
-  sharing the CLI/TUI source of truth
+- the Web Workbench still combines a lightweight web store with CLI/TUI
+  checkpoint-backed thread state rather than having one perfectly unified source
+  of truth
 - the target bioinformatics repositories are too expensive to brute-force early
 - tracked `.env` is useful for local progress but unsuitable for publication
 
@@ -195,5 +200,5 @@ Acceptance:
 2. Resume or complete the remaining repository baselines after `canu` and
    `megahit`.
 3. Spend more effort on harness iteration than on raw baseline accumulation.
-4. Keep the remaining web API backend minimal unless a new frontend is
-   intentionally reintroduced.
+4. Keep the Web Workbench useful but thin; avoid turning it into a separate
+   production runtime.

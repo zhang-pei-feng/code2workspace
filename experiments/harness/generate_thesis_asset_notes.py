@@ -12,8 +12,14 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _load_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def _load_rows(path: Path) -> list[dict[str, Any]]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = _load_json(path)
     return list(payload.get("rows", []))
 
 
@@ -38,41 +44,60 @@ def build_asset_notes(
     *,
     oneshot_summary_path: Path,
     benchmark_summary_path: Path,
-    project_skill_summary_path: Path,
+    supervisor_family_routing_summary_path: Path,
+    supervisor_generic_routing_summary_path: Path,
+    supervisor_generic_replay_summary_path: Path,
     two_hour_summary_path: Path,
     swebench_summary_path: Path | None = None,
 ) -> list[dict[str, str]]:
     oneshot_rows = _load_rows(oneshot_summary_path)
-    project_rows = _load_rows(project_skill_summary_path)
     benchmark_rows = _load_rows(benchmark_summary_path)
     two_hour_rows = _load_rows(two_hour_summary_path)
     swebench_rows = _load_rows(swebench_summary_path) if swebench_summary_path and swebench_summary_path.exists() else []
+    family_routing_payload = _load_json(supervisor_family_routing_summary_path)
+    generic_routing_payload = _load_json(supervisor_generic_routing_summary_path)
+    generic_replay_payload = _load_json(supervisor_generic_replay_summary_path)
 
     oneshot_completed = [row["repo"] for row in oneshot_rows if row.get("completed")]
     oneshot_incomplete = [row["repo"] for row in oneshot_rows if not row.get("completed")]
     completion_levels = _count_by(oneshot_rows, "completion_level")
     oneshot_failures = [row for row in oneshot_rows if row.get("failure_category")]
     failure_categories = _count_by(oneshot_failures, "failure_category")
-    project_passed = sum(1 for row in project_rows if row.get("status") == "passed")
-    selected_skills = sorted(
+    routing_cases = [
+        case
+        for case in family_routing_payload.get("cases", [])
+        if str(case.get("family", "")) in {"github2workspace", "benchmark"}
+    ]
+    routing_cases.extend(
+        [
+            case
+            for case in generic_routing_payload.get("cases", [])
+            if str(case.get("family", "")) == "generic"
+        ]
+    )
+    routing_total = sum(1 for case in routing_cases if case)
+    routing_correct = sum(1 for case in routing_cases if case.get("correct"))
+    routing_family_summaries = {
+        "github2workspace": family_routing_payload.get("family_summary", {}).get("github2workspace", {}),
+        "benchmark": family_routing_payload.get("family_summary", {}).get("benchmark", {}),
+        "generic": generic_routing_payload.get("family_summary", {}).get("generic", {}),
+    }
+    routing_graphs = sorted(
         {
-            row.get("selected_skill", "")
-            for row in project_rows
-            if row.get("selected_skill") and row.get("selected_skill") != "none"
+            " -> ".join(case.get("graph_node_ids", []))
+            for case in routing_cases
+            if isinstance(case.get("graph_node_ids"), list)
         }
     )
-    mixed_lane = next(
-        (row.get("lane_summary", "") for row in project_rows if row.get("task_type") == "multi-lane"),
-        "",
-    )
-    phase_case = next(
-        (row.get("phase_summary", "") for row in project_rows if row.get("phase_summary")),
-        "",
-    )
-    routed_cases = sum(
-        1
-        for row in project_rows
-        if row.get("task_type") or row.get("selected_skill") or row.get("lane_summary") or row.get("phase_summary")
+    generic_replay_cases = list(generic_replay_payload.get("cases", []))
+    generic_replay_returned = sum(1 for case in generic_replay_cases if case.get("returncode") == 0)
+    generic_replay_not_timed_out = sum(1 for case in generic_replay_cases if not case.get("timed_out"))
+    generic_replay_graphs = sorted(
+        {
+            " -> ".join(case.get("graph_round_1_nodes", []))
+            for case in generic_replay_cases
+            if isinstance(case.get("graph_round_1_nodes"), list)
+        }
     )
 
     completed_repos = [row["repo"] for row in two_hour_rows if row.get("completed")]
@@ -136,7 +161,7 @@ def build_asset_notes(
             ),
             "interpretation": (
                 "失败类型集中在进入真实执行之后的收敛、依赖和接口问题，"
-                "而不是单纯停留在仓库阅读阶段，这与本文关于 harness 作用位置的判断一致。"
+                "而不是单纯停留在仓库阅读阶段，这与本文关于执行链路瓶颈的判断一致。"
             ),
             "source_summary": str(oneshot_summary_path.resolve()),
         },
@@ -181,41 +206,48 @@ def build_asset_notes(
     notes.extend(
         [
             {
+            "asset_id": "table_5_5",
+            "asset_name": "表 5-5 Supervisor Graph 路由触发结果表",
+            "caption": (
+                f"表 5-5 汇总了 {routing_total} 条 Supervisor Graph 路由触发样本，"
+                f"其中 `{routing_correct}` 条进入预期任务图；"
+                f"`github2workspace`、`benchmark` 与 `generic` 三类论文展示任务均已有稳定路由证据。"
+            ),
+            "interpretation": (
+                "当前可直接引用的任务图包括："
+                + ("；".join(f"`{graph}`" for graph in routing_graphs) if routing_graphs else "（无）")
+                + "。该表不展示 `report` 家族，而只保留论文正文采用的三类任务。"
+            ),
+            "source_summary": (
+                f"{supervisor_family_routing_summary_path.resolve()} ; "
+                f"{supervisor_generic_routing_summary_path.resolve()}"
+            ),
+        },
+        {
+            "asset_id": "table_5_6",
+            "asset_name": "表 5-6 Supervisor Graph 通用任务真实回放表",
+            "caption": (
+                f"表 5-6 汇总了 {len(generic_replay_cases)} 条 generic 真实回放；"
+                f"当前 returncode=0 的样本为 `{generic_replay_returned}` 条，"
+                f"未超时样本为 `{generic_replay_not_timed_out}` 条。"
+            ),
+            "interpretation": (
+                "这些回放说明 `generic` 图不只是静态规划结果，而能在限定预算内生成真实 `orchestration_runs` 工件。"
+                + (
+                    f" 当前回放图统一为 `{generic_replay_graphs[0]}`。"
+                    if len(generic_replay_graphs) == 1
+                    else ""
+                )
+            ),
+            "source_summary": str(supervisor_generic_replay_summary_path.resolve()),
+        },
+        {
             "asset_id": "table_5_7",
-            "asset_name": "表 5-7 skills 软路由与编排层对比表",
+            "asset_name": "表 5-7 两小时缩减评估结果表",
             "caption": (
-                f"表 5-7 基于 {routed_cases} 个已落地编排场景，归纳了当前 `Planner:` "
-                "规划摘要、目标技能或 lane 摘要、以及分阶段报告状态的可观测输出。"
-            ),
-            "interpretation": (
-                f"当前已验证的软路由编排能力包括 {_format_names(selected_skills)} 的稳定选中、"
-                f"mixed task 的 `{mixed_lane or 'n/a'}` 多 lane 摘要，以及 "
-                f"`{phase_case or 'n/a'}` 这样的分阶段状态汇总。该表不编造缺失证据的旧路由对照，"
-                "而是将现有真实日志整理为高成本仓库任务之前的低成本回归层。"
-            ),
-            "source_summary": str(project_skill_summary_path.resolve()),
-        },
-        {
-            "asset_id": "table_5_8",
-            "asset_name": "表 5-8 project-skill 编排结果表",
-            "caption": (
-                f"表 5-8 汇总了 {len(project_rows)} 个 case；"
-                f"当前 {project_passed}/{len(project_rows)} 全部通过，说明规划摘要、"
-                "skill 选择、lane 汇总与分阶段报告已形成稳定可回归信号。"
-            ),
-            "interpretation": (
-                f"当前正确选中的编排技能包括 {_format_names(selected_skills)}；"
-                f"mixed case 生成 `{mixed_lane or 'n/a'}` 三 lane，总结 helper 覆盖 `{phase_case or 'n/a'}`。"
-            ),
-            "source_summary": str(project_skill_summary_path.resolve()),
-        },
-        {
-            "asset_id": "table_5_9",
-            "asset_name": "表 5-9 两小时缩减评估结果表",
-            "caption": (
-                f"表 5-9 汇总了 {len(two_hour_rows)} 条两小时缩减评估记录；"
+                f"表 5-7 汇总了 {len(two_hour_rows)} 条两小时缩减评估记录；"
                 f"其中 {_format_names(completed_repos)} 形成真实完成样本，"
-                "足以支撑“继续使用 harness”这一工程决策。"
+                "足以支撑继续采用标准化运行记录与证据化判定这一工程决策。"
             ),
             "interpretation": (
                 f"当前强正向样本是 {_format_names(completed_repos)}；"
@@ -225,10 +257,10 @@ def build_asset_notes(
             "source_summary": str(two_hour_summary_path.resolve()),
         },
         {
-            "asset_id": "table_5_10",
-            "asset_name": "表 5-10 benchmark 八工具快照总览表",
+            "asset_id": "table_5_8",
+            "asset_name": "表 5-8 benchmark 八工具快照总览表",
             "caption": (
-                f"表 5-10 汇总了 {len(benchmark_rows)} 个 benchmark 工具与 "
+                f"表 5-8 汇总了 {len(benchmark_rows)} 个 benchmark 工具与 "
                 f"{len(dataset_groups)} 组共享/独立数据的快照，可直接用于讨论同数据条件下的可比结果与阻塞分布。"
             ),
             "interpretation": (
@@ -290,9 +322,19 @@ def main() -> int:
         default=repo_root() / "results" / "benchmark-summary-20260421" / "summary.json",
     )
     parser.add_argument(
-        "--project-skill-summary",
+        "--supervisor-family-routing-summary",
         type=Path,
-        default=repo_root() / "results" / "project-skill-summary-20260422" / "summary.json",
+        default=repo_root() / "experiments" / "harness" / "runs" / "supervisor-routing-trigger-eval" / "20260506T161917Z" / "routing_eval.json",
+    )
+    parser.add_argument(
+        "--supervisor-generic-routing-summary",
+        type=Path,
+        default=repo_root() / "experiments" / "harness" / "runs" / "supervisor-routing-trigger-eval" / "20260507T143455346391Z" / "routing_eval.json",
+    )
+    parser.add_argument(
+        "--supervisor-generic-replay-summary",
+        type=Path,
+        default=repo_root() / "experiments" / "harness" / "runs" / "supervisor-generic-real-cases-15min-parallel3" / "20260507T154111585584Z" / "summary.json",
     )
     parser.add_argument(
         "--two-hour-summary",
@@ -318,7 +360,9 @@ def main() -> int:
     notes = build_asset_notes(
         oneshot_summary_path=args.oneshot_summary,
         benchmark_summary_path=args.benchmark_summary,
-        project_skill_summary_path=args.project_skill_summary,
+        supervisor_family_routing_summary_path=args.supervisor_family_routing_summary,
+        supervisor_generic_routing_summary_path=args.supervisor_generic_routing_summary,
+        supervisor_generic_replay_summary_path=args.supervisor_generic_replay_summary,
         two_hour_summary_path=args.two_hour_summary,
         swebench_summary_path=args.swebench_summary,
     )

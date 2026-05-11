@@ -17,7 +17,9 @@ def _write_json(path: Path, payload: dict) -> None:
 
 def test_build_asset_notes_summarizes_three_ready_assets(tmp_path: Path) -> None:
     benchmark = tmp_path / "benchmark.json"
-    project_skill = tmp_path / "project-skill.json"
+    supervisor_family_routing = tmp_path / "supervisor-family-routing.json"
+    supervisor_generic_routing = tmp_path / "supervisor-generic-routing.json"
+    supervisor_generic_replay = tmp_path / "supervisor-generic-replay.json"
     two_hour = tmp_path / "two-hour.json"
     oneshot = tmp_path / "oneshot.json"
     swebench = tmp_path / "swebench.json"
@@ -33,14 +35,72 @@ def test_build_asset_notes_summarizes_three_ready_assets(tmp_path: Path) -> None
         },
     )
     _write_json(
-        project_skill,
+        supervisor_family_routing,
         {
-            "title": "Project skill",
-            "rows": [
-                {"case": "a", "status": "passed", "task_type": "benchmark", "selected_skill": "benchmark-workflow-orchestrator", "lane_summary": "benchmark,analysis,synthesis", "phase_summary": ""},
-                {"case": "b", "status": "passed", "task_type": "paper2workspace", "selected_skill": "paper2workspace-orchestrator", "lane_summary": "workspace,analysis,synthesis", "phase_summary": ""},
-                {"case": "c", "status": "passed", "task_type": "multi-lane", "selected_skill": "none", "lane_summary": "workspace,benchmark,synthesis", "phase_summary": ""},
-                {"case": "d", "status": "passed", "task_type": "", "selected_skill": "", "lane_summary": "", "phase_summary": "phase1=completed;phase2=completed;analysis=completed"},
+            "title": "Supervisor routing",
+            "family_summary": {
+                "github2workspace": {"total": 3, "correct": 3},
+                "benchmark": {"total": 3, "correct": 3},
+                "report": {"total": 3, "correct": 3},
+            },
+            "cases": [
+                {"family": "github2workspace", "correct": True, "graph_node_ids": ["inspect", "build", "wdl", "summarize"]},
+                {"family": "benchmark", "correct": True, "graph_node_ids": ["register"]},
+                {"family": "report", "correct": True, "graph_node_ids": ["init_report", "compose_report"]},
+            ],
+        },
+    )
+    _write_json(
+        supervisor_generic_routing,
+        {
+            "title": "Generic routing",
+            "family_summary": {
+                "generic": {"total": 5, "correct": 5},
+            },
+            "cases": [
+                {
+                    "family": "generic",
+                    "correct": True,
+                    "graph_node_ids": [
+                        "init_generic",
+                        "worker_context",
+                        "worker_solution",
+                        "compose_generic",
+                        "summarize",
+                    ],
+                }
+            ],
+        },
+    )
+    _write_json(
+        supervisor_generic_replay,
+        {
+            "title": "Generic replay",
+            "cases": [
+                {
+                    "case_id": "a",
+                    "timed_out": False,
+                    "returncode": 0,
+                    "graph_round_1_nodes": [
+                        "init_generic",
+                        "worker_context",
+                        "worker_solution",
+                        "compose_generic",
+                        "summarize",
+                    ],
+                },
+                {
+                    "case_id": "b",
+                    "timed_out": False,
+                    "returncode": 0,
+                    "graph_round_1_nodes": [
+                        "init_generic",
+                        "worker_context",
+                        "worker_solution",
+                        "compose_generic",
+                        "summarize",
+                    ],
+                },
             ],
         },
     )
@@ -49,7 +109,7 @@ def test_build_asset_notes_summarizes_three_ready_assets(tmp_path: Path) -> None
         {
             "title": "Two hour",
             "rows": [
-                {"repo": "spades", "channel": "clean harness baseline", "status": "completed", "completed": True, "failed_checks": []},
+                {"repo": "spades", "channel": "clean baseline", "status": "completed", "completed": True, "failed_checks": []},
                 {"repo": "megahit", "channel": "direct retry", "status": "completed", "completed": True, "failed_checks": []},
                 {"repo": "v-pipe", "channel": "direct spotcheck", "status": "timed_out", "completed": False, "failed_checks": ["not_timed_out"]},
                 {"repo": "fieldbioinformatics", "channel": "direct spotcheck", "status": "timed_out", "completed": False, "failed_checks": ["not_timed_out"]},
@@ -115,7 +175,9 @@ def test_build_asset_notes_summarizes_three_ready_assets(tmp_path: Path) -> None
     notes = build_asset_notes(
         oneshot_summary_path=oneshot,
         benchmark_summary_path=benchmark,
-        project_skill_summary_path=project_skill,
+        supervisor_family_routing_summary_path=supervisor_family_routing,
+        supervisor_generic_routing_summary_path=supervisor_generic_routing,
+        supervisor_generic_replay_summary_path=supervisor_generic_replay,
         two_hour_summary_path=two_hour,
         swebench_summary_path=swebench,
     )
@@ -126,10 +188,10 @@ def test_build_asset_notes_summarizes_three_ready_assets(tmp_path: Path) -> None
         "figure_5_2",
         "table_5_3",
         "figure_5_3",
+        "table_5_5",
+        "table_5_6",
         "table_5_7",
         "table_5_8",
-        "table_5_9",
-        "table_5_10",
     ]
     assert "3 个历史 one-shot run" in notes[0]["caption"]
     assert "completion_level" in notes[1]["caption"]
@@ -138,9 +200,10 @@ def test_build_asset_notes_summarizes_three_ready_assets(tmp_path: Path) -> None
     assert "resolved=`2`" in notes[3]["caption"]
     assert "resolved / attempted = `2` / `3`" in notes[4]["caption"]
     assert "2 条 official resolved 样本" in notes[3]["interpretation"]
-    assert "规划摘要" in notes[5]["caption"]
-    assert "低成本回归层" in notes[5]["interpretation"]
-    assert "4 个 case" in notes[6]["caption"]
+    assert "Supervisor Graph 路由触发样本" in notes[5]["caption"]
+    assert "不展示 `report` 家族" in notes[5]["interpretation"]
+    assert "2 条 generic 真实回放" in notes[6]["caption"]
+    assert "orchestration_runs" in notes[6]["interpretation"]
     assert "`spades`" in notes[7]["interpretation"]
     assert "`megahit`" in notes[7]["interpretation"]
     assert "3 个 benchmark 工具" in notes[8]["caption"]
@@ -150,8 +213,8 @@ def test_build_markdown_summary_renders_sections() -> None:
     markdown = build_markdown_summary(
         [
             {
-                "asset_id": "table_5_8",
-                "asset_name": "表 5-8 project-skill 编排结果表",
+                "asset_id": "table_5_6",
+                "asset_name": "表 5-6 Supervisor Graph 通用任务真实回放表",
                 "caption": "caption",
                 "interpretation": "interpretation",
                 "source_summary": "/tmp/source.json",
@@ -161,15 +224,15 @@ def test_build_markdown_summary_renders_sections() -> None:
     )
 
     assert "# Asset notes" in markdown
-    assert "## 表 5-8 project-skill 编排结果表" in markdown
+    assert "## 表 5-6 Supervisor Graph 通用任务真实回放表" in markdown
     assert "- Caption: caption" in markdown
 
 
 def test_write_summary_bundle_writes_json_and_markdown(tmp_path: Path) -> None:
     notes = [
         {
-            "asset_id": "table_5_8",
-            "asset_name": "表 5-8 project-skill 编排结果表",
+            "asset_id": "table_5_6",
+            "asset_name": "表 5-6 Supervisor Graph 通用任务真实回放表",
             "caption": "caption",
             "interpretation": "interpretation",
             "source_summary": "/tmp/source.json",
@@ -182,5 +245,5 @@ def test_write_summary_bundle_writes_json_and_markdown(tmp_path: Path) -> None:
     payload = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
     markdown = (output_dir / "SUMMARY_ZH.md").read_text(encoding="utf-8")
 
-    assert payload["notes"][0]["asset_id"] == "table_5_8"
+    assert payload["notes"][0]["asset_id"] == "table_5_6"
     assert "# Asset notes" in markdown

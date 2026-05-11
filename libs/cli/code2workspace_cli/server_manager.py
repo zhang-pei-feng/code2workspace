@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 from code2workspace_cli._env_vars import SERVER_ENV_PREFIX
 from code2workspace_cli._server_config import ServerConfig
-from code2workspace_cli.project_utils import ProjectContext
+from code2workspace_cli.project_utils import ProjectContext, find_reference_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,15 @@ def _capture_project_context(cwd: str | Path | None = None) -> ProjectContext | 
         Explicit project context, or `None` when cwd cannot be determined.
     """
     try:
-        return ProjectContext.from_user_cwd(cwd or Path.cwd())
+        resolved_cwd = Path(cwd or Path.cwd()).expanduser().resolve()
+        context = ProjectContext.from_user_cwd(resolved_cwd)
+        reference_project_root = find_reference_project_root(resolved_cwd)
+        if reference_project_root is not None:
+            return ProjectContext(
+                user_cwd=context.user_cwd,
+                project_root=reference_project_root,
+            )
+        return context
     except OSError:
         logger.warning("Could not determine working directory for server")
         return None

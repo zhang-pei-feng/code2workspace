@@ -20,7 +20,6 @@ source_urls = [
   "https://api.outbreak.info/",
 ]
 preferred_skills = [
-  "planning-guide",
   "respiratory-disease-data-fetcher",
   "virus-variation-query",
 ]

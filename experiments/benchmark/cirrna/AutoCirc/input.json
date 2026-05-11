@@ -1,0 +1,17 @@
+{
+  "AutoCircWorkflow.unmapped_bam": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/010_AutoCirc/real_test_data/unmapped.bam",
+  "AutoCircWorkflow.reference_genome": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/010_AutoCirc/real_test_data/chr22.fa",
+  "AutoCircWorkflow.bowtie2_index_base_1": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/010_AutoCirc/real_test_data/chr22_index.1.bt2",
+  "AutoCircWorkflow.bowtie2_index_base_2": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/010_AutoCirc/real_test_data/chr22_index.2.bt2",
+  "AutoCircWorkflow.bowtie2_index_base_3": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/010_AutoCirc/real_test_data/chr22_index.3.bt2",
+  "AutoCircWorkflow.bowtie2_index_base_4": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/010_AutoCirc/real_test_data/chr22_index.4.bt2",
+  "AutoCircWorkflow.bowtie2_index_rev_1": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/010_AutoCirc/real_test_data/chr22_index.rev.1.bt2",
+  "AutoCircWorkflow.bowtie2_index_rev_2": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/010_AutoCirc/real_test_data/chr22_index.rev.2.bt2",
+  "AutoCircWorkflow.bowtie2_index_prefix": "chr22_index",
+  "AutoCircWorkflow.reference_annotation_bed": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/010_AutoCirc/real_test_data/chr22_genes.bed",
+  "AutoCircWorkflow.seed_size": 20,
+  "AutoCircWorkflow.mismatch": 0,
+  "AutoCircWorkflow.min_distance": 100,
+  "AutoCircWorkflow.max_distance": 100000,
+  "AutoCircWorkflow.output_prefix": "chr22_with_annot"
+}

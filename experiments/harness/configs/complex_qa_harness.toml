@@ -12,30 +12,6 @@ command = [
 ]
 max_runtime_minutes = 20
 
-[surfaces.planning_skill]
-kind = "workspace_file"
-target = ".code2workspace/skills/planning-guide/SKILL.md"
-filename = "planning-guide-SKILL.md"
-base_file = ".code2workspace/skills/planning-guide/SKILL.md"
-
-[surfaces.planning_source_selection]
-kind = "workspace_file"
-target = ".code2workspace/skills/planning-guide/references/source-selection.md"
-filename = "planning-guide-source-selection.md"
-base_file = ".code2workspace/skills/planning-guide/references/source-selection.md"
-
-[surfaces.planning_cross_source_case]
-kind = "workspace_file"
-target = ".code2workspace/skills/planning-guide/references/case-cross-source-synthesis.md"
-filename = "planning-guide-case-cross-source-synthesis.md"
-base_file = ".code2workspace/skills/planning-guide/references/case-cross-source-synthesis.md"
-
-[surfaces.planning_tool]
-kind = "workspace_file"
-target = ".code2workspace/skills/planning-guide/scripts/planning_tool.py"
-filename = "planning-guide-tool.py"
-base_file = ".code2workspace/skills/planning-guide/scripts/planning_tool.py"
-
 [surfaces.academic_search_skill]
 kind = "workspace_file"
 target = ".code2workspace/skills/academic-search/SKILL.md"

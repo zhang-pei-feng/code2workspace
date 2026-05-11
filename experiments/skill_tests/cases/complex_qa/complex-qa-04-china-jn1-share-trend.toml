@@ -19,7 +19,6 @@ source_urls = [
   "https://data.who.int/dashboards/covid19/variants",
 ]
 preferred_skills = [
-  "planning-guide",
   "respiratory-disease-data-fetcher",
   "virus-variation-query",
 ]

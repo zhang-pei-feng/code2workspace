@@ -348,6 +348,14 @@ def test_format_fetch_url_description_with_hidden_unicode_in_url():
     assert "\u200b" not in description
 
 
+def test_get_system_prompt_includes_current_time_section() -> None:
+    prompt = get_system_prompt("test-agent")
+    assert "### Current Time" in prompt
+    assert "Current UTC time:" in prompt
+    assert "Current local time:" in prompt
+    assert "If freshness matters, verify the latest information" in prompt
+
+
 class TestBuildModelIdentitySection:
     """Direct tests for build_model_identity_section."""
 
@@ -1631,16 +1639,16 @@ class TestMiddlewareStackConformance:
                 enable_shell=False,
             )
 
-        assert len(captured_middleware) == 1
-        middleware_list = captured_middleware[0]
-        assert len(middleware_list) > 0, "Expected at least one middleware"
+        assert len(captured_middleware) == 2
+        for middleware_list in captured_middleware:
+            assert len(middleware_list) > 0, "Expected at least one middleware"
 
-        for mw in middleware_list:
-            assert isinstance(mw, AgentMiddleware), (
-                f"{type(mw).__name__} does not inherit from AgentMiddleware"
-            )
+            for mw in middleware_list:
+                assert isinstance(mw, AgentMiddleware), (
+                    f"{type(mw).__name__} does not inherit from AgentMiddleware"
+                )
 
-    def test_planner_routing_middleware_added_when_skills_enabled(
+    def test_planner_routing_middleware_removed_when_skills_enabled(
         self, tmp_path: Path
     ) -> None:
         agent_dir = tmp_path / "agent"
@@ -1692,7 +1700,8 @@ class TestMiddlewareStackConformance:
             )
 
         middleware_names = {type(mw).__name__ for mw in captured[0]}
-        assert "PlannerRoutingMiddleware" in middleware_names
+        assert "SkillsMiddleware" in middleware_names
+        assert "PlannerRoutingMiddleware" not in middleware_names
 
 
 class TestEnableAskUser:

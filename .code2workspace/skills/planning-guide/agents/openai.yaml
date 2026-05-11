@@ -1,4 +1,0 @@
-interface:
-  display_name: "Planning Guide"
-  short_description: "统一的通用 planning aid 与信息源选择提示，不做关键词路由"
-  default_prompt: "使用 $planning-guide 作为统一 planning aid 处理复杂、模糊、多步骤或多来源任务。先明确目标、约束、信息缺口与验证路径，再决定优先查看本地代码、测试、日志、数据库、官方文档、监测网站或其他权威来源。不要做关键词匹配式 domain 分类或自动 dispatch。"

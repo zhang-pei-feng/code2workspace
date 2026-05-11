@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
+import os
 from pathlib import Path
 import re
 from copy import deepcopy
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
 
 from docx import Document
 from docx.enum.section import WD_SECTION
@@ -13,6 +20,11 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
+
+try:
+    import uno  # type: ignore
+except Exception:
+    uno = None
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -23,17 +35,17 @@ OUTPUT_PATH = HARNESS_DIR / "code2workspace_毕业论文.docx"
 
 CHAPTER_HEADER_MAP = {
     "第一章 绪论": "第一章 绪论",
-    "第二章 相关技术与理论基础": "第二章 相关技术与理论基础",
-    "第三章 code2workspace 系统设计与实现": "第三章 code2workspace 系统设计与实现",
-    "第四章 基于 Surface 的 Harness 优化方法": "第四章 基于 Surface 的 Harness 优化方法",
+    "第二章 相关技术基础与系统需求分析": "第二章 相关技术基础与系统需求分析",
+    "第三章 系统总体设计": "第三章 系统总体设计",
+    "第四章 关键机制设计与实现": "第四章 关键机制设计与实现",
     "第五章 实验结果与分析": "第五章 实验结果与分析",
 }
 
 CHAPTER_BODY_TITLE_MAP = {
     "第一章 绪论": "绪论",
-    "第二章 相关技术与理论基础": "相关技术与理论基础",
-    "第三章 code2workspace 系统设计与实现": "code2workspace 系统设计与实现",
-    "第四章 基于 Surface 的 Harness 优化方法": "基于 Surface 的 Harness 优化方法",
+    "第二章 相关技术基础与系统需求分析": "相关技术基础与系统需求分析",
+    "第三章 系统总体设计": "系统总体设计",
+    "第四章 关键机制设计与实现": "关键机制设计与实现",
     "第五章 实验结果与分析": "实验结果与分析",
 }
 
@@ -142,6 +154,57 @@ def parse_markdown_tables(lines: list[str], start: int) -> tuple[list[list[str]]
         rows.append(cells)
         index += 1
     return rows, index
+
+
+def is_body_paragraph_boundary(line: str) -> bool:
+    """Return whether a markdown line starts a non-body block."""
+    stripped = line.strip()
+    return (
+        not stripped
+        or stripped == "---"
+        or stripped.startswith("#")
+        or stripped.startswith("|")
+        or stripped.startswith("```")
+        or stripped.startswith("- ")
+        or stripped.startswith("> ")
+        or bool(re.match(r"^\d+\.\s", stripped))
+    )
+
+
+def needs_space_between_wrapped_lines(left: str, right: str) -> bool:
+    """Preserve spaces around ASCII terms when hard-wrapped body lines are joined."""
+    if not left or not right:
+        return False
+    if right[0] in "，。；：、？！）】》」』”’":
+        return False
+    if left[-1] in "，。；：、？！“‘（【《":
+        return False
+    left_is_ascii_term = bool(re.match(r"[A-Za-z0-9_`*/.)\]-]", left[-1]))
+    right_is_ascii_term = bool(re.match(r"[A-Za-z0-9_`*/(\\[]", right[0]))
+    return left_is_ascii_term or right_is_ascii_term
+
+
+def join_wrapped_body_lines(parts: list[str]) -> str:
+    """Join markdown hard wraps into a single Word paragraph."""
+    text = ""
+    for part in parts:
+        if text and needs_space_between_wrapped_lines(text, part):
+            text += " "
+        text += part
+    return text
+
+
+def collect_body_paragraph(lines: list[str], start: int) -> tuple[str, int]:
+    """Collect adjacent markdown body lines until the next block boundary."""
+    parts: list[str] = []
+    index = start
+    while index < len(lines):
+        raw = lines[index].rstrip()
+        if is_body_paragraph_boundary(raw):
+            break
+        parts.append(raw.strip())
+        index += 1
+    return join_wrapped_body_lines(parts), index
 
 
 def apply_normal_paragraph_format(paragraph) -> None:
@@ -290,12 +353,51 @@ def build_abstract_pages(doc: Document, source_text: str) -> None:
             add_body_paragraph(doc, para)
 
 
-def build_toc_page(doc: Document) -> None:
-    """Add a TOC page."""
+def extract_toc_entries(source_text: str) -> list[tuple[int, str]]:
+    """Extract visible TOC entries from markdown headings."""
+    entries: list[tuple[int, str]] = []
+    for raw_line in source_text.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("#"):
+            continue
+        level = len(line) - len(line.lstrip("#"))
+        text = clean_inline_markdown(line[level:].strip().replace("`", ""))
+        if not text:
+            continue
+        if text in {"封面信息", "学位论文原创性声明", "学位论文版权使用授权书", "摘要", "Abstract", "目录", "插图清单", "表格清单"}:
+            continue
+        if text.startswith("图 ") or text.startswith("表 "):
+            continue
+        if text.startswith("附录 "):
+            entries.append((1, text))
+            continue
+        if text.startswith("第") and "章" in text:
+            body_heading_text = re.sub(r"^第[一二三四五六七八九十]+章\s*", "", text).strip()
+            entries.append((1, body_heading_text))
+            continue
+        if level == 2 and re.match(r"^\d+\.\d+", text):
+            entries.append((2, text))
+            continue
+        if level == 3 and re.match(r"^\d+\.\d+\.\d+", text):
+            entries.append((3, text))
+            continue
+        if text in {"结论", "参考文献（初稿，待按学校格式统一）", "致谢"}:
+            display = "参考文献" if text.startswith("参考文献") else text
+            entries.append((1, display))
+    return entries
+
+
+def build_toc_page(doc: Document, source_text: str) -> None:
+    """Add a static TOC page."""
     doc.add_page_break()
     add_heading(doc, 1, "目  录")
-    p = doc.add_paragraph(style="Normal")
-    add_field(p, 'TOC \\o "1-3" \\h \\z \\u')
+    for level, text in extract_toc_entries(source_text):
+        p = doc.add_paragraph(style="Normal")
+        p.paragraph_format.first_line_indent = Pt(0)
+        p.paragraph_format.left_indent = Pt(0 if level == 1 else 24 if level == 2 else 48)
+        p.paragraph_format.line_spacing = 1.5
+        run = p.add_run(text)
+        set_run_font(run, east_asia="宋体", ascii_name="Times New Roman", size=12)
 
 
 def build_from_markdown(doc: Document, source_text: str) -> None:
@@ -393,12 +495,109 @@ def build_from_markdown(doc: Document, source_text: str) -> None:
             set_run_font(run, east_asia="宋体", ascii_name="Times New Roman", size=12)
             index += 1
             continue
-        add_body_paragraph(doc, stripped)
-        index += 1
+        paragraph_text, index = collect_body_paragraph(lines, index)
+        add_body_paragraph(doc, paragraph_text)
+
+
+def _is_port_open(host: str, port: int) -> bool:
+    """Check whether a TCP port is open."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex((host, port)) == 0
+
+
+def refresh_docx_fields_with_soffice(docx_path: Path) -> None:
+    """Open the generated DOCX in headless LibreOffice and refresh TOC/page fields."""
+    if uno is None:
+        return
+    soffice = shutil.which("soffice") or shutil.which("libreoffice") or shutil.which("lowriter")
+    if not soffice:
+        return
+
+    host = "127.0.0.1"
+    port = 2002
+    profile_dir = Path(tempfile.mkdtemp(prefix="lo-profile-"))
+    accept_arg = f"socket,host={host},port={port};urp;"
+    process = subprocess.Popen(
+        [
+            soffice,
+            "--headless",
+            "--nologo",
+            "--nodefault",
+            "--nofirststartwizard",
+            f"-env:UserInstallation=file://{profile_dir}",
+            f"--accept={accept_arg}",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    try:
+        for _ in range(50):
+            if _is_port_open(host, port):
+                break
+            time.sleep(0.2)
+        else:
+            return
+
+        local_ctx = uno.getComponentContext()
+        resolver = local_ctx.ServiceManager.createInstanceWithContext(
+            "com.sun.star.bridge.UnoUrlResolver",
+            local_ctx,
+        )
+        ctx = resolver.resolve(f"uno:{accept_arg}StarOffice.ComponentContext")
+        desktop = ctx.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+
+        def make_prop(name: str, value):
+            prop = uno.createUnoStruct("com.sun.star.beans.PropertyValue")
+            prop.Name = name
+            prop.Value = value
+            return prop
+
+        url = uno.systemPathToFileUrl(str(docx_path.resolve()))
+        doc = desktop.loadComponentFromURL(
+            url,
+            "_blank",
+            0,
+            (
+                make_prop("Hidden", True),
+                make_prop("ReadOnly", False),
+            ),
+        )
+        try:
+            if hasattr(doc, "getDocumentIndexes"):
+                indexes = doc.getDocumentIndexes()
+                for idx in range(indexes.getCount()):
+                    indexes.getByIndex(idx).update()
+            if hasattr(doc, "TextFields"):
+                doc.TextFields.refresh()
+            doc.store()
+        finally:
+            doc.close(True)
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        shutil.rmtree(profile_dir, ignore_errors=True)
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments."""
+    parser = argparse.ArgumentParser(description="Generate thesis DOCX from the markdown draft.")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=OUTPUT_PATH,
+        help="Output DOCX path. Defaults to experiments/harness/code2workspace_毕业论文.docx",
+    )
+    return parser.parse_args()
 
 
 def main() -> None:
     """Generate the thesis docx file."""
+    args = parse_args()
     source_text = SOURCE_PATH.read_text(encoding="utf-8")
     doc = Document(TEMPLATE_PATH)
     remove_all_body_content(doc)
@@ -417,10 +616,13 @@ def main() -> None:
     build_cover(doc)
     build_statement_pages(doc)
     build_abstract_pages(doc, source_text)
-    build_toc_page(doc)
+    build_toc_page(doc, source_text)
     build_from_markdown(doc, source_text)
-    doc.save(OUTPUT_PATH)
-    print(OUTPUT_PATH)
+    output_path = args.output
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(output_path)
+    refresh_docx_fields_with_soffice(output_path)
+    print(output_path)
 
 
 if __name__ == "__main__":

@@ -9,32 +9,19 @@ from pathlib import Path
 import pytest
 
 
-REPO_ROOT = Path("/mnt/data1/zhangpf/code2workspace")
-PLANNING_SCRIPT = REPO_ROOT / ".code2workspace" / "skills" / "planning-guide" / "scripts" / "planning_tool.py"
+def _repo_root() -> Path:
+    path = Path(__file__).resolve()
+    for parent in path.parents:
+        if (parent / ".code2workspace").exists():
+            return parent
+    msg = "Could not locate repo root from test path"
+    raise RuntimeError(msg)
+
+
+REPO_ROOT = _repo_root()
 BENCHMARK_SCRIPT = (
     REPO_ROOT / ".code2workspace" / "skills" / "benchmark-workflow-orchestrator" / "scripts" / "benchmark_workflow.py"
 )
-ACPX_SESSION_SCRIPT = (
-    REPO_ROOT
-    / "experiments"
-    / "harness"
-    / "skills"
-    / "openclaw"
-    / "acpx-skill"
-    / "scripts"
-    / "acpx_session.py"
-)
-
-
-def run_json_command(*command: str) -> dict[str, object]:
-    completed = subprocess.run(
-        [sys.executable, *command],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return json.loads(completed.stdout)
 
 
 def load_module(path: Path, module_name: str):
@@ -47,97 +34,15 @@ def load_module(path: Path, module_name: str):
     return module
 
 
-def test_planning_tool_recommends_benchmark_skill_without_forcing_dispatch(
-    tmp_path: Path,
-) -> None:
-    planning_dir = tmp_path / "planning-run"
-    payload = run_json_command(
-        str(PLANNING_SCRIPT),
-        "init",
-        "--task",
-        "请对 8 个仓库执行本地 docker + wdl benchmark 并汇总结果",
-        "--output-dir",
-        str(planning_dir),
+def run_json_command(*command: str) -> dict[str, object]:
+    completed = subprocess.run(
+        [sys.executable, *command],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
     )
-
-    assert payload["complexity"] == "complex"
-    assert payload["domain"] == "benchmark"
-    assert payload["recommended_skill"] == "benchmark-workflow-orchestrator"
-    assert payload["dispatch_candidate"] == "benchmark-workflow-orchestrator"
-    assert payload["task_type"] == "benchmark"
-    assert payload["selected_skill"] == "benchmark-workflow-orchestrator"
-    assert payload["fresh_run_required"] is True
-    assert payload["needs_isolated_workspace"] is True
-
-    dispatch = run_json_command(str(PLANNING_SCRIPT), "dispatch", "--run-dir", str(planning_dir))
-    assert dispatch["status"] == "recommended-skill-ready"
-    assert dispatch["adapter"] == "benchmark-workflow-orchestrator"
-
-
-def test_planning_orchestrator_emits_generic_plan_for_simple_other_task(tmp_path: Path) -> None:
-    planning_dir = tmp_path / "generic-planning-run"
-    payload = run_json_command(
-        str(PLANNING_SCRIPT),
-        "init",
-        "--task",
-        "检查当前目录并给出三个结论",
-        "--output-dir",
-        str(planning_dir),
-    )
-
-    assert payload["complexity"] == "simple"
-    assert payload["domain"] == "generic"
-    assert payload["recommended_skill"] is None
-    assert payload["plan_mode"] == "single-step"
-
-    status = run_json_command(str(PLANNING_SCRIPT), "dispatch", "--run-dir", str(planning_dir))
-    assert status["status"] == "generic-plan-ready"
-
-    manifest = json.loads(planning_dir.joinpath("manifest.json").read_text(encoding="utf-8"))
-    assert manifest["contract_version"] == "planning-guide/v2"
-    assert len(manifest["lanes"]) == 1
-    assert [phase["phase_id"] for phase in manifest["phases"]] == ["understand", "execute", "verify"]
-
-
-def test_planning_tool_recommends_paper2workspace_skill(tmp_path: Path) -> None:
-    planning_dir = tmp_path / "workspace-run"
-    payload = run_json_command(
-        str(PLANNING_SCRIPT),
-        "init",
-        "--task",
-        "把一个 xxx.github 仓库变成有工作流的工作空间",
-        "--output-dir",
-        str(planning_dir),
-    )
-
-    assert payload["domain"] == "paper2workspace"
-    assert payload["recommended_skill"] == "paper2workspace-orchestrator"
-    assert payload["selected_skill"] == "paper2workspace-orchestrator"
-    assert payload["fresh_run_required"] is True
-    assert payload["needs_isolated_workspace"] is True
-
-
-def test_planning_tool_emits_multi_lane_soft_route_for_mixed_task(
-    tmp_path: Path,
-) -> None:
-    planning_dir = tmp_path / "multi-run"
-    payload = run_json_command(
-        str(PLANNING_SCRIPT),
-        "init",
-        "--task",
-        "先把一个 xxx.github 仓库变成有工作流的工作空间，再对 benchmark 结果做分析汇总",
-        "--output-dir",
-        str(planning_dir),
-    )
-
-    assert payload["domain"] == "multi-lane"
-    assert payload["task_type"] == "multi-lane"
-    assert payload["selected_skill"] is None
-    assert len(payload["lanes"]) >= 2
-    lane_titles = {lane["title"] for lane in payload["lanes"]}
-    assert "Benchmark" in lane_titles
-    assert "Workspace" in lane_titles
-
+    return json.loads(completed.stdout)
 
 def test_benchmark_orchestrator_prebuild_does_not_count_as_completion(tmp_path: Path) -> None:
     run_dir = tmp_path / "benchmark-run"
@@ -173,6 +78,30 @@ def test_benchmark_orchestrator_prebuild_does_not_count_as_completion(tmp_path: 
     assert spades_case["wdl_success"] is False
     assert spades_case["completed"] is False
     assert summary["status"] == "in_progress"
+
+
+def test_benchmark_orchestrator_init_supports_repo_subset(tmp_path: Path) -> None:
+    run_dir = tmp_path / "benchmark-run"
+    payload = run_json_command(
+        str(BENCHMARK_SCRIPT),
+        "init",
+        "--task",
+        "subset smoke",
+        "--output-dir",
+        str(run_dir),
+        "--repos",
+        "spades",
+        "megahit",
+    )
+
+    assert payload["case_count"] == 2
+    assert payload["case_order"] == ["spades", "megahit"]
+
+    manifest = json.loads(run_dir.joinpath("manifest.json").read_text(encoding="utf-8"))
+    assert manifest["case_order"] == ["spades", "megahit"]
+    assert (run_dir / "cases" / "spades" / "manifest.json").exists()
+    assert (run_dir / "cases" / "megahit" / "manifest.json").exists()
+    assert not (run_dir / "cases" / "canu").exists()
 
 
 def test_benchmark_orchestrator_catalog_reports_unified_dataset_root() -> None:
@@ -340,23 +269,3 @@ def test_benchmark_orchestrator_repo_native_shell_command_overrides_image_entryp
     assert str(work_dir) + ":/work" in command
     assert command[-2] == "-lc"
     assert command[-1] == "megahit -1 /inputs/reads_1/reads_1.fastq.gz -2 /inputs/reads_2/reads_2.fastq.gz -o /work/repo_native_output -t 2"
-
-
-def test_acpx_bridge_still_defaults_benchmark_prompts() -> None:
-    module = load_module(ACPX_SESSION_SCRIPT, "acpx_session_for_test")
-
-    assert module.infer_agent("请比较这 8 个仓库的本地 benchmark 结果") == "benchmark_agent"
-    assert module.infer_agent("请让 benchmark_agent 看一下这个 prompt") == "benchmark_agent"
-
-
-def test_legacy_benchmark_acpx_skill_file_still_exists() -> None:
-    legacy_skill = (
-        REPO_ROOT
-        / "experiments"
-        / "harness"
-        / "skills"
-        / "openclaw"
-        / "benchmark-agent-acpx"
-        / "SKILL.md"
-    )
-    assert legacy_skill.exists() is True

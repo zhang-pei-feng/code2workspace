@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 import subprocess
 import json
@@ -26,8 +25,23 @@ def test_load_case_reads_required_fields() -> None:
     assert case.allow_timeout_after_expectations is False
 
 
-def test_load_case_reads_allow_timeout_flag() -> None:
-    case = load_case(cases_root() / "multi-source-report-behavior.toml")
+def test_load_case_reads_allow_timeout_flag(tmp_path: Path) -> None:
+    case_path = tmp_path / "allow-timeout-case.toml"
+    case_path.write_text(
+        """
+target = "skill"
+name = "allow-timeout"
+prompt = "demo"
+required_env = []
+expected_behaviors = []
+expected_outputs = []
+allow_timeout_after_expectations = true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    case = load_case(case_path)
 
     assert case.allow_timeout_after_expectations is True
 
@@ -44,7 +58,7 @@ expected_behaviors = []
 expected_outputs = []
 task_family = "trend-analysis"
 question_type = "forecast"
-preferred_skills = ["planning-guide", "epietl-api"]
+preferred_skills = ["multi-source-report", "epietl-api"]
 source_hints = ["GISAID", "EpiETL"]
 source_urls = ["https://example.invalid/a"]
 judge_focus = ["accuracy", "trace_rationality"]
@@ -59,7 +73,7 @@ weight = 2.0
 
     assert case.task_family == "trend-analysis"
     assert case.question_type == "forecast"
-    assert case.preferred_skills == ("planning-guide", "epietl-api")
+    assert case.preferred_skills == ("multi-source-report", "epietl-api")
     assert case.source_urls == ("https://example.invalid/a",)
     assert case.judge_focus == ("accuracy", "trace_rationality")
     assert case.prior_case_refs == ("covid-monitoring-08-may-mainland-dominant-lineage",)
@@ -95,7 +109,7 @@ prompt = "hello"
 required_env = []
 expected_behaviors = []
 expected_outputs = []
-preferred_skills = "planning-guide"
+preferred_skills = "multi-source-report"
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -169,8 +183,8 @@ def test_matches_supports_tool_and_subagent_and_report_predicates() -> None:
     context = {
         "tool_names": ["task", "task", "execute"],
         "subagents": [
-            "report-researcher",
-            "report-synthesizer",
+            "research-helper",
+            "synthesis-helper",
         ],
         "summary_lines": ["Output directory: /tmp/demo", "Risk level: Elevated"],
         "log_text": "hello 401 world",
@@ -188,7 +202,7 @@ def test_matches_supports_tool_and_subagent_and_report_predicates() -> None:
 
     assert _matches("tool:task", context) is True
     assert _matches("tool-count:task>=2", context) is True
-    assert _matches("subagent:report-synthesizer", context) is True
+    assert _matches("subagent:synthesis-helper", context) is True
     assert _matches("subagent-count>=2", context) is True
     assert _matches("log:401", context) is True
     assert _matches("report-final-exists", context) is True

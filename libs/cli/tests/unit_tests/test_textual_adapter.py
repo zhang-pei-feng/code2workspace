@@ -25,6 +25,7 @@ from code2workspace_cli.textual_adapter import (
     _build_interrupted_ai_message,
     _handle_interrupt_cleanup,
     _is_summarization_chunk,
+    _render_supervisor_event,
     execute_task_textual,
     format_token_count,
     print_usage_table,
@@ -1013,6 +1014,70 @@ class TestExecuteTaskTextualAskUser:
                 ),
                 adapter=adapter,
             )
+
+
+class TestRenderSupervisorEvent:
+    """Tests for supervisor-event formatting in the Textual adapter."""
+
+    def test_renders_node_finished_with_artifacts_and_evidence(self) -> None:
+        text = _render_supervisor_event(
+            {
+                "kind": "node_finished",
+                "round_index": 2,
+                "node_id": "execute_task",
+                "status": "completed",
+                "summary": "finished execution",
+                "artifacts": ["/tmp/output.txt"],
+                "evidence": ["official source"],
+            }
+        )
+
+        assert "execute_task" in text
+        assert "finished execution" in text
+        assert "/tmp/output.txt" in text
+        assert "official source" in text
+
+    def test_renders_generic_choice_requested_compactly(self) -> None:
+        text = _render_supervisor_event(
+            {
+                "kind": "generic_choice_requested",
+                "options": [
+                    {
+                        "label": "简单",
+                        "summary": "very long summary that should not be repeated",
+                        "execution_focus": "Use the analysis result to produce the smallest verified answer or artifact.",
+                    },
+                    {
+                        "label": "中等",
+                        "summary": "another long summary",
+                        "execution_focus": "Complete the main requested outcome with focused verification and concise artifacts.",
+                    },
+                ],
+            }
+        )
+
+        assert "generic approach selection requested" in text
+        assert "very long summary" not in text
+        assert "Use the analysis result" in text
+        assert "Complete the main requested outcome" in text
+
+    def test_renders_node_finished_with_compact_lists(self) -> None:
+        text = _render_supervisor_event(
+            {
+                "kind": "node_finished",
+                "round_index": 1,
+                "node_id": "analyze_task",
+                "status": "completed",
+                "summary": "summary",
+                "artifacts": ["a1", "a2", "a3"],
+                "evidence": ["e1", "e2", "e3", "e4"],
+            }
+        )
+
+        assert "artifacts: 3" in text
+        assert "evidence: 4" in text
+        assert "... 1 more" in text
+        assert "... 2 more" in text
 
 
 # ---------------------------------------------------------------------------

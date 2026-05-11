@@ -214,7 +214,15 @@ def _resolve_repo_path(raw: str) -> Path:
     candidate = Path(raw)
     if candidate.is_absolute():
         return candidate
-    return _repo_root() / raw
+    repo_root = _repo_root()
+    primary = repo_root / raw
+    if primary.exists():
+        return primary
+    if repo_root.parent.name == ".worktrees":
+        shared_project_candidate = repo_root.parent.parent / raw
+        if shared_project_candidate.exists():
+            return shared_project_candidate
+    return primary
 
 
 def _first_existing(paths: tuple[str, ...]) -> Path | None:
@@ -274,7 +282,7 @@ def _write_case_readme(case_dir: Path, payload: dict[str, Any], dataset: Dataset
     write_text(case_dir / "README.md", "\n".join(lines) + "\n")
 
 
-def _root_plan_payload(task: str, run_dir: Path) -> dict[str, Any]:
+def _root_plan_payload(task: str, run_dir: Path, case_order: list[str]) -> dict[str, Any]:
     return {
         "task": task,
         "run_dir": str(run_dir),
@@ -282,9 +290,9 @@ def _root_plan_payload(task: str, run_dir: Path) -> dict[str, Any]:
         "catalog_file": str(_catalog_path()),
         "dataset_root": str(_dataset_root()),
         "downloads_root": str(_downloads_root()),
-        "case_order": list(CASES),
+        "case_order": case_order,
         "datasets": {key: spec.to_dict() for key, spec in DATASETS.items()},
-        "cases": {name: case.to_dict() for name, case in CASES.items()},
+        "cases": {name: CASES[name].to_dict() for name in case_order},
     }
 
 
@@ -680,7 +688,8 @@ def cmd_init(args: argparse.Namespace) -> int:
     ensure_dir(_dataset_root())
     ensure_dir(_downloads_root())
     ensure_dir(run_dir / "logs")
-    root_payload = _root_plan_payload(args.task, run_dir)
+    case_order = list(args.repos) if args.repos else list(CASES)
+    root_payload = _root_plan_payload(args.task, run_dir, case_order)
     write_json(_root_manifest_path(run_dir), root_payload)
     write_json(run_dir / "benchmark_plan.json", root_payload)
     lines = [
@@ -693,7 +702,8 @@ def cmd_init(args: argparse.Namespace) -> int:
         "## Repo Cases",
         "",
     ]
-    for name, case in CASES.items():
+    for name in case_order:
+        case = CASES[name]
         lines.append(f"- `{name}` -> dataset `{case.dataset_key}` / family `{case.family}`")
         case_dir = _case_dir(run_dir, name)
         ensure_dir(case_dir / "docker")
@@ -703,7 +713,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         _save_case_manifest(run_dir, name, manifest)
         _write_case_readme(case_dir, manifest, DATASETS[case.dataset_key])
     write_text(run_dir / "benchmark_plan.md", "\n".join(lines) + "\n")
-    print(json.dumps({"run_dir": str(run_dir), "case_count": len(CASES), "case_order": list(CASES)}, ensure_ascii=False, indent=2))
+    print(json.dumps({"run_dir": str(run_dir), "case_count": len(case_order), "case_order": case_order}, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -1063,6 +1073,7 @@ def build_parser() -> argparse.ArgumentParser:
     init = subparsers.add_parser("init", help="Create a benchmark run directory from the benchmark catalog.")
     init.add_argument("--task", required=True)
     init.add_argument("--output-dir")
+    init.add_argument("--repos", nargs="+", choices=sorted(CASES))
     init.set_defaults(func=cmd_init)
 
     catalog = subparsers.add_parser("catalog-datasets", help="Print the dataset catalog used by the benchmark skill.")

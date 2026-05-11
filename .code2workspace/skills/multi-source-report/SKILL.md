@@ -16,11 +16,11 @@ This is the only report-generation skill in the project. Use it for:
 - warning / preparedness syntheses
 - cross-source evidence summaries
 
-The workflow follows a deep-research pattern:
+The workflow follows a structured evidence-lane pattern:
 
 1. Plan the report and save the request
 2. Create a report run directory
-3. Delegate focused research lanes in parallel with `task()`
+3. Execute focused evidence lanes in parallel when the request separates cleanly
 4. Merge findings into lane notes under `lanes/*.md`
 5. Compose `final_report.md`
 6. Verify the final report against the original request
@@ -40,9 +40,9 @@ python3 skills/multi-source-report/scripts/report_tool.py init \
 ```
 
 3. Save or restate the user request in the run metadata if needed
-4. Delegate focused research tasks with `task()`; use parallel tasks whenever the lanes are independent
+4. Collect focused lane evidence; use parallel lane work whenever the lanes are independent
 5. Save each lane note under `lanes/*.md`
-6. Optionally delegate synthesis to `report-synthesizer`
+6. Optionally add one synthesis pass after the evidence lanes exist
 7. Compose the final report:
 
 ```bash
@@ -69,11 +69,13 @@ Default lane pattern:
 
 Default parallelism:
 
-- Start with 1 `report-researcher` for simple report requests
-- Use 2-3 `report-researcher` tasks for comparisons or clearly separate evidence lanes
-- Use `report-synthesizer` after the evidence lanes exist
+- Start with 1 evidence lane for simple report requests
+- Use 2-3 parallel evidence lanes for comparisons or clearly separate evidence gaps
+- Add one synthesis pass only after the evidence lanes exist
 
-Use `report-researcher` multiple times in parallel rather than introducing lane-specific report subagents.
+Do not assume any project-specific report subagent names. On the current
+branch, report work is carried by supervisor-planned generic workers plus lane
+artifacts, not by checked-in report-only subagent definitions.
 
 ## Evidence Layers
 

@@ -1,0 +1,16 @@
+{
+  "AQUARIUM_HB_Workflow.mode": "full_pipeline",
+  "AQUARIUM_HB_Workflow.fastq1": "/path/to/sample_1.fastq.gz",
+  "AQUARIUM_HB_Workflow.fastq2": "/path/to/sample_2.fastq.gz",
+  "AQUARIUM_HB_Workflow.reference_fasta": "/path/to/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa",
+  "AQUARIUM_HB_Workflow.reference_gtf": "/path/to/Homo_sapiens.GRCh38.94.chr.gtf",
+  "AQUARIUM_HB_Workflow.reference_file": "/path/to/ReferenceSet.txt",
+  "AQUARIUM_HB_Workflow.cpu": 4,
+  "AQUARIUM_HB_Workflow.memory": "16GB",
+  "AQUARIUM_HB_Workflow.docker_image": "benchmark/aquarium-hb:zpf_v0",
+  
+  "_comment1": "Full pipeline mode runs: detect -> reconstruct -> quant",
+  "_comment2": "Note: The 'reference' module is skipped in full_pipeline mode",
+  "_comment3": "You need to provide a pre-built reference_file from a previous 'reference' run",
+  "_comment4": "Optional BWA index files can also be provided (see inputs_detect.json)"
+}

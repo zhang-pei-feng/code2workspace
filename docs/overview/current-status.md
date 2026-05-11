@@ -4,12 +4,48 @@ This is the fastest engineering snapshot for the repository.
 
 ## Snapshot
 
-- Last consolidated update: 2026-04-23
-- Repository scope: focused on `libs/code2workspace`, `libs/cli`, the web
-  API backend, one-shot repo experiments, and harness work
+- Last consolidated update: 2026-05-08
+- Repository scope: focused on `libs/code2workspace`, `libs/cli`, the Web
+  Workbench, one-shot repo experiments, and harness work
 - Current verified baseline: non-interactive CLI works, interactive TUI startup
-  reaches a usable prompt again, the web API backend works, and the `spades`
-  Docker + WDL path has reached a real successful baseline
+  reaches a usable prompt again, the Web Workbench backend/frontend service
+  works, the `spades`
+  Docker + WDL path has reached a real successful baseline, and the
+  supervisor-runtime worktree now has a generic graph skeleton that matches the
+  intended `init -> parallel workers -> compose -> summarize` shape.
+- Thesis draft status: the active Chinese thesis materials under
+  `experiments/harness/` use the synchronized `test-agent-8081` thesis version
+  as the baseline, while adding back a compact technical-principles section.
+  The active draft now uses `绪论 -> 相关技术基础与系统需求分析 -> 系统总体设计
+  -> 关键机制设计与实现 -> 实验结果与分析`, with section 1.4 kept in the
+  paragraph-style research-problem form preferred for the formal thesis. The
+  thesis-facing long-task story now treats Supervisor Graph as the final
+  demonstration path, keeps one-shot as the historical baseline / launcher
+  layer, intentionally does not present the `report` family in the thesis
+  results or diagrams, and no longer presents the local harness loop as a thesis
+  method. The formal paper framing is now Supervisor Graph orchestration,
+  node-level artifacts, and evidence-backed completion judgment.
+- New orchestration baseline: the CLI default runtime no longer relies only on
+  soft planner routing for long tasks; it now wraps the base agent in a
+  supervisor graph runtime that:
+  - routes every user task through the supervisor layer first
+  - uses a generic default graph for unknown tasks
+  - uses known-family guidance/templates for `github2workspace`, `benchmark`,
+    and `report`
+  - executes those rounds through one generic worker contract
+  - writes canonical orchestration artifacts under the current thread workspace
+    at `orchestration_runs/<run_id>/`
+  - rebuilds and queries a lightweight SQLite case index from workspace
+    artifacts before planning each run
+- Branch note: `feature/supervisor-graph-runtime` is the supervisor-first
+  runtime branch before the QA-only packaging pass. It keeps the normal
+  user-level model config / `.env` behavior, isolated project-root session
+  workspaces, and all Supervisor Graph task families (`generic`,
+  `github2workspace`, `benchmark`, and `report`).
+- Current user-level default model now points at the custom alias
+  `openai_paid:gpt-5.4`:
+  - `openai` remains available as `OpenAI（自己的中转）`
+  - `openai_paid` is the current default as `OpenAI（付费中转）`
 - Additional checked-in evidence: historical one-shot completions still exist
   for `v-pipe`, `covid-19-signal`, and `fieldbioinformatics`, while the latest
   reduced evaluation adds fresh completed samples on `spades` and `megahit`
@@ -24,7 +60,9 @@ This is the fastest engineering snapshot for the repository.
   - terminal UI, non-interactive runner, model/config handling, and server
     bridge
 - `apps/webapp`
-  - lightweight web API backend backed by the existing CLI execution path
+  - Web Workbench: Starlette backend, vendored Next.js chat frontend, same-origin
+    `/langgraph/*` proxy, `/api/*` management routes, and shared local LangGraph
+    server startup
 - `experiments/oneshot`
   - generic one-shot runner for repo-to-Docker/WDL tasks
 - `experiments/benchmark`
@@ -35,26 +73,194 @@ This is the fastest engineering snapshot for the repository.
 
 ## Workstream Progress
 
-### 1. Web API Backend
+### 0. Supervisor Graph Runtime
 
-Status: minimal backend only
+Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
+`report`, and a newly hardened generic path
 
-- Session list, create, delete, run submission, run lookup, and health routes
-  are still in place under `/api/*`.
-- The checked-in browser frontend and static SPA assets have been removed.
+- Added `libs/code2workspace/code2workspace/orchestration_runtime.py` as the
+  core graph planner/executor surface, with typed graph nodes/edges, worker
+  results, execution rounds, case traces, supervisor decisions, a generic
+  planner path, and a task-guidance registry.
+- Added `libs/cli/code2workspace_cli/supervisor_runtime.py` as the CLI-facing
+  runtime wrapper, artifact writer, and SQLite case-index layer.
+- Added `libs/cli/code2workspace_cli/supervisor_capabilities.py` plus
+  `.code2workspace/skills/supervisor-guidance/` so node strategy now comes from
+  versioned Skill assets while capability-to-tool mappings stay in code.
+- Generic QA orchestration guidance is now stronger at the worker-contract
+  layer:
+  - capability bundles are no longer only one-line summaries; they now carry
+    structured execution-focus / preferred-input / expected-output / stop /
+    avoid contracts
+  - generic tasks now always carry the `generic_qa` family guidance id
+  - new guidance assets were added for `init_generic`, `worker_context`,
+    `worker_solution`, `compose_generic`, and the `generic_qa` family
+- `create_cli_agent()` now builds the original workspace agent as the base
+  worker/fallback agent, then wraps it in a supervisor-enabled graph so every
+  task enters supervisor first; generic tasks use the default graph, while known
+  families receive guidance/template overlays.
+- Generic graph planning has now been tightened further:
+  - first-round generic graphs no longer stop at a single `analyze_task` node
+  - they now default to `init_generic -> worker_context -> worker_solution ->
+    compose_generic -> summarize`
+  - classification fallback and LLM prompt rules now explicitly keep prompts
+    such as `先给我一个口头判断` / `不要正式写作` on the generic path rather
+    than drifting into the report family
+- Fresh focused evidence from
+  `experiments/harness/runs/supervisor-routing-trigger-eval/20260507T143455346391Z/`
+  shows the generic family now reaches `5/5` correct under rules fallback, with
+  all five generic prompts mapping to the new graph skeleton. That replay did
+  not use the paid relay model because the current shell lacked
+  `OPENAI_API_KEY`, so it should be repeated with live credentials before using
+  the result as classifier-quality evidence.
+- New static multi-case capability-prompt evidence under
+  `experiments/harness/runs/generic-capability-prompt-eval/20260510T174323Z/`
+  covers five business-task categories (`code_fix`, `data_analysis`,
+  `incident_triage`, `solution_comparison`, `migration_plan`); all five kept the
+  generic graph, loaded `generic_qa` family guidance, and included the richer
+  capability-contract fields plus the expected node-specific hint.
+- Cleaned up one more layer of obsolete architecture on the current branch:
+  - removed the dead `paper2workspace` skill shell
+  - removed the unused CLI `planner_routing.py` middleware/test surface
+  - removed the thin `github2workspace-orchestrator` Skill wrapper now that
+    `github2workspace` is represented directly by the supervisor task family
+  - removed the checked-in report-only project subagents under
+    `.code2workspace/agents/`
+  - removed the retired harness-side `OpenClaw` / `ACPX` bridge assets under
+    `experiments/harness/skills/openclaw/` plus the importer/test surfaces
+  - retired the old `planning-guide` side helper from the active routing story;
+    task-family classification now belongs to the shared supervisor runtime
+    entry in `libs/code2workspace/code2workspace/orchestration_runtime.py`
+- Task-family routing for the three special lanes now uses a hybrid classifier:
+  - rule markers still provide the stable fast path and fallback
+  - the shared runtime can ask the configured LLM to choose among
+    `benchmark`, `github2workspace`, `report`, and `generic`
+  - low-confidence or invalid classifier output falls back to the rule result
+- Current artifact contract for supervised runs:
+  - `request.json`
+  - `retrieved_cases.json`
+  - `graph_round_*.json`
+  - `node_traces/*.json`
+  - `worker_outputs/*.json`
+  - `tool_activity.jsonl`
+  - `final_decision.json`
+  - `final_summary.md`
+
+Focused validation currently recorded:
+
+- `libs/code2workspace/tests/unit_tests/test_orchestration_runtime.py`: `4 passed`
+- `libs/cli/tests/unit_tests/test_supervisor_runtime.py`: `3 passed`
+- server/runtime hardening after live benchmark stall:
+  - `libs/cli/tests/unit_tests/test_server_helpers.py`
+  - `libs/cli/tests/unit_tests/test_supervisor_runtime.py`
+  - `23 passed`
+- benchmark fan-out regression check:
+  - `libs/cli/tests/unit_tests/test_supervisor_runtime.py`
+  - `libs/code2workspace/tests/unit_tests/test_orchestration_runtime.py`
+  - `22 passed`
+- targeted CLI/runtime regression suite:
+  - `libs/cli/tests/unit_tests/test_agent.py`
+  - `libs/cli/tests/unit_tests/test_non_interactive.py`
+  - `libs/cli/tests/unit_tests/test_server_graph.py`
+  - `libs/code2workspace/tests/unit_tests/test_graph.py`
+  - `175 passed`
+- TUI startup-facing unit checks:
+  - `libs/cli/tests/unit_tests/test_app.py -k 'server_ready_message_dispatch_clears_connecting or initial_skill_runs_after_server_ready or deferred_actions_cleared_on_server_failure'`
+  - `3 passed`
+- Real non-interactive smoke with an external model provider remains
+  environment-dependent:
+  - one earlier explicit `openai:gpt-5.4` run exited successfully
+  - the latest 30-second rerun timed out under the same external provider path,
+    so treat live-provider confidence as weaker than the targeted unit suite
+- New live benchmark-specific evidence:
+  - the earlier helper-first smoke failed immediately with
+    `RemoteException: BlockingError` until the CLI server was changed to start
+    `langgraph dev` with `--allow-blocking`
+  - benchmark `register`, catalog-selected per-case execution nodes, and
+    `summarize` now have deterministic helper-backed execution paths inside
+    `libs/cli/code2workspace_cli/supervisor_runtime.py`
+  - deterministic benchmark worker execution is offloaded from the async event
+    loop so ready per-tool workers can truly fan out after `register` instead
+    of serializing on blocking helper subprocesses
+  - fresh smoke run root:
+    `workspace/20260505145718/orchestration_runs/20260505T065722Z`
+    now reaches `register finished` and enters real SPAdes execution instead of
+    stalling on the first node with only `node_started`
+  - full parallel fan-out run root:
+    `workspace/202605051600_parallel/orchestration_runs/20260505T081847Z`
+    completed `register -> spades/megahit -> summarize` in one round; its
+    `tool_activity.jsonl` records `spades` and `megahit` both starting before
+    either branch finished, then `megahit` finishing while `spades` continued
+  - the same two-tool benchmark also completed through the outer
+    `code2workspace -n ... -q` path under
+    `workspace/20260505165456/orchestration_runs/20260505T085500Z`, with the
+    same fan-out event order and final `decision=stop`
+  - a less prescriptive natural prompt that only provided the benchmark path,
+    dataset (`short-read-ecoli-srr001666`), and metrics also completed under
+    `workspace/20260505185712/orchestration_runs/20260505T105716Z`; the planner
+    selected `spades` and `megahit` itself, then the summary path was tightened
+    to emit an explicit metric comparison / overall judgment
+  - the benchmark runtime/guidance coupling to specific tool names was removed:
+    tool selection now comes from `experiments/benchmark/datasets/benchmark_catalog.json`,
+    case expected outputs come from each case manifest, and generic
+    `benchmark_case` guidance replaces tool-specific node guidance; a fresh
+    natural-prompt CLI run under
+    `workspace/20260505212743/orchestration_runs/20260505T132747Z` still
+    completed with the same fan-out order and final comparison
+  - after deleting the benchmark catalog/readmes, a long-read natural prompt
+    under `workspace/20260506092525/orchestration_runs/20260506T012529193142Z`
+    no longer selected tools and failed at `register` with
+    `missing_selected_tools`; this confirms the current deterministic benchmark
+    path still depends on an explicit tool-selection source rather than model or
+    asset inspection
+
+Remaining gaps:
+
+- the planner is still heuristic/programmatic rather than model-generated
+- known-family graph skeletons are still code-defined even though node strategy
+  is now skill-backed
+- worker recursion is designed into the contract but not yet expanded into
+  multi-level production flows
+- the real interactive TUI startup smoke still timed out under scripted capture
+  even though the focused startup unit checks passed
+- the main benchmark supervisor path now has full two-tool end-to-end evidence;
+  the remaining adjacent issue is CLI/client behavior when a user interrupts a
+  long blocking helper run mid-stream
+- catalog-free benchmark operation is not yet implemented: without
+  `benchmark_catalog.json`, the supervisor currently does not let the model
+  inspect benchmark assets and create the per-tool fan-out graph itself
+
+### 1. Web Workbench
+
+Status: browser chat workbench plus thin backend/proxy
+
+- The checked-in browser frontend is present again under
+  `apps/webapp/frontend/` as a vendored `agent-chat-ui` Next.js app.
+- The Starlette backend serves `frontend/out/` for `/` and other non-API routes
+  when the static export exists.
+- On backend startup, `SharedLangGraphService` starts one shared local LangGraph
+  server through the existing CLI server bridge.
+- `/langgraph/*` is proxied to that shared server so the browser can stream chat
+  traffic through the same-origin backend without knowing the dynamic upstream
+  port.
+- `/api/*` management routes remain for health, model/appearance settings,
+  thread summaries, history, workspace file operations, run lookup, interrupts,
+  and human decisions.
 - The web SQLite store now enables `WAL` mode plus a busy timeout so one-shot
   completion is not starved by repeated status polling.
-- The backend still intentionally delegates execution to the non-interactive
-  CLI path instead of introducing a second runtime.
+- The web layer still intentionally reuses the local LangGraph/CLI server bridge
+  instead of introducing a second runtime.
 - Focused validation currently recorded:
   - `apps/webapp/tests`: `10 passed`
 
 Remaining gaps:
 
-- web sessions still use a lightweight app store instead of the CLI/TUI thread
-  model
-- execution is still one-shot only
-- there is no checked-in browser UI anymore
+- web metadata still uses a lightweight app store alongside checkpoint-backed
+  CLI/TUI thread state
+- the shared local LangGraph server is local-development oriented rather than
+  production hardened
+- the current frontend is chat-first; the earlier custom workspace/run dashboard
+  is not the active UI
 
 ### 2. One-Shot Repo Runner
 
@@ -152,6 +358,28 @@ local case directories with one reused `v-pipe` benchmark result
   `experiments/oneshot` path; the checked-in workspace keeps seven local case
   directories, while the thesis-facing snapshot re-attaches the earlier real
   `v-pipe` benchmark result as the eighth tool.
+- The benchmark dataset layer has now been widened beyond virus assembly:
+  - restored a checked-in `experiments/benchmark/datasets/benchmark_catalog.json`
+    after the worktree-local copy had gone missing
+  - kept the currently wired virus-assembly dataset entries intact
+  - added shared-dataset candidate entries for `cirrna` and `免疫逃逸`
+    so those task families now have one unified dataset registry even though
+    their tool-local `input.json` files still contain historical example paths
+- New non-assembly dataset groups currently staged in the catalog:
+  - `circrna-hela-rnaser-paired`
+  - `circrna-blood-prjna722046`
+  - `immune-escape-rbd-functional-dms`
+  - `immune-escape-rbd-antibody-escape`
+  - `immune-escape-covabdab-structural-bundle`
+- Current benchmark directory now also has family-level README guides under:
+  - `experiments/benchmark/README.md`
+  - `experiments/benchmark/cirrna/README.md`
+  - `experiments/benchmark/免疫逃逸/README.md`
+  These explain an important design choice:
+  - `cirrna` can honestly share RNA-seq/reference bundles across many tools
+  - `免疫逃逸` is modality-heterogeneous, so the fair shared-benchmark shape is
+    a two-layer bundle (`DMS` tables plus structure/sequence assets) rather
+    than one fake “single input file for all tools”
 - Fixed local `inputs.json` files now point at live repo-local data instead of
   dead historical absolute paths.
 - Current 2026-04-21 benchmark run root:
@@ -272,7 +500,6 @@ Status: first local optimization loop exists, with both a phase-1 benchmark-auto
   - persisted totals: `6/8`
   - effective totals under the updated completion code: `7/8`
   - only remaining clear miss: `fieldbioinformatics`
-- Imported OpenClaw skill content is available as reference material.
 - The outer loop now supports both a local command proposer path and a native
   `[better_agent]` proposer mode.
 - The first autonomy ladder is intentionally narrow and thesis-friendly:
@@ -361,27 +588,31 @@ Remaining gaps:
 
 ### 5. Runtime And Local Environment
 
-Status: locally usable with a known compatibility workaround
+Status: supervisor-runtime branch uses the normal user-level CLI configuration
 
-- Verified command:
+- Main configuration entry:
+
+```txt
+~/.code2workspace/config.toml
+```
+
+- Project and global `.env` loading remain enabled. For the local relay, keep
+  the relevant provider key in the shell or dotenv layer used by the CLI.
+- Smoke command:
 
 ```bash
-uv run --project libs/cli code2workspace -n "Reply with OK only." -q --no-mcp
+uv run --project libs/cli code2workspace -n "Reply with OK only." -q
 ```
 
 - Expected result: `OK`
 - The interactive TUI startup path now reaches the normal ready prompt again
   after the deferred-startup message-routing hotfix in
   `libs/cli/code2workspace_cli/app.py`.
-- Normal CLI sessions now create a per-session working directory under
-  `<invocation-cwd>/workspace/<YYYYMMDDHHMMSS>` and record that path in thread
-  metadata so resumed threads can return to the same workspace.
+- Normal CLI sessions create isolated project-root workspaces by default at
+  `workspace/<YYYYMMDDHHMMSS>`.
 - Experiment runners with fixed repo-layout assumptions currently opt out and
   keep their original working directories, notably `experiments/oneshot` and
   `experiments/skill_tests`.
-- Repo-tracked config lives at `.code2workspace/config.toml`.
-- Repo-tracked `.env` is intentionally committed for now during local
-  development.
 - The local gateway responds through chat-completions compatibility, but the
   full agent path still is not confirmed for the ideal Responses API mode.
 
@@ -406,11 +637,10 @@ Status: unified report entrypoint in place
     `respiratory-disease-wide-monitor`,
     `respiratory-disease-data-fetcher`, `epietl-api`,
     `virus-variation-query`
-- The old report-specific project subagents have also been replaced with
-  generic report subagents:
-  - `report-researcher`
-  - `report-synthesizer`
-  - `report-web-researcher`
+- The earlier checked-in report-specific project subagents have now been
+  removed from `.code2workspace/agents`; current report execution on this
+  branch relies on supervisor-planned generic workers plus lane artifacts
+  instead of project-local report-only subagent definitions.
 - The report helper now writes all report runs under
   `results/skills/multi-source-report/` and keeps `manifest.json`,
   `lanes/*.md`, `final_report.md`, and `report_diagnostics.json` together.
@@ -452,7 +682,8 @@ Remaining gaps:
 
 - heavy scientific repositories are expensive and slow to converge on cold
   Docker layers
-- the remaining web API state and CLI/TUI runtime state are still split
+- the Web Workbench metadata store and CLI/TUI runtime state are still not
+  perfectly unified
 - gateway compatibility with the ideal Responses API path is incomplete
 - the inherited runtime is usable, but the repo-specific `code2workspace`
   pipeline still needs more implementation depth
@@ -461,7 +692,7 @@ Remaining gaps:
 
 1. Continue hardening and running the generic one-shot experiment path.
 2. Turn the prompt/policy surfaces into repeatable harness experiments.
-3. Keep the remaining web API backend minimal.
+3. Keep the Web Workbench useful but thin.
 4. Use the resulting evidence to support the thesis narrative and future
    pipeline work.
 
@@ -504,13 +735,15 @@ Remaining gaps:
 - Added regression coverage for both direct handler calls and real
   `post_message(...)` dispatch of deferred startup events.
 - Changed normal CLI session startup so new sessions default to
-  `workspace/<timestamp>` below the invocation directory, while fixed-layout
-  experiment runners explicitly preserve their original cwd.
+  `workspace/<timestamp>` below the project root when launched inside a
+  project, while fixed-layout experiment runners explicitly preserve their
+  original cwd.
 - Fixed a web-store concurrency issue by enabling SQLite `WAL` mode and busy
   timeout handling so repeated status polling no longer leaves quick one-shot
   runs stranded in `running`.
-- Removed the checked-in web frontend and static SPA assets entirely; `apps/webapp`
-  is now API-only.
+- Later work reintroduced a checked-in Web Workbench frontend under
+  `apps/webapp/frontend/`; treat the current web architecture as
+  frontend-plus-backend-plus-proxy.
 - Rebased the local benchmark helper and catalog onto `experiments/benchmark/`,
   updated the seven local covid-assembly case inputs to live paths, and started
   a real benchmark run with partial WDL-positive results for `spades`,
@@ -518,7 +751,7 @@ Remaining gaps:
 - Added a soft planner-routing layer for project skills:
   - `planning-guide` now emits structured soft recommendations such as
     `recommended_skill`, `selected_skill`, task type, lane hints, and fresh-run
-    isolation hints for obvious benchmark / paper2workspace prompts
+    isolation hints for obvious benchmark / github2workspace prompts
   - the shared CLI agent path now injects those recommendations into the
     system prompt via a planner middleware instead of forcing hard dispatch
   - isolated copies can now point back to the original project root through a
@@ -528,9 +761,8 @@ Remaining gaps:
     such as fresh-output requirements, no-reuse hints, shared-dataset
     preference, strict phase gates, lane dependencies, and final synthesis /
     report expectations
-  - `paper2workspace-orchestrator` run scaffolding now exposes structured
-    status, completion, and report entrypoints so phase-gated workspace tasks
-    can be summarized before optional expansion
+  - the repo-to-workspace orchestration line now centers on
+    `github2workspace` naming instead of the older `paper2workspace` alias
 
 ### 2026-04-22
 
@@ -540,11 +772,11 @@ Remaining gaps:
 - Upgraded the checked-in harness config from a two-case demo to the live
   `train/holdout` repo split with fixed `stratum` labels.
 - Added four low-cost project-skill orchestration eval cases covering:
-  benchmark routing, paper2workspace routing, mixed-task lane summaries, and
+  benchmark routing, github2workspace routing, mixed-task lane summaries, and
   phase-gated workspace report generation.
 - Recorded initial real smoke results:
   - benchmark routing: `passed`
-  - paper2workspace routing: `passed`
+  - github2workspace routing: `passed`
   - mixed-task routing: `passed`
   - phase-gated report helper: `passed`
   - unified result root:
@@ -553,8 +785,10 @@ Remaining gaps:
 ### 2026-04-23
 
 - Replaced the two earlier report skills with one new project skill,
-  `multi-source-report`, and removed the old report-specific subagents in favor
-  of `report-researcher`, `report-synthesizer`, and `report-web-researcher`.
+  `multi-source-report`; that intermediate branch stage still used a small
+  report-only project-subagent layer, which was later removed again on the
+  current supervisor-runtime branch when report execution was collapsed onto
+  generic workers plus lane artifacts.
 - Rebased report orchestration on a deep-research-style lane workflow while
   keeping the current repo's local evidence skills as first-class sources.
 - Added focused unit coverage and new live skill-test cases for

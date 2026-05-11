@@ -20,7 +20,6 @@ from code2workspace_cli.config import (
     _get_editable_install_path,
     _is_editable_install,
     fetch_langsmith_project_url,
-    get_banner,
     get_glyphs,
     get_langsmith_project_name,
 )
@@ -181,30 +180,20 @@ class WelcomeBanner(Static):
         colors = theme.get_theme_colors(self)
         ansi = self.app.theme == "textual-ansi"
 
-        banner = get_banner()
         primary_style: str | TStyle = (
             "bold"
             if ansi
             else TStyle(foreground=TColor.parse(colors.primary), bold=True)
         )
-
-        if not ansi and _is_editable_install():
-            # Highlight local-install version tag with tool accent; art stays primary.
-            dev_style = TStyle(foreground=TColor.parse(colors.tool), bold=True)
-            version_tag = f"v{__version__} (local)"
-            idx = banner.rfind(version_tag)
-            if idx >= 0:
-                parts.extend(
-                    [
-                        (banner[:idx], primary_style),
-                        (version_tag, dev_style),
-                        (banner[idx + len(version_tag) :] + "\n", primary_style),
-                    ]
-                )
-            else:
-                parts.append((banner + "\n", primary_style))
+        dev_style: str | TStyle = (
+            "bold" if ansi else TStyle(foreground=TColor.parse(colors.tool), bold=True)
+        )
+        version_tag = f"v{__version__}"
+        parts.extend([("code2workspace", primary_style), (" ", "dim")])
+        if _is_editable_install():
+            parts.extend([(f"{version_tag} (local)", dev_style), "\n"])
         else:
-            parts.append((banner + "\n", primary_style))
+            parts.extend([(version_tag, "dim"), "\n"])
 
         # For ANSI theme, use "bold" (terminal foreground) instead of hex
         accent: str | TStyle = "bold" if ansi else colors.primary

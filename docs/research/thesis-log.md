@@ -10,18 +10,429 @@ from `docs/research/README.md`.
 
 Design and implementation of a LangGraph-based agent system that converts
 software repositories into runnable workspaces and executes structured software
-engineering and scientific-workflow tasks with improved success rate through
-harness-style iteration.
+engineering and scientific-workflow tasks through Supervisor Graph orchestration
+and evidence-backed completion judgment.
 
 ## Research Themes
 
 - agent-oriented workspace interaction
 - one-shot execution for long-running repository tasks
 - reproducible experiment logging
-- harness engineering for success-rate improvement
+- Supervisor Graph orchestration and node-level evidence
+- evidence-backed completion judgment
 - frontend and runtime integration for controllable agent workflows
 
 ## Chronology
+
+### 2026-05-10
+
+- Strengthened the generic Supervisor Graph execution contract rather than only
+  the graph skeleton:
+  - expanded `libs/cli/code2workspace_cli/supervisor_capabilities.py` so each
+    capability bundle now carries a structured execution contract
+    (`execution_focus`, `preferred_inputs`, `expected_outputs`,
+    `stop_condition`, `avoid`)
+  - added `generic_qa` family guidance plus node guidance assets for
+    `init_generic`, `worker_context`, `worker_solution`, and `compose_generic`
+  - changed generic classification so normal generic tasks also carry the
+    `generic_qa` guidance id instead of relying only on QA-only wrapper
+    overrides
+- This matters methodologically because the earlier generic path had a decent
+  skeleton but relatively weak worker contracts; after this change the generic
+  nodes receive more explicit bounded-execution instructions, which is closer to
+  the intended "shallow orchestration + evidence-backed answer" design.
+- Added a small repeatable multi-case evaluation script
+  `experiments/harness/evaluate_generic_capability_prompts.py` and generated the
+  first artifact set under
+  `experiments/harness/runs/generic-capability-prompt-eval/20260510T174323Z/`.
+- Validation:
+  - targeted generic/runtime tests passed (`44 passed`)
+  - broader CLI/config/agent/supervisor regression suite passed (`632 passed`)
+  - the five business cases in the new capability-prompt evaluation all kept
+    the generic graph and all showed the expected family guidance plus richer
+    capability-contract fields
+
+- Split a QA-only supervisor-runtime branch for a portable question-answering
+  form of the current agent rather than creating a separate simple bot:
+  - added the single main-agent config entry
+    `backend/config/agent_models.json`
+  - disabled `.env` loading for the main runtime path
+  - changed default sessions to inherit the launch directory instead of
+    creating `workspace/<timestamp>`
+  - made remote sandbox startup fail fast in the QA-only CLI path
+  - added a `runtime.mode = "qa"` switch that forces Supervisor Graph routing
+    through the generic QA graph while preserving the base worker/supervisor
+    structure
+- Validation: focused configuration, non-interactive, and supervisor runtime
+  tests passed (`421 passed`, warnings only).
+
+### 2026-05-08
+
+- Cleaned the thesis-facing documents so the formal paper no longer presents
+  the local harness loop as a thesis method:
+  - rewrote `THESIS_FULL_DRAFT_ZH.md` around Supervisor Graph orchestration,
+    node-level artifacts, and evidence-backed completion judgment
+  - removed the old surface/variant/keep-discard story from the outline, asset
+    matrix, experiment-design notes, method draft, chapter draft, appendix
+    templates, task book, and proposal
+  - updated thesis asset-note wording so generated notes discuss execution
+    bottlenecks and standardized evidence rather than harness decisions
+  - remaining `harness` matches in thesis files are path names under the
+    existing `experiments/harness/` directory
+
+- Reworked the thesis-facing narrative so the current `supervisor-graph-runtime`
+  branch is presented as supervisor-first rather than as "one-shot as the inner
+  execution path":
+  - updated `experiments/harness/THESIS_FULL_DRAFT_ZH.md` so chapter 3 now
+    describes the base worker agent being wrapped by Supervisor Graph, chapter 4
+    uses the current `init_generic -> worker_context -> worker_solution ->
+    compose_generic -> summarize` generic graph, and chapter 5 treats one-shot
+    only as the historical baseline / batch-launch layer
+  - replaced the old project-skill / soft-routing thesis tables with
+    Supervisor-Graph-facing table slots for routing-trigger evidence and generic
+    real replays
+  - aligned `THESIS_OUTLINE_ZH.md`, `THESIS_ASSET_MATRIX_ZH.md`,
+    `THESIS_EXPERIMENT_DESIGN_ZH.md`, `THESIS_METHOD.md`, `THESIS_CHAPTER_ZH.md`,
+    `README.md`, and `docs/overview/supervisor-system-architecture.md` to the
+    same thesis framing
+  - intentionally excluded the `report` family from the thesis diagrams,
+    tables, and experiment narrative even though the runtime still supports it
+- Updated the thesis asset-notes helper and its focused tests so the generated
+  table notes now match the revised chapter-5 numbering:
+  - table 5-5: Supervisor Graph routing-trigger results
+  - table 5-6: Supervisor Graph generic real replays
+  - table 5-7: two-hour reduced evaluation
+  - table 5-8: benchmark snapshot
+- Validation:
+  - `experiments/harness/tests/test_thesis_asset_notes.py`: `3 passed`
+  - `experiments/harness/tests/test_code2workspace_harness.py`: `11 passed`
+  - regenerated `experiments/harness/code2workspace_毕业论文.docx`
+  - regenerated thesis asset notes via `generate_thesis_asset_notes.py`
+
+- Updated the thesis and overview documents to reflect the current
+  `apps/webapp` implementation as a full Web Workbench rather than only a
+  small backend service:
+  - Starlette serves the built Next.js `agent-chat-ui` frontend
+  - `/langgraph/*` proxies browser chat traffic to a shared local LangGraph
+    server started through the CLI server bridge
+  - `/api/*` remains as management routes for settings, threads, history,
+    workspace files, run state, interrupts, and decisions
+- Reworked the chapter-3 Web control-plane narrative, architecture/data-flow
+  Mermaid diagrams, thesis outline, and asset matrix accordingly, then
+  regenerated both thesis DOCX outputs.
+
+- Re-applied the compact technical-principles section on top of the synchronized
+  `test-agent-8081` thesis baseline while preserving the restored paragraph
+  version of `1.4 研究问题与挑战`.
+- Chapter 2 is again `相关技术基础与系统需求分析`; the new `2.1` covers LLM
+  agents/tool use, LangGraph/LangChain, Docker/WDL/Cromwell, and
+  harness/benchmark evidence-based evaluation, with the original requirement
+  sections shifted to `2.2`-`2.6`.
+- Updated `experiments/harness/THESIS_OUTLINE_ZH.md` and
+  `experiments/harness/generate_thesis_docx.py`, then regenerated both thesis
+  DOCX outputs from the current markdown.
+
+- Synchronized the active thesis-related harness documents from the
+  `test-agent-8081` worktree back into the supervisor-runtime worktree:
+  `THESIS*.md`, `generate_thesis_docx.py`, and the two generated thesis DOCX
+  files. This restores the paragraph-style `1.4 研究问题与挑战` section and the
+  chapter-2 `系统需求分析` structure from that version as the active thesis
+  baseline.
+- Validation: verified the synchronized files match the source worktree
+  byte-for-byte and ran a temporary DOCX generation smoke test with
+  `generate_thesis_docx.py`.
+
+- Added a compact technical-principles section to the thesis draft after
+  comparing the current structure against common engineering-thesis patterns:
+  chapter 2 is now `相关技术基础与系统需求分析`, with `2.1` covering LLM
+  agents/tool use, LangGraph/LangChain, Docker/WDL/Cromwell, and
+  harness/benchmark evidence-based evaluation before the requirement analysis.
+- Synchronized `experiments/harness/THESIS_OUTLINE_ZH.md` with the new chapter
+  2 structure, appended LangGraph/LangChain documentation references, and
+  regenerated `experiments/harness/code2workspace_毕业论文_新版结构.docx`.
+
+- Adjusted the thesis draft so `benchmark` is presented as a first-class system
+  scenario alongside `github2workspace`, rather than mainly as a chapter-5
+  experiment result.
+- Updated `experiments/harness/THESIS_FULL_DRAFT_ZH.md` so chapter 2 now
+  defines two core task families:
+  - `github2workspace`: repository-to-runnable-workspace execution
+  - `benchmark`: shared-dataset registration, tool selection, parallel case
+    execution, and metric summarization
+- Updated chapter 3 to include benchmark inputs, dataset registration, case
+  fan-out, metric summaries, and benchmark artifacts in the overall system
+  architecture and execution-flow narrative.
+- Reworked chapter 4 into a key-mechanism chapter where Supervisor Graph is
+  described as the shared orchestration framework for both sequential
+  `github2workspace` graphs and shared-input parallel `benchmark` graphs, with
+  node-level replanning and failure handling described separately for each.
+- Regenerated the thesis DOCX draft
+  `experiments/harness/code2workspace_毕业论文_新版结构.docx` from the updated
+  markdown using a temporary `python-docx` dependency injection.
+- Validation: thesis/harness focused tests passed
+  (`experiments/harness/tests/test_thesis_asset_notes.py` and
+  `test_code2workspace_harness.py`, `14 passed`).
+
+### 2026-05-07
+
+- Reworked the generic branch of the Supervisor Graph planner so it is no
+  longer modeled as a thin `analyze_task` placeholder followed by a separate
+  execution round.
+- The generic task family now defaults to a graph that better matches the
+  intended runtime behavior:
+  - `init_generic`
+  - `worker_context`
+  - `worker_solution`
+  - `compose_generic`
+  - `summarize`
+- This matters methodologically because the earlier generic graph overstated a
+  planner-only decomposition and understated the intended first-layer worker
+  fan-out. The new graph makes the generic path more comparable to the
+  report-style `init -> lanes -> compose` pattern while preserving a normal
+  user-facing answer rather than a formal report artifact.
+- Tightened task-family disambiguation at both levels:
+  - rule fallback now keeps prompts containing cues such as `不要正式写作`,
+    `口头判断`, and `区分证据和猜测` on the generic path
+  - the LLM classifier prompt now also states that such prompts should remain
+    generic unless they still clearly demand a formal deliverable
+- Focused validation passed for the updated runtime and CLI supervisor test
+  suites (`37 passed` on the scoped worktree tests).
+- A fresh generic-only routing-trigger replay under
+  `experiments/harness/runs/supervisor-routing-trigger-eval/20260507T143455346391Z/`
+  now shows `5/5` correct generic classifications with the new
+  `init_generic -> worker_context -> worker_solution -> compose_generic ->
+  summarize` graph skeleton. That replay used rules fallback because the paid
+  relay credentials were absent in the shell, so a credentialed rerun is still
+  needed before attributing the improvement to the hybrid classifier rather
+  than to the fallback rules alone.
+
+### 2026-05-06
+
+- Reorganized the benchmark dataset layer so it no longer reads as if the whole
+  benchmark surface were only `新冠病毒组装`:
+  - restored a checked-in `experiments/benchmark/datasets/benchmark_catalog.json`
+    in the current worktree after that local copy had gone missing
+  - added benchmark-family README guides for `experiments/benchmark/`,
+    `cirrna/`, and `免疫逃逸/`
+  - extended the dataset registry with shared-dataset candidate bundles for
+    circRNA and immune-escape tasks
+- This matters for the thesis because it sharpens an experimental-design
+  distinction that was previously blurred in the repository layout:
+  - virus assembly tools can often share one raw-read dataset per family
+  - circRNA tools can share RNA-seq plus reference bundles, but many still need
+    derived intermediate artifacts such as SAM/BAM or junction lists
+  - immune-escape tools are more heterogeneous still, so a fair benchmark
+    should share a layered evidence bundle (`DMS` tables plus
+    structure/sequence assets) rather than pretending one uniform raw input
+    exists for all tools
+- The new candidate shared datasets are intentionally pragmatic rather than
+  overclaimed:
+  - `circrna-hela-rnaser-paired`
+  - `circrna-blood-prjna722046`
+  - `immune-escape-rbd-functional-dms`
+  - `immune-escape-rbd-antibody-escape`
+  - `immune-escape-covabdab-structural-bundle`
+- Methodologically this is useful because it makes the next benchmark extension
+  step explicit: before wiring new task families into the supervisor helper,
+  the repository now has a documented shared-dataset layer to anchor tool
+  selection and input fairness decisions.
+
+### 2026-05-05
+
+- Adjusted the normal CLI session workspace policy on the supervisor-runtime
+  branch so project-launched interactive and non-interactive sessions now create
+  timestamped workspaces under the project root's `workspace/` directory rather
+  than under whichever subdirectory the user invoked the CLI from.
+- This keeps supervisor orchestration artifacts comparable across TUI,
+  non-interactive, and resumed-thread runs while preserving the explicit
+  `inherit` mode for fixed-layout experiment runners.
+
+- Removed another set of no-longer-authoritative branch-local assets after the
+  latest real `github2workspace` and `report` traces confirmed they were not on
+  the live execution path:
+  - deleted the checked-in report-only project subagents under
+    `.code2workspace/agents/`
+  - deleted the retired harness-side `OpenClaw` / `ACPX` bridge bundle under
+    `experiments/harness/skills/openclaw/` plus its importer/tests
+  - rewrote the remaining live report/evidence skill prompts so they no longer
+    point at `report_agent` or named report-only subagents
+- This matters for the thesis because it removes one more surface-level
+  contradiction between the codebase narrative and the observed runtime:
+  - the validated branch now reads more consistently as `supervisor` planning,
+    generic workers executing, and evidence artifacts carrying state
+  - the remaining project skills now look like evidence/tooling helpers rather
+    than like competing orchestration shells or external-agent bridges
+
+- Pruned another set of no-longer-authoritative orchestration surfaces on the
+  current supervisor-runtime branch:
+  - removed the dead `paper2workspace` project-skill shell
+  - removed the unused CLI `planner_routing.py` middleware path and its direct
+    tests
+  - removed the thin `github2workspace-orchestrator` wrapper Skill and kept the
+    task family represented directly in the supervisor graph/runtime instead
+- This matters for the thesis because it reduces a remaining architectural
+  ambiguity:
+  - previously, the codebase still contained both the new explicit
+    supervisor/worker graph and several older skill-wrapper surfaces that looked
+    like alternative orchestrators
+  - after this cleanup, the narrative is clearer: `supervisor` is the planner,
+    `worker` is generic, and project Skill assets are optional helpers or
+    guidance rather than competing runtime entrypoints
+- Kept `planning-guide` only as an optional local planning helper, but removed
+  its dependency on the deleted `github2workspace` wrapper so repository-task
+  planning no longer points back at a retired orchestration facade.
+
+- Root-caused a concrete supervisor-runtime failure mode in the live benchmark
+  path: the non-interactive CLI was starting the local `langgraph dev` server
+  without `--allow-blocking`, while the new supervisor layer uses synchronous
+  file I/O, SQLite case-index rebuilds, and deterministic helper subprocesses.
+- This matters methodologically because it separates two different causes of
+  “agent stall” that would otherwise be conflated in the thesis:
+  - runtime/scheduler incompatibility with blocking orchestration code
+  - model-level failure to stop and return control after enough work is done
+- Fixed the first issue by changing the CLI server startup path to include
+  `--allow-blocking` for local dev runs, then addressed the second issue for the
+  benchmark family by adding deterministic helper-backed fast paths for
+  `register`, `spades`, `megahit`, and `summarize` inside the supervisor worker
+  runtime.
+- This is useful thesis evidence because it shows a hybrid orchestration design
+  becoming more explicit:
+  - the generic supervisor / worker graph still exists
+  - but a subset of known benchmark nodes now bypass open-ended model behavior
+    and execute checked-in helper contracts directly when the path is already
+    well understood
+- Focused verification covered:
+  - new server-helper regression that enforces `--allow-blocking`
+  - new supervisor-runtime regressions for deterministic benchmark register,
+    repo-node execution, and summary behavior
+  - combined targeted suite result: `23 passed`
+- Fresh live evidence now shows the benchmark chain advancing further than
+  before:
+  - run root:
+    `workspace/20260505145718/orchestration_runs/20260505T065722Z`
+  - `register` now finishes immediately and writes the expected helper-first
+    scaffold (`benchmark_plan`, `dataset_resolution`, `metric_plan`, per-case
+    `execution_ready`)
+  - the remaining runtime budget is now dominated by real SPAdes execution cost
+    rather than by the earlier first-node supervisor stall
+- Tightened the benchmark execution semantics after confirming that synchronous
+  deterministic helpers could still serialize nominally parallel ready nodes by
+  blocking the async event loop.
+- The worker invocation path now runs deterministic benchmark helpers in a
+  worker thread, preserving the existing dependency-aware `asyncio.gather`
+  scheduler while allowing `spades` and `megahit` to execute concurrently after
+  `register`.
+- Added a regression test that uses blocking fake deterministic workers and
+  asserts both ready benchmark branches are active at the same time; the focused
+  supervisor/orchestration suite now passes with `19 passed`.
+- A fresh full two-tool run provides end-to-end evidence for the intended
+  supervisor shape:
+  - run root:
+    `workspace/202605051600_parallel/orchestration_runs/20260505T081847Z`
+  - `tool_activity.jsonl` records `register` completing, then `spades` and
+    `megahit` both starting before either branch finishes
+  - the run completes in one round with `decision=stop`, `failed_nodes=[]`, and
+    `reason=All nodes completed.`
+  - metrics remain available for both completed cases:
+    `megahit` has `contig_count=472`, `assembly_size=4530520`, `n50=18360`;
+    `spades` has `contig_count=1191`, `assembly_size=4582516`, `n50=24099`
+- Re-ran the same prompt through the outer non-interactive CLI entrypoint:
+  - run root:
+    `workspace/20260505165456/orchestration_runs/20260505T085500Z`
+  - it preserved the same fan-out event order and completed with
+    `decision=stop`, `failed_nodes=[]`, and `reason=All nodes completed.`
+- Tested a less prescriptive benchmark prompt that only provided the benchmark
+  path, the `short-read-ecoli-srr001666` dataset, and target metrics
+  (`contig_count`, `assembly_size`, `n50`) while leaving tool choice to the
+  agent:
+  - run root:
+    `workspace/20260505185712/orchestration_runs/20260505T105716Z`
+  - the planner still selected the appropriate short-read assembly pair
+    `spades` and `megahit`
+  - execution preserved the same parallel worker event order and completed
+    `2/2` cases
+- That natural-prompt test exposed a reporting gap: the system had enough
+  metric evidence but did not directly answer which tool looked better. The
+  deterministic summary path now writes an explicit comparison object and
+  Markdown section; for the observed metrics it favors `spades` by N50 and
+  assembly size while noting that `megahit` has lower `contig_count`.
+- Removed the remaining tool-specific benchmark coupling from the supervisor
+  runtime and guidance assets:
+  - planner tool selection now reads the benchmark catalog and follows the
+    selected dataset's shared-compatible tool list instead of relying on a
+    hardcoded default pair
+  - per-case expected output checks now read each case manifest rather than a
+    runtime-local output-name table
+  - tool-specific node guidance was replaced with one generic
+    `benchmark_case` guidance artifact
+- The same natural prompt was rerun after decoupling:
+  - run root:
+    `workspace/20260505212743/orchestration_runs/20260505T132747Z`
+  - it still completed `register -> parallel per-case workers -> summarize`
+    with `decision=stop` and `failed_nodes=[]`
+  - the final answer includes the metric judgment that `spades` is favored by
+    N50/assembly size while `megahit` has lower contig count
+- After the benchmark catalog/readmes were deleted to test a more autonomous
+  setting, a long-read natural prompt exposed the next design gap:
+  - run root:
+    `workspace/20260506092525/orchestration_runs/20260506T012529193142Z`
+  - the graph classified the task as `benchmark` but had no selected tools
+  - deterministic `register` failed with `missing_selected_tools`, and summary
+    only produced an empty partial result
+- This is useful thesis evidence because it separates "no hardcoded tool names"
+  from true autonomous benchmark planning: the current implementation can avoid
+  `spades`/`megahit` coupling, but still needs either a catalog-like structured
+  source or a model/asset-inspection register step that can create the fan-out
+  graph itself.
+
+### 2026-04-30
+
+- Replaced the earlier long-task soft-routing default with a first explicit
+  supervisor-graph runtime, then generalized it further so all tasks now enter
+  that layer and known families only contribute guidance/templates.
+- The new split is architecturally cleaner:
+  - `supervisor` now plans graph rounds, retrieves prior similar cases,
+    evaluates node outcomes, and decides whether to stop or replan
+  - `worker` is now one generic execution contract rather than several
+    report/build-specific role abstractions
+  - unknown tasks now also receive a structured default graph instead of
+    bypassing supervisor entirely
+  - graph artifacts are persisted under each thread workspace so the runtime
+    history is inspectable and replayable
+- This matters for the thesis because it turns the orchestration layer from a
+  prompt-guided behavior into an explicit machine-readable control structure:
+  - graph nodes, edges, worker outputs, and supervisor decisions are now
+    serializable experiment artifacts
+  - benchmark and repository-to-workspace tasks can now be analyzed as graph
+    execution traces rather than only as chat logs
+- Added a rebuildable SQLite case index over canonical workspace artifacts.
+  Methodologically this is important because historical runs now become a
+  retrieval input to later supervisor planning instead of only a post hoc log.
+- Added a config-level OpenAI alias provider so the project can keep two
+  distinct OpenAI-compatible relays side by side:
+  - `openai` for the earlier self-hosted relay
+  - `openai_paid` for the newer paid relay, now set as the user-level default
+- This is useful thesis evidence because it separates two confounded variables:
+  - orchestration/runtime behavior
+  - provider/relay responsiveness and compatibility
+- Focused verification covered:
+  - new runtime unit tests for graph planning/execution
+  - new CLI runtime tests for artifact writing, replan behavior, and case-index
+    rebuild/search
+  - the existing targeted CLI/runtime regression suite (`175 passed`)
+  - focused TUI startup unit checks (`3 passed`)
+  - repeated real CLI smokes on the external `openai:gpt-5.4` path, which
+    showed mixed environment-dependent behavior: one earlier run exited
+    successfully, while a later 30-second rerun timed out
+- One remaining caution is also useful thesis evidence:
+  - the live external-provider non-interactive smoke is not yet fully stable,
+    so runtime evaluation must still distinguish between orchestration
+    correctness and provider/network variance
+  - under scripted capture, the real interactive TUI startup smoke still timed
+    out before a clean `Ready to code!` style closeout
+  - the focused startup unit checks still pass, so the remaining issue is now
+    narrower than “TUI is broken”; it is specifically about startup behavior
+    under this captured environment and should be investigated separately
 
 ### 2026-04-23
 

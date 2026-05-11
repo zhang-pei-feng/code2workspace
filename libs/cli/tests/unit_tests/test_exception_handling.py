@@ -10,6 +10,8 @@ These tests verify that:
 import ast
 import logging
 import subprocess
+import sys
+import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,6 +20,8 @@ from tavily import BadRequestError, InvalidAPIKeyError, UsageLimitExceededError
 from tavily.errors import TimeoutError as TavilyTimeoutError
 
 from code2workspace_cli.clipboard import (
+    _get_copy_methods,
+    _is_remote_terminal_session,
     copy_selection_to_clipboard,
     logger as clipboard_logger,
 )
@@ -184,6 +188,116 @@ class TestClipboardExceptionHandling:
         # Verify the error was logged
         assert "Failed to get selection from widget" in caplog.text
         assert "No selection" in caplog.text
+
+    def test_copy_ignores_unrelated_stale_selection(self):
+        """Mouse-up copying should not use stale selections from other widgets."""
+        mock_app = MagicMock()
+        source_widget = MagicMock()
+        source_widget.parent = None
+        source_widget.text_selection = None
+        stale_widget = MagicMock()
+        stale_widget.parent = None
+        stale_widget.text_selection = MagicMock()
+        stale_widget.text_selection.end = 3
+        stale_widget.get_selection.return_value = ('". "', None)
+        mock_app.query.return_value = [stale_widget]
+
+        copy_selection_to_clipboard(mock_app, source_widget=source_widget)
+
+        mock_app.copy_to_clipboard.assert_not_called()
+        mock_app.notify.assert_not_called()
+
+    def test_copy_ignores_descendant_selection_from_container_mouse_up(self):
+        """Container mouse-up should not sweep all selected descendants."""
+        mock_app = MagicMock()
+        parent_widget = MagicMock()
+        parent_widget.parent = None
+        parent_widget.text_selection = None
+        selected_widget = MagicMock()
+        selected_widget.parent = parent_widget
+        selected_widget.text_selection = MagicMock()
+        selected_widget.text_selection.end = 4
+        selected_widget.get_selection.return_value = ("real selection", None)
+        mock_app.query.return_value = [selected_widget]
+
+        copy_selection_to_clipboard(mock_app, source_widget=parent_widget)
+
+        mock_app.copy_to_clipboard.assert_not_called()
+        mock_app.notify.assert_not_called()
+
+    def test_copy_uses_source_widget_selection(self):
+        """Mouse-up copying still copies a selection from the event widget itself."""
+        mock_app = MagicMock()
+        source_widget = MagicMock()
+        source_widget.text_selection = MagicMock()
+        source_widget.text_selection.end = 4
+        source_widget.get_selection.return_value = ("real selection", None)
+
+        copy_selection_to_clipboard(mock_app, source_widget=source_widget)
+
+        mock_app.copy_to_clipboard.assert_called_once_with("real selection")
+
+    def test_get_copy_methods_prefers_system_methods_before_textual(self):
+        """Clipboard order should avoid Textual's potentially silent no-op path."""
+        mock_app = MagicMock()
+        fake_pyperclip = types.SimpleNamespace(copy=MagicMock())
+        previous = sys.modules.get("pyperclip")
+        sys.modules["pyperclip"] = fake_pyperclip
+        try:
+            methods = _get_copy_methods(mock_app)
+        finally:
+            if previous is None:
+                sys.modules.pop("pyperclip", None)
+            else:
+                sys.modules["pyperclip"] = previous
+
+        assert methods[0] == ("host", fake_pyperclip.copy)
+        assert methods[-1] == ("fallback", mock_app.copy_to_clipboard)
+
+    def test_copy_prefers_osc52_before_textual_clipboard(self):
+        """If pyperclip is unavailable, OSC 52 should run before Textual copy."""
+        mock_app = MagicMock()
+        source_widget = MagicMock()
+        source_widget.text_selection = MagicMock()
+        source_widget.text_selection.end = 4
+        source_widget.get_selection.return_value = ("real selection", None)
+
+        with patch("code2workspace_cli.clipboard._copy_osc52") as mock_osc52:
+            copy_selection_to_clipboard(mock_app, source_widget=source_widget)
+
+        mock_osc52.assert_called_once_with("real selection")
+        mock_app.copy_to_clipboard.assert_not_called()
+
+    def test_remote_terminal_session_detection_uses_ssh_env(self, monkeypatch):
+        monkeypatch.setenv("SSH_CONNECTION", "1 2 3 4")
+        assert _is_remote_terminal_session() is True
+
+    def test_copy_writes_both_host_and_local_clipboards_on_ssh(self, monkeypatch):
+        """SSH sessions should copy to the remote host and local terminal."""
+        mock_app = MagicMock()
+        source_widget = MagicMock()
+        source_widget.text_selection = MagicMock()
+        source_widget.text_selection.end = 4
+        source_widget.get_selection.return_value = ("real selection", None)
+
+        monkeypatch.setenv("SSH_CONNECTION", "1 2 3 4")
+        fake_pyperclip = types.SimpleNamespace(copy=MagicMock())
+        previous = sys.modules.get("pyperclip")
+        sys.modules["pyperclip"] = fake_pyperclip
+        try:
+            with patch("code2workspace_cli.clipboard._copy_osc52") as mock_osc52:
+                copy_selection_to_clipboard(mock_app, source_widget=source_widget)
+        finally:
+            if previous is None:
+                sys.modules.pop("pyperclip", None)
+            else:
+                sys.modules["pyperclip"] = previous
+
+        fake_pyperclip.copy.assert_called_once_with("real selection")
+        mock_osc52.assert_called_once_with("real selection")
+        mock_app.notify.assert_called_once()
+        notify_message = mock_app.notify.call_args.args[0]
+        assert "host and local clipboards" in notify_message
 
     def test_clipboard_logger_exists(self):
         """Test that clipboard module has proper logging configured."""

@@ -52,7 +52,11 @@ from code2workspace_cli.config import (
 from code2workspace_cli.file_ops import FileOpTracker
 from code2workspace_cli.hooks import dispatch_hook, dispatch_hook_fire_and_forget
 from code2workspace_cli.model_config import ModelConfigError
-from code2workspace_cli.session_workspace import prepare_session_cwd
+from code2workspace_cli.session_workspace import (
+    DEFAULT_SESSION_WORKDIR_MODE,
+    prepare_session_cwd,
+    resolve_default_session_invocation_cwd,
+)
 from code2workspace_cli.sessions import generate_thread_id
 from code2workspace_cli.textual_adapter import SessionStats, print_usage_table
 from code2workspace_cli.tool_display import format_tool_display
@@ -815,7 +819,7 @@ async def run_non_interactive(
     no_mcp: bool = False,
     trust_project_mcp: bool = False,
     cwd: str | Path | None = None,
-    session_workdir_mode: str = "isolated",
+    session_workdir_mode: str = DEFAULT_SESSION_WORKDIR_MODE,
 ) -> int:
     """Run a single task non-interactively and exit.
 
@@ -969,7 +973,10 @@ async def run_non_interactive(
     session_cwd = (
         Path(cwd).expanduser().resolve()
         if cwd is not None
-        else prepare_session_cwd(Path.cwd(), mode=session_workdir_mode)  # type: ignore[arg-type]
+        else prepare_session_cwd(
+            resolve_default_session_invocation_cwd(Path.cwd()),
+            mode=session_workdir_mode,
+        )
     )
     config: RunnableConfig = build_stream_config(
         thread_id,

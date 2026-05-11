@@ -49,7 +49,6 @@
         "variant_tracker"
       ],
       "focus_skills": [
-        "planning-guide",
         "respiratory-disease-data-fetcher",
         "virus-variation-query"
       ],
@@ -73,7 +72,6 @@
         "official_variant_monitoring"
       ],
       "focus_skills": [
-        "planning-guide",
         "virus-variation-query"
       ],
       "weight": 1.0,
@@ -95,7 +93,6 @@
         "expert_reasoning"
       ],
       "focus_skills": [
-        "planning-guide",
         "virus-variation-query",
         "academic-search"
       ],
@@ -119,7 +116,6 @@
         "variant_monitoring"
       ],
       "focus_skills": [
-        "planning-guide",
         "respiratory-disease-data-fetcher",
         "virus-variation-query"
       ],
@@ -143,7 +139,6 @@
         "variant_database"
       ],
       "focus_skills": [
-        "planning-guide",
         "virus-variation-query"
       ],
       "weight": 1.0,
@@ -168,7 +163,6 @@
         "population_immunity_context"
       ],
       "focus_skills": [
-        "planning-guide",
         "virus-variation-query",
         "academic-search",
         "multi-source-report"
@@ -193,7 +187,6 @@
         "developer_announcement"
       ],
       "focus_skills": [
-        "planning-guide",
         "academic-search"
       ],
       "weight": 1.0,
@@ -214,7 +207,6 @@
         "variant_tracking"
       ],
       "focus_skills": [
-        "planning-guide",
         "academic-search"
       ],
       "weight": 1.0,
@@ -237,7 +229,6 @@
         "wastewater_surveillance"
       ],
       "focus_skills": [
-        "planning-guide",
         "respiratory-disease-data-fetcher"
       ],
       "weight": 1.0,
@@ -263,7 +254,6 @@
         "antibody_escape_reasoning"
       ],
       "focus_skills": [
-        "planning-guide",
         "virus-variation-query",
         "academic-search",
         "multi-source-report"
@@ -288,7 +278,6 @@
         "historical_seasonality"
       ],
       "focus_skills": [
-        "planning-guide",
         "respiratory-disease-data-fetcher"
       ],
       "weight": 1.0,
@@ -312,7 +301,6 @@
         "literature"
       ],
       "focus_skills": [
-        "planning-guide",
         "virus-variation-query",
         "academic-search",
         "multi-source-report"

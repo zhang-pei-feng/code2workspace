@@ -1,0 +1,10 @@
+{
+  "FindCirc_Complete.reference_fasta": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/004_find_circ/wdl_test_data/CDR1as_locus.fa",
+  "FindCirc_Complete.reads_fasta": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/004_find_circ/wdl_test_data/cdr1as_reads.fa",
+  "FindCirc_Complete.sample_name": "cdr1as_complete",
+  "FindCirc_Complete.prefix": "cdr1as_",
+  "FindCirc_Complete.anchor_size": 20,
+  "FindCirc_Complete.bowtie2_threads": 4,
+  "FindCirc_Complete.min_reads": 2,
+  "FindCirc_Complete.max_length": 100000
+}

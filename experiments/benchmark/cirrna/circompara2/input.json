@@ -1,0 +1,16 @@
+{
+  "CirComPara2Workflow.meta_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/001_circompara2/real_test_data/meta.csv",
+  "CirComPara2Workflow.genome_fasta": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/001_circompara2/real_test_data/annotation/CFLAR_HIPK3.fa",
+  "CirComPara2Workflow.annotation_gtf": "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/001_circompara2/real_test_data/annotation/CFLAR_HIPK3.gtf",
+  "CirComPara2Workflow.reads_files": [
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/001_circompara2/real_test_data/reads/readsA_1.fastq.gz",
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/001_circompara2/real_test_data/reads/readsA_2.fastq.gz",
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/001_circompara2/real_test_data/reads/readsB_1.fastq.gz",
+    "/mnt/data1/zhangpf/code/deepagent/evuluate/16circlerna_2348/001_circompara2/real_test_data/reads/readsB_2.fastq.gz"
+  ],
+  "CirComPara2Workflow.sample_name": "CFLAR_HIPK3_test",
+  "CirComPara2Workflow.cpus": 2,
+  "CirComPara2Workflow.circrna_methods": "ciri,find_circ,dcc",
+  "CirComPara2Workflow.min_reads": 2,
+  "CirComPara2Workflow.min_methods": 2
+}

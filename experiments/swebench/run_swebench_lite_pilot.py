@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import select
 import shutil
 import subprocess
 import time
@@ -130,14 +131,30 @@ def _run_logged_command(
     assert process.stdout is not None
     with log_path.open("w", encoding="utf-8") as handle:
         try:
-            for line in process.stdout:
-                lines.append(line)
-                handle.write(line)
-                handle.flush()
+            while True:
                 if timeout_seconds is not None and time.monotonic() - started > timeout_seconds:
                     timed_out = True
                     process.terminate()
                     break
+
+                if process.poll() is not None:
+                    remainder = process.stdout.read()
+                    if remainder:
+                        lines.append(remainder)
+                        handle.write(remainder)
+                        handle.flush()
+                    break
+
+                ready, _, _ = select.select([process.stdout], [], [], 0.25)
+                if not ready:
+                    continue
+
+                line = process.stdout.readline()
+                if not line:
+                    continue
+                lines.append(line)
+                handle.write(line)
+                handle.flush()
         finally:
             try:
                 returncode = process.wait(timeout=10)
@@ -348,7 +365,7 @@ def _run_official_evaluation(
         "--instance_ids",
         *instance_ids,
         "--predictions_path",
-        str(predictions_path),
+        str(predictions_path.resolve()),
         "--max_workers",
         str(eval_max_workers),
         "--timeout",

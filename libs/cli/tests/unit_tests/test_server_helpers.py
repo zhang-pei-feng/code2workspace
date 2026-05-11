@@ -33,6 +33,10 @@ class TestBuildServerCmd:
         assert "--no-browser" in cmd
         assert "--no-reload" in cmd
 
+    def test_includes_allow_blocking(self) -> None:
+        cmd = _build_server_cmd(Path("/tmp/lg.json"), host="127.0.0.1", port=2024)
+        assert "--allow-blocking" in cmd
+
 
 class TestBuildServerEnv:
     def test_sets_auth_noop(self) -> None:

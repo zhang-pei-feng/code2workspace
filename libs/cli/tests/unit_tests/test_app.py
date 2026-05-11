@@ -1302,6 +1302,40 @@ class TestAskUserLifecycle:
             assert app._pending_ask_user_widget is None
             widget.remove.assert_awaited_once()
 
+    async def test_on_ask_user_menu_answered_leaves_transcript(self) -> None:
+        """Answered ask_user menus should leave a read-only Q/A transcript."""
+        from code2workspace_cli.widgets.ask_user import AskUserMenu, AskUserTranscript
+
+        app = Code2WorkspaceApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            widget = AskUserMenu(
+                [
+                    {
+                        "question": "请选择 generic 任务的执行复杂度。",
+                        "type": "multiple_choice",
+                        "choices": [{"value": "困难 (difficult)"}],
+                    }
+                ],
+                id="ask-user-menu-test",
+            )
+            messages = app.query_one("#messages", Container)
+            await messages.mount(widget)
+            await pilot.pause()
+            app._pending_ask_user_widget = widget
+
+            await app.on_ask_user_menu_answered(
+                AskUserMenu.Answered(["困难 (difficult)"])
+            )
+            await pilot.pause()
+
+            assert app._pending_ask_user_widget is None
+            assert not list(app.query(AskUserMenu))
+            transcript = app.query_one(AskUserTranscript)
+            assert "请选择 generic 任务的执行复杂度" in transcript.transcript_markdown
+            assert "困难 (difficult)" in transcript.transcript_markdown
+
     async def test_on_ask_user_menu_cancelled_ignores_remove_errors(self) -> None:
         """Cancelled handler should swallow remove races and clear tracking."""
         app = Code2WorkspaceApp()
@@ -1317,6 +1351,35 @@ class TestAskUserLifecycle:
 
             assert app._pending_ask_user_widget is None
             widget.remove.assert_awaited_once()
+
+
+class TestChatModeCommands:
+    """Tests for switching between supervisor and plain chat mode."""
+
+    async def test_chat_command_enables_plain_chat_mode(self) -> None:
+        app = Code2WorkspaceApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._session_state = TextualSessionState(thread_id="test-thread-123")
+
+            await app._handle_command("/chat")
+            await pilot.pause()
+
+            assert app._session_state.plain_chat_mode is True
+
+    async def test_supervisor_command_disables_plain_chat_mode(self) -> None:
+        app = Code2WorkspaceApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._session_state = TextualSessionState(
+                thread_id="test-thread-123",
+                plain_chat_mode=True,
+            )
+
+            await app._handle_command("/supervisor")
+            await pilot.pause()
+
+            assert app._session_state.plain_chat_mode is False
 
 
 class TestLoadingSpinnerLifecycle:

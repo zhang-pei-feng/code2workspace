@@ -361,6 +361,156 @@ def _read_mentioned_file(file_path: Path, max_embed_bytes: int) -> str:
     return f"\n### {file_path.name}\nPath: `{file_path}`\n```\n{content}\n```"
 
 
+def _truncate_supervisor_text(
+    value: object,
+    *,
+    max_chars: int,
+) -> str:
+    """Render supervisor event text compactly for the TUI."""
+    text = str(value).strip()
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip() + "..."
+
+
+def _compact_supervisor_items(
+    items: list[object],
+    *,
+    max_items: int,
+    max_chars: int,
+) -> list[str]:
+    """Return a compact preview list for long artifact/evidence payloads."""
+    preview = [
+        _truncate_supervisor_text(item, max_chars=max_chars)
+        for item in items[:max_items]
+    ]
+    remaining = len(items) - len(preview)
+    if remaining > 0:
+        preview.append(f"... {remaining} more")
+    return preview
+
+
+def _render_supervisor_event(event: dict[str, Any]) -> str:
+    """Render a supervisor custom-stream event into a readable TUI message."""
+    kind = str(event.get("kind", "supervisor"))
+    prefix = "[supervisor]"
+
+    if kind == "run_started":
+        return (
+            f"{prefix} run started: task_type=`{event.get('task_type', 'unknown')}`, "
+            f"retrieved_cases=`{event.get('retrieved_case_count', 0)}`\n"
+            f"run_dir: `{event.get('run_dir', '')}`"
+        )
+    if kind == "round_started":
+        node_ids = ", ".join(str(item) for item in event.get("node_ids", []) or [])
+        return (
+            f"{prefix} round `{event.get('round_index', '?')}` started "
+            f"({event.get('graph_id', 'unknown')})\n"
+            f"nodes: {node_ids or '(none)'}"
+        )
+    if kind == "generic_choice_requested":
+        options = event.get("options", []) or []
+        lines = [f"{prefix} generic approach selection requested"]
+        for option in options:
+            if not isinstance(option, dict):
+                continue
+            label = option.get("label", option.get("approach", "option"))
+            focus = option.get("execution_focus", "")
+            if focus:
+                lines.append(
+                    f"- {label}: {_truncate_supervisor_text(focus, max_chars=90)}"
+                )
+            else:
+                lines.append(f"- {label}")
+        return "\n".join(lines)
+    if kind == "generic_choice_selected":
+        return (
+            f"{prefix} generic approach selected: "
+            f"`{event.get('label', event.get('approach', 'unknown'))}`"
+        )
+    if kind == "node_started":
+        bundles = ", ".join(str(item) for item in event.get("capability_bundles", []) or [])
+        return (
+            f"{prefix} node `{event.get('node_id', 'unknown')}` started "
+            f"(round `{event.get('round_index', '?')}`)\n"
+            f"title: {event.get('title', '')}\n"
+            f"bundles: {bundles or '(none)'}\n"
+            f"objective: {event.get('objective', '')}"
+        )
+    if kind == "node_interrupted":
+        return (
+            f"{prefix} node `{event.get('node_id', 'unknown')}` interrupted "
+            f"(round `{event.get('round_index', '?')}`)\n"
+            "waiting for user input, approval, or resume payload"
+        )
+    if kind == "node_exception":
+        return (
+            f"{prefix} node `{event.get('node_id', 'unknown')}` raised an exception "
+            f"(round `{event.get('round_index', '?')}`)\n"
+            f"error: {event.get('error', '')}"
+        )
+    if kind == "worker_retrying":
+        return (
+            f"{prefix} worker retrying node `{event.get('node_id', 'unknown')}` "
+            f"(attempt `{event.get('attempt', '?')}`)\n"
+            f"error: {event.get('error', '')}"
+        )
+    if kind == "node_finished":
+        lines = [
+            f"{prefix} node `{event.get('node_id', 'unknown')}` finished "
+            f"with status `{event.get('status', 'unknown')}` "
+            f"(round `{event.get('round_index', '?')}`)",
+            f"summary: {_truncate_supervisor_text(event.get('summary', ''), max_chars=320)}",
+        ]
+        failure_reason = event.get("failure_reason")
+        if failure_reason:
+            lines.append(
+                f"failure_reason: {_truncate_supervisor_text(failure_reason, max_chars=180)}"
+            )
+        next_action_hint = event.get("next_action_hint")
+        if next_action_hint:
+            lines.append(
+                "next_action_hint: "
+                f"{_truncate_supervisor_text(next_action_hint, max_chars=220)}"
+            )
+        artifacts = [str(item) for item in event.get("artifacts", []) or []]
+        if artifacts:
+            lines.append(f"artifacts: {len(artifacts)}")
+            lines.extend(
+                f"- {item}"
+                for item in _compact_supervisor_items(
+                    artifacts,
+                    max_items=2,
+                    max_chars=140,
+                )
+            )
+        evidence = [str(item) for item in event.get("evidence", []) or []]
+        if evidence:
+            lines.append(f"evidence: {len(evidence)}")
+            lines.extend(
+                f"- {item}"
+                for item in _compact_supervisor_items(
+                    evidence,
+                    max_items=2,
+                    max_chars=140,
+                )
+            )
+        return "\n".join(lines)
+    if kind == "run_finished":
+        failed_nodes = ", ".join(str(item) for item in event.get("failed_nodes", []) or [])
+        lines = [
+            f"{prefix} run finished with decision `{event.get('decision', 'unknown')}`",
+            f"reason: {event.get('reason', '')}",
+        ]
+        if event.get("generic_approach"):
+            lines.append(f"generic_approach: `{event['generic_approach']}`")
+        if failed_nodes:
+            lines.append(f"failed_nodes: {failed_nodes}")
+        lines.append(f"run_dir: `{event.get('run_dir', '')}`")
+        return "\n".join(lines)
+    return f"{prefix} {json.dumps(event, ensure_ascii=False)}"
+
+
 async def execute_task_textual(
     user_input: str,
     agent: Any,  # noqa: ANN401  # Dynamic agent graph type
@@ -529,7 +679,7 @@ async def execute_task_textual(
 
             async for chunk in agent.astream(
                 stream_input,
-                stream_mode=["messages", "updates"],
+                stream_mode=["messages", "updates", "custom"],
                 subgraphs=True,
                 config=config,
                 context=context,
@@ -599,6 +749,28 @@ async def execute_task_textual(
                         and "todos" in chunk_data
                     ):
                         pass  # Future: render todo list widget
+
+                elif current_stream_mode == "custom":
+                    if (
+                        isinstance(data, dict)
+                        and isinstance(data.get("supervisor_event"), dict)
+                    ):
+                        for pending_text in list(pending_text_by_namespace.values()):
+                            if pending_text:
+                                await _flush_assistant_text_ns(
+                                    adapter,
+                                    pending_text,
+                                    (),
+                                    assistant_message_by_namespace,
+                                )
+                        pending_text_by_namespace.clear()
+                        assistant_message_by_namespace.clear()
+                        await adapter._mount_message(
+                            AppMessage(
+                                _render_supervisor_event(data["supervisor_event"])
+                            )
+                        )
+                    continue
 
                 # Handle MESSAGES stream - for content and tool calls
                 elif current_stream_mode == "messages":

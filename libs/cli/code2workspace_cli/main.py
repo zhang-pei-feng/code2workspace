@@ -30,7 +30,11 @@ if TYPE_CHECKING:
 warnings.filterwarnings("ignore", message=".*Pydantic V1.*", category=UserWarning)
 
 from code2workspace_cli._version import __version__
-from code2workspace_cli.session_workspace import prepare_session_cwd
+from code2workspace_cli.session_workspace import (
+    DEFAULT_SESSION_WORKDIR_MODE,
+    prepare_session_cwd,
+    resolve_default_session_invocation_cwd,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -341,7 +345,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--session-workdir-mode",
         choices=("isolated", "inherit"),
-        default="isolated",
+        default=DEFAULT_SESSION_WORKDIR_MODE,
         help=argparse.SUPPRESS,
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -696,7 +700,7 @@ async def run_textual_cli_async(
     no_mcp: bool = False,
     trust_project_mcp: bool | None = None,
     cwd: str | Path | None = None,
-    session_workdir_mode: str = "isolated",
+    session_workdir_mode: str = DEFAULT_SESSION_WORKDIR_MODE,
 ) -> "AppResult":
     """Run the Textual CLI interface (async version).
 
@@ -781,7 +785,10 @@ async def run_textual_cli_async(
     session_cwd = (
         Path(cwd).expanduser().resolve()
         if cwd is not None
-        else prepare_session_cwd(Path.cwd(), mode=session_workdir_mode)  # type: ignore[arg-type]
+        else prepare_session_cwd(
+            resolve_default_session_invocation_cwd(Path.cwd()),
+            mode=session_workdir_mode,
+        )
     )
 
     # Build kwargs for deferred server startup (runs inside the TUI).

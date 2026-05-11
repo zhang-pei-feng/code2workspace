@@ -1,48 +1,78 @@
-"""Shared data shapes for the minimal web API backend."""
+"""Shared data shapes for the Code2Workspace web workbench."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any
 
 
-@dataclass(frozen=True)
-class SessionSummary:
-    """Sidebar summary for one web session."""
+@dataclass(slots=True, frozen=True)
+class WebThreadRecord:
+    """Thread metadata persisted by the web bridge."""
 
-    id: str
-    title: str
-    status: str
+    thread_id: str
+    assistant_id: str
+    cwd: str
+    active_status: str
     created_at: str
     updated_at: str
-    last_message_preview: str | None
-    latest_run_id: str | None
-    latest_run_status: str | None
-    run_count: int
+    title: str | None = None
+    model_spec: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly dict."""
+        return asdict(self)
 
 
-@dataclass(frozen=True)
-class MessageRecord:
-    """One persisted session message."""
+@dataclass(slots=True, frozen=True)
+class ThreadSummary:
+    """Merged thread summary exposed by the web API."""
 
-    id: str
-    session_id: str
-    role: str
-    content: str
-    created_at: str
-    run_id: str | None
+    thread_id: str
+    assistant_id: str
+    cwd: str | None
+    active_status: str
+    created_at: str | None
+    updated_at: str | None
+    message_count: int
+    initial_prompt: str | None
+    title: str | None = None
+    model_spec: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly dict."""
+        return asdict(self)
 
 
-@dataclass(frozen=True)
-class RunRecord:
-    """One one-shot execution run."""
+@dataclass(slots=True, frozen=True)
+class TurnRecord:
+    """One persisted turn submitted from the web UI."""
 
-    id: str
-    session_id: str
+    turn_id: str
+    thread_id: str
     prompt: str
     status: str
     created_at: str
     started_at: str | None
     finished_at: str | None
-    exit_code: int | None
-    output: str
     error: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly dict."""
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class EventRecord:
+    """One persisted runtime event for a thread turn."""
+
+    event_id: int
+    thread_id: str
+    turn_id: str | None
+    kind: str
+    payload: dict[str, Any]
+    created_at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly dict."""
+        return asdict(self)

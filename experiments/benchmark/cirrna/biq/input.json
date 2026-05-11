@@ -1,0 +1,5 @@
+{
+  "biq_workflow.exon_fasta": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/011_biq/real_test_data/test_exons.fa",
+  "biq_workflow.gene_gtf": "/mnt/data1/zhangpf/code/deepagent/evuluate/09精挑细选的12个仓库不分治_claude/011_biq/real_test_data/test_genes.gtf",
+  "biq_workflow.output_prefix": "biq_test"
+}

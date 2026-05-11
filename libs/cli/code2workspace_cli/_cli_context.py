@@ -25,3 +25,6 @@ class CLIContext(TypedDict, total=False):
     model_params: dict[str, Any]
     """Invocation params (e.g. `temperature`, `max_tokens`) to merge
     into `model_settings`."""
+
+    system_prompt: str
+    """Per-invocation system prompt override used by nested worker calls."""

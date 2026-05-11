@@ -1,0 +1,8 @@
+{
+  "CircASTWorkflow.gtf_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/11测试metric/012_CircAST/real_test_data/genes_homo.gtf",
+  "CircASTWorkflow.sam_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/11测试metric/012_CircAST/real_test_data/accepted_hits.sorted.sam",
+  "CircASTWorkflow.junction_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/11测试metric/012_CircAST/real_test_data/circRNA_list.txt",
+  "CircASTWorkflow.reads_length": 100,
+  "CircASTWorkflow.threshold": 5,
+  "CircASTWorkflow.run_fullseq": false
+}

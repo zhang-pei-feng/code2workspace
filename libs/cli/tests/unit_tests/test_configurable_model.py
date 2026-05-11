@@ -153,6 +153,24 @@ class TestNoOverride:
         assert captured[0] is request
 
 
+class TestSystemPromptOverride:
+    """Cases where runtime context overrides only the system prompt."""
+
+    def test_system_prompt_override_applied_without_model_swap(self) -> None:
+        request = _make_request(
+            _make_model("claude-sonnet-4-6"),
+            context=CLIContext(system_prompt="Worker instructions"),
+            system_prompt="Original prompt",
+        )
+        captured: list[ModelRequest] = []
+        _mw.wrap_model_call(
+            request, lambda r: (captured.append(r), _make_response())[1]
+        )
+
+        assert captured[0].system_prompt == "Worker instructions"
+        assert captured[0].model is request.model
+
+
 class TestModelSwap:
     """Cases where the middleware should swap the model."""
 

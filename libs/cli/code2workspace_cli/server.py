@@ -245,6 +245,7 @@ def _build_server_cmd(config_path: Path, *, host: str, port: int) -> list[str]:
         "-m",
         "langgraph_cli",
         "dev",
+        "--allow-blocking",
         "--host",
         host,
         "--port",

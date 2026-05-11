@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 from experiments.swebench.run_swebench_lite_pilot import (
+    _run_logged_command,
     _run_agent_for_instance_with_retries,
     _run_official_evaluation_with_retries,
 )
@@ -281,3 +283,20 @@ def test_run_agent_for_instance_with_retries_does_not_retry_non_transient_failur
             "timed_out": False,
         }
     ]
+
+
+def test_run_logged_command_times_out_even_when_process_is_silent(tmp_path: Path) -> None:
+    log_path = tmp_path / "silent.log"
+    started = time.monotonic()
+    returncode, timed_out, output = _run_logged_command(
+        ["python3", "-c", "import time; time.sleep(5)"],
+        cwd=tmp_path,
+        log_path=log_path,
+        timeout_seconds=1,
+    )
+    elapsed = time.monotonic() - started
+
+    assert timed_out is True
+    assert returncode != 0
+    assert output == ""
+    assert elapsed < 4

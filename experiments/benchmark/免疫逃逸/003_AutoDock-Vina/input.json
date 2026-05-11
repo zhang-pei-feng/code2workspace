@@ -1,0 +1,9 @@
+{
+  "AutoDockVinaWorkflow.receptor_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/22免疫逃逸benchmark/003_AutoDock-Vina/AutoDock-Vina/example/basic_docking/solution/1iep_receptor.pdbqt",
+  "AutoDockVinaWorkflow.ligand_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/22免疫逃逸benchmark/003_AutoDock-Vina/AutoDock-Vina/example/basic_docking/solution/1iep_ligand.pdbqt",
+  "AutoDockVinaWorkflow.config_file": "/mnt/data1/zhangpf/code/deepagent/evuluate/22免疫逃逸benchmark/003_AutoDock-Vina/AutoDock-Vina/example/basic_docking/solution/1iep_receptor.box.txt",
+  "AutoDockVinaWorkflow.output_filename": "1iep_docked_output.pdbqt",
+  "AutoDockVinaWorkflow.exhaustiveness": 8,
+  "AutoDockVinaWorkflow.num_modes": 9,
+  "AutoDockVinaWorkflow.scoring_function": "vina"
+}

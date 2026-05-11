@@ -20,7 +20,6 @@ source_urls = [
   "https://trialsearch.who.int/",
 ]
 preferred_skills = [
-  "planning-guide",
   "academic-search",
 ]
 judge_focus = [

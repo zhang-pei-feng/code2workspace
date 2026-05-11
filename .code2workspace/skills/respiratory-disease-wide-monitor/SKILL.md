@@ -88,7 +88,7 @@ python3 skills/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
 4. 默认尽量下探一级：从根页面抽取高相关链接，优先报告、周报、月报、监测、PDF、variant、COVID、influenza、RSV 等链接。
 5. 对动态仪表板、登录墙、反爬、PDF 文本不可提取等情况，不要编造内容；记录 HTTP 状态、标题、描述、可访问性和限制。
 6. 结果较多时先给摘要：总数据源数、可访问数、失败数、下探成功数、关键数据源发现，再附输出文件路径。
-7. 如果用户需要正式报告，可把本 skill 输出作为证据源，再交给 `report_agent` 写报告。
+7. 如果用户需要正式报告，可把本 skill 输出作为证据源，再交给 `multi-source-report` 或当前 supervisor 报告流程整合成正式报告。
 8. 不要把本 skill 用于本地 `virus_variation` SQL 查询；本地变异风险库仍用 `virus-variation-query`。
 
 ## 输出说明

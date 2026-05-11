@@ -1,4 +1,0 @@
-interface:
-  display_name: "Paper2Workspace Orchestrator"
-  short_description: "严格两阶段 repo-to-workspace 编排与产物校验"
-  default_prompt: "使用 $paper2workspace-orchestrator 处理 repo-to-workspace 任务。必须先完成 phase 1 的真实构建/验证，再进入 phase 2 的本地 WDL 或本地 Cromwell 执行。用 workspace_tool.py 管理 run 目录和阶段校验，禁止调用旧 paper2workspace ACP agent。"

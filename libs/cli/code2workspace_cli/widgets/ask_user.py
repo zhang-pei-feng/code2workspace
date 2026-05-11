@@ -33,6 +33,52 @@ OTHER_CHOICE_LABEL = "Other (type your answer)"
 logger = logging.getLogger(__name__)
 
 
+class AskUserTranscript(Markdown):
+    """Read-only transcript left behind after an ask_user interaction."""
+
+    def __init__(
+        self,
+        questions: list[Question],
+        answers: list[str],
+        *,
+        status: Literal["answered", "cancelled"] = "answered",
+        **kwargs: Any,
+    ) -> None:
+        self.transcript_markdown = self._render_markdown(
+            questions,
+            answers,
+            status=status,
+        )
+        super().__init__(
+            self.transcript_markdown,
+            classes="ask-user-transcript",
+            **kwargs,
+        )
+
+    @staticmethod
+    def _render_markdown(
+        questions: list[Question],
+        answers: list[str],
+        *,
+        status: Literal["answered", "cancelled"],
+    ) -> str:
+        title = "Agent question answered" if status == "answered" else "Agent question cancelled"
+        lines = [f"**{title}**", ""]
+        for index, question in enumerate(questions, start=1):
+            answer = answers[index - 1] if index - 1 < len(answers) else ""
+            if status == "cancelled" and not answer:
+                answer = "(cancelled)"
+            lines.extend(
+                [
+                    f"**Q{index}.** {question.get('question', '')}",
+                    "",
+                    f"**A{index}.** {answer or '(no answer)'}",
+                    "",
+                ]
+            )
+        return "\n".join(lines).rstrip()
+
+
 class AskUserMenu(Container):
     """Interactive widget for asking the user questions.
 
@@ -79,6 +125,15 @@ class AskUserMenu(Container):
     def set_future(self, future: asyncio.Future[AskUserWidgetResult]) -> None:
         """Set the future to resolve when user answers."""
         self._future = future
+
+    def to_transcript(
+        self,
+        answers: list[str],
+        *,
+        status: Literal["answered", "cancelled"] = "answered",
+    ) -> AskUserTranscript:
+        """Create a read-only transcript for the completed interaction."""
+        return AskUserTranscript(self._questions, answers, status=status)
 
     def compose(self) -> ComposeResult:  # noqa: D102
         glyphs = get_glyphs()

@@ -14,10 +14,11 @@ resume path.
 
 ## Current Priority
 
-Continue hardening the generic one-shot runner, finish the remaining high-value
-repo baselines, and then spend the next serious effort on the harness loop
-rather than more ad hoc prompt tweaks. The checked-in web frontend has been
-removed; only the small web API backend remains.
+On branch `feature/supervisor-graph-runtime`, keep the supervisor-first runtime
+as the active long-task path. The default CLI agent should enter the Supervisor
+Graph wrapper first, with `github2workspace`, `benchmark`, `report`, and
+generic task families handled by the shared runtime rather than the old soft
+planner middleware.
 
 ## Current State To Remember
 
@@ -27,13 +28,16 @@ removed; only the small web API backend remains.
   they mostly burn time on first-build dependency setup.
 - repository-preparation failures are now treated as explicit experiment
   outcomes instead of queue-killing crashes.
-- the checked-in web frontend has been removed on purpose; do not assume there
-  is still a browser UI in-tree.
+- model configuration remains the normal user-level
+  `~/.code2workspace/config.toml` path; project and global `.env` loading are
+  enabled as before.
+- Supervisor Graph routing should keep the special `github2workspace`,
+  `benchmark`, and `report` lanes available; generic tasks use the generic graph
+  instead of a QA-only forced mode.
 - the interactive TUI startup hotfix is in; it now reaches the ready prompt
   again, so treat it as usable unless a deeper interaction bug is reproduced.
-- normal CLI sessions now start inside `workspace/<timestamp>` below the
-  invocation directory; only the explicit experiment runners keep their
-  original cwd.
+- normal CLI sessions use isolated project-root workspaces by default; use
+  `--session-workdir-mode inherit` only when explicitly needed.
 
 ## Before Changing Experiment Surfaces
 
