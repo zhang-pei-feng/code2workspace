@@ -94,12 +94,144 @@ def test_planner_creates_generic_graph_for_unknown_task() -> None:
     assert graph.task_type == "generic"
     assert [node.node_id for node in graph.nodes] == [
         "init_generic",
-        "worker_context",
-        "worker_solution",
-        "compose_generic",
+    ]
+    assert graph.nodes[0].metadata["planner_role"] == "generic_dynamic_graph_planner"
+    assert graph.metadata["guidance_ids"] == []
+
+
+def test_planner_uses_spawned_generic_subgraph() -> None:
+    planner = HeuristicSupervisorPlanner()
+    prior_round_graph = TaskGraph(
+        graph_id="generic-r1",
+        task_type="generic",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="init_generic",
+                title="Plan generic graph",
+                objective="plan",
+                capability_bundles=["plan"],
+            )
+        ],
+        edges=[],
+    )
+    prior_round = awaitable_round(
+        graph=prior_round_graph,
+        statuses={"init_generic": "completed"},
+        spawned_subgraphs={
+            "init_generic": {
+                "nodes": [
+                    {
+                        "node_id": "source_context",
+                        "title": "Source context",
+                        "objective": "Gather source evidence.",
+                        "capability_bundles": ["web_search", "web_fetch", "validate"],
+                    },
+                    {
+                        "node_id": "local_context",
+                        "title": "Local context",
+                        "objective": "Inspect local evidence.",
+                        "capability_bundles": ["repo_fetch", "db_access", "validate"],
+                    },
+                    {
+                        "node_id": "synthesize_answer",
+                        "title": "Synthesize answer",
+                        "objective": "Compare evidence and answer.",
+                        "capability_bundles": ["summarize", "validate"],
+                    },
+                    {
+                        "node_id": "summarize",
+                        "title": "Summarize",
+                        "objective": "Summarize final result.",
+                        "capability_bundles": ["summarize"],
+                    },
+                ],
+                "edges": [
+                    {"source": "source_context", "target": "synthesize_answer"},
+                    {"source": "local_context", "target": "synthesize_answer"},
+                    {"source": "synthesize_answer", "target": "summarize"},
+                ],
+            }
+        },
+    )
+
+    graph = planner.plan_round(
+        task="最近两周国内新冠和流感大概是什么态势？先给我一个口头判断，不要正式写作。",
+        retrieved_cases=[],
+        prior_rounds=[prior_round],
+    )
+
+    assert graph.task_type == "generic"
+    assert [node.node_id for node in graph.nodes] == [
+        "source_context",
+        "local_context",
+        "synthesize_answer",
         "summarize",
     ]
-    assert graph.metadata["guidance_ids"] == []
+    assert {(edge.source, edge.target) for edge in graph.edges} == {
+        ("source_context", "synthesize_answer"),
+        ("local_context", "synthesize_answer"),
+        ("synthesize_answer", "summarize"),
+    }
+    assert graph.metadata["planner_generated"] is True
+
+
+def test_planner_connects_spawned_generic_terminal_nodes_to_summarize() -> None:
+    planner = HeuristicSupervisorPlanner()
+    prior_round_graph = TaskGraph(
+        graph_id="generic-r1",
+        task_type="generic",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="init_generic",
+                title="Plan generic graph",
+                objective="plan",
+                capability_bundles=["plan"],
+            )
+        ],
+        edges=[],
+    )
+    prior_round = awaitable_round(
+        graph=prior_round_graph,
+        statuses={"init_generic": "completed"},
+        spawned_subgraphs={
+            "init_generic": {
+                "nodes": [
+                    {
+                        "node_id": "validate_csv_inputs",
+                        "title": "Validate CSV inputs",
+                        "objective": "Find and validate local CSV logs.",
+                        "capability_bundles": ["validate", "data_filter"],
+                    },
+                    {
+                        "node_id": "analyze_data",
+                        "title": "Analyze data",
+                        "objective": "Analyze error rate changes.",
+                        "capability_bundles": ["metric_compute", "data_filter"],
+                    },
+                ],
+                "edges": [
+                    {"source": "validate_csv_inputs", "target": "analyze_data"},
+                ],
+            }
+        },
+    )
+
+    graph = planner.plan_round(
+        task="请根据本地 CSV 日志判断最近一周错误率上升的主要原因，并给一个处置建议。",
+        retrieved_cases=[],
+        prior_rounds=[prior_round],
+    )
+
+    assert [node.node_id for node in graph.nodes] == [
+        "validate_csv_inputs",
+        "analyze_data",
+        "summarize",
+    ]
+    assert ("analyze_data", "summarize") in {
+        (edge.source, edge.target) for edge in graph.edges
+    }
 
 
 def test_planner_retries_analyze_when_initial_analysis_failed() -> None:

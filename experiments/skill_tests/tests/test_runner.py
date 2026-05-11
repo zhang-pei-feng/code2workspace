@@ -58,7 +58,7 @@ expected_behaviors = []
 expected_outputs = []
 task_family = "trend-analysis"
 question_type = "forecast"
-preferred_skills = ["multi-source-report", "epietl-api"]
+preferred_skills = ["epietl-api", "academic-search"]
 source_hints = ["GISAID", "EpiETL"]
 source_urls = ["https://example.invalid/a"]
 judge_focus = ["accuracy", "trace_rationality"]
@@ -73,7 +73,7 @@ weight = 2.0
 
     assert case.task_family == "trend-analysis"
     assert case.question_type == "forecast"
-    assert case.preferred_skills == ("multi-source-report", "epietl-api")
+    assert case.preferred_skills == ("epietl-api", "academic-search")
     assert case.source_urls == ("https://example.invalid/a",)
     assert case.judge_focus == ("accuracy", "trace_rationality")
     assert case.prior_case_refs == ("covid-monitoring-08-may-mainland-dominant-lineage",)
@@ -109,7 +109,7 @@ prompt = "hello"
 required_env = []
 expected_behaviors = []
 expected_outputs = []
-preferred_skills = "multi-source-report"
+preferred_skills = "epietl-api"
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -386,7 +386,7 @@ def test_run_case_writes_trace_file(
 
 
 def test_extract_run_dir_prefers_report_run_root_over_nested_dirs(tmp_path: Path) -> None:
-    run_dir = tmp_path / "results" / "skills" / "multi-source-report" / "demo" / "20260423T000000Z"
+    run_dir = tmp_path / "results" / "skills" / "report" / "demo" / "20260423T000000Z"
     (run_dir / "lanes").mkdir(parents=True)
     (run_dir / "research_steps").mkdir()
     (run_dir / "manifest.json").write_text("{}", encoding="utf-8")

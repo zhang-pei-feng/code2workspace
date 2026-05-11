@@ -106,7 +106,7 @@ def test_judge_case_combines_rule_and_model_scores(
         "task_family": "trend-analysis",
         "question_type": "forecast",
         "judge_focus": ["accuracy", "trace_rationality"],
-        "preferred_skills": ["multi-source-report", "epietl-api"],
+        "preferred_skills": ["epietl-api", "academic-search"],
     }
 
     monkeypatch.setattr(
@@ -165,7 +165,7 @@ def test_judge_results_writes_case_judge_files(
         "task_family": "trend-analysis",
         "question_type": "forecast",
         "judge_focus": ["accuracy", "trace_rationality"],
-        "preferred_skills": ["multi-source-report", "epietl-api"],
+        "preferred_skills": ["epietl-api", "academic-search"],
     }
 
     monkeypatch.setattr(
@@ -226,7 +226,7 @@ def test_judge_case_retries_transient_model_error_once(
         "task_family": "trend-analysis",
         "question_type": "forecast",
         "judge_focus": ["accuracy", "trace_rationality"],
-        "preferred_skills": ["multi-source-report", "epietl-api"],
+        "preferred_skills": ["epietl-api", "academic-search"],
     }
 
     calls = {"count": 0}
@@ -289,7 +289,7 @@ def test_judge_case_falls_back_when_output_is_unparseable(
         "task_family": "trend-analysis",
         "question_type": "forecast",
         "judge_focus": ["accuracy", "trace_rationality"],
-        "preferred_skills": ["multi-source-report", "epietl-api"],
+        "preferred_skills": ["epietl-api", "academic-search"],
     }
 
     monkeypatch.setattr(

@@ -6,6 +6,33 @@
 
 ## Entries
 
+### 2026-05-11 14:27 CST
+- Session goal: Remove the retired `multi-source-report` surface and keep the active supervisor report path only.
+- Major changes:
+  - Deleted the project `multi-source-report` skill files plus its dedicated skill-test cases and tool tests.
+  - Updated harness/test/catalog references to stop recommending or loading `multi-source-report`, replacing those hints with still-live evidence skills.
+  - Switched the nested report subagent scope guard default from `multi-source-report` to the neutral `report`, and rewrote current-status notes to describe the active supervisor report runtime instead of the old skill entrypoint.
+- Validation: focused cleanup regression set passed (`35 passed`) across nested report delegation, project-skill discovery, skill-test runner/judge coverage, and the affected harness tests. One broader harness config test still fails because the current worktree is already missing `experiments/harness/surfaces/one_shot_prompt.txt`, which predates this cleanup.
+- Next step: commit the cleanup checkpoint, then continue tuning generic/report runtime behavior without carrying the old report skill surface.
+
+### 2026-05-11 14:01 CST
+- Session goal: Increase the length of generated report outputs and make report composition favor fuller final bodies.
+- Major changes:
+  - Strengthened the supervisor report composition objective in `libs/code2workspace/code2workspace/orchestration_runtime.py` so `compose_report` explicitly prefers a full-length report over a short brief.
+  - Expanded report guidance in `.code2workspace/skills/supervisor-guidance/references/nodes/compose_report.md` and `references/families/report_synthesis.md` to push for more substantial section bodies with evidence, interpretation, and caveats.
+  - Raised the default `multi-source-report` minimum report length from `5000` to `7000` characters in `.code2workspace/skills/multi-source-report/scripts/report_tool.py`.
+- Validation: `py_compile` passed; focused report/runtime tests passed (`47 passed`); a fresh default `report_tool.py init` run now writes `manifest.json` with `min_report_chars = 7000`.
+- Next step: run one live report case or bounded replay to see whether the longer-body preference materially changes the final report size and completion latency.
+
+### 2026-05-11 11:03 CST
+- Session goal: Make generic Supervisor Graph planning less rigid and adapt graph shape to the user's question.
+- Major changes:
+  - Reworked generic planning into a prompt-driven two-round flow: first `init_generic` asks the worker to design a flexible `spawned_subgraph`, then the runtime validates and executes that graph.
+  - Kept task examples in the planner prompt rather than hardcoding generic task profiles in Python; research/evidence-judgment questions are called out as the main scenario and may choose sequential or parallel evidence lanes based on complexity.
+  - Added graph sanitization so generated nodes/edges use known capability bundles and terminal nodes are connected to `summarize`.
+- Validation: `py_compile` passed for orchestration/supervisor runtime; focused supervisor/orchestration tests passed (`40 passed`); a live CSV-log prompt produced a planner-generated second-round graph with parallel trend/attribution branches before the 180-second smoke timed out.
+- Next step: tune worker execution latency and rerun the live generic prompt to completion.
+
 ### 2026-05-11 10:15 CST
 - Session goal: Diagnose why `gpt-5.5` did not show the same 1000k context as `gpt-5.4`.
 - Major changes:

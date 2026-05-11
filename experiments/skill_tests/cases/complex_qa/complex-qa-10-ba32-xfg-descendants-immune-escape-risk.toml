@@ -22,7 +22,7 @@ source_urls = [
 preferred_skills = [
   "virus-variation-query",
   "academic-search",
-  "multi-source-report",
+  "epietl-api",
 ]
 judge_focus = [
   "integrated_synthesis",

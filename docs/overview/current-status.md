@@ -622,61 +622,37 @@ Remaining gaps:
 - revisit `use_responses_api = true` only if the local gateway later supports
   the full tool-calling flow cleanly
 
-### 6. Multi-Source Report Skill
+### 6. Report Runtime
 
-Status: unified report entrypoint in place
+Status: report requests run through the supervisor-first report family
 
-- The two earlier report-generation skills, `deep-research-report` and
-  `epidemic-warning-report`, have been removed and replaced by one new project
-  skill: `multi-source-report`.
-- The new skill combines a deep-research-style workflow with the repo's current
-  local evidence sources:
-  - orchestrator flow: plan -> init run dir -> parallel research lanes ->
-    synthesize -> compose -> verify
-  - first-class evidence skills: `academic-search`,
-    `respiratory-disease-wide-monitor`,
-    `respiratory-disease-data-fetcher`, `epietl-api`,
-    `virus-variation-query`
-- The earlier checked-in report-specific project subagents have now been
-  removed from `.code2workspace/agents`; current report execution on this
-  branch relies on supervisor-planned generic workers plus lane artifacts
-  instead of project-local report-only subagent definitions.
-- The report helper now writes all report runs under
-  `results/skills/multi-source-report/` and keeps `manifest.json`,
-  `lanes/*.md`, `final_report.md`, and `report_diagnostics.json` together.
-- Formal `multi-source-report` runs now default to long-form output
-  (`5000+` Chinese characters) and prefer Markdown tables when lanes provide
-  trustworthy numeric evidence with explicit time and source fields.
-- The report helper now accepts structured `Table Candidate:` blocks in lane
-  notes and composes them into a `Key Data Tables` section when the numeric
-  evidence is good enough; otherwise it writes an explicit “no reliable numeric
-  table” note instead of fabricating a table.
-- Planner routing now recommends `multi-source-report` for obvious formal
-  report / deep-research prompts instead of leaving them on the generic path.
+- Formal report requests now use the report family inside Supervisor Graph:
+  `init_report -> monitoring_lane -> local_data_lane -> literature_lane -> compose_report -> summarize`.
+- Report execution no longer depends on a dedicated `multi-source-report`
+  project skill. The active path is the report family runtime plus
+  `.code2workspace/skills/supervisor-guidance/` report guidance.
+- The current report lane design still emphasizes:
+  - authoritative monitoring and surveillance evidence
+  - local structured data or API evidence where available
+  - literature / technical / primary-source web evidence
+  - a final composition step that preserves uncertainty and explicit evidence
+    gaps
 - Focused validation currently recorded:
-  - `libs/cli/tests/unit_tests/test_superagent_project_subagents.py`
-  - `libs/cli/tests/unit_tests/skills/test_superagent_project_assets.py`
-  - `libs/code2workspace/tests/unit_tests/test_report_nested_subagents.py`
-  - `experiments/skill_tests/tests/test_runner.py`
-  - `experiments/skill_tests/tests/test_parsers.py`
-  - `experiments/skill_tests/tests/test_multi_source_report_tool.py`
-  - `experiments/harness/tests/test_code2workspace_harness.py`
-  - combined focused result for the latest table-aware report pass: `45 passed`
-- Live report-artifact checks now exist under:
-  - `results/skill-tests/20260423-msr-behavior/`
-  - `results/skill-tests/20260423-msr-structure/`
-  - `results/skill-tests/20260423-msr-e2e/`
+  - `libs/code2workspace/tests/unit_tests/test_orchestration_runtime.py`
+  - `libs/cli/tests/unit_tests/test_supervisor_runtime.py`
+  - report routing trigger replays under
+    `experiments/harness/runs/supervisor-routing-trigger-eval/`
+  - bounded report-case replays under
+    `experiments/harness/runs/supervisor-report-cases-bounded/`
 
 Remaining gaps:
 
-- a direct non-interactive end-to-end prompt that returns the full report body
-  in chat was started, but it was not cleanly verified to completion in this
-  session
-- the behavior case shows parallel `task()` usage, but the current runtime log
-  format still does not expose the project subagent name in a way that the
-  live-eval parser can recover reliably from tool traces alone
-- a chart/image pipeline still does not exist; v1 formal-report enhancement is
-  table-first rather than figure-first
+- report routing is stable, but live bounded runs still often stall in
+  `init_report` or before all three evidence lanes finish
+- the report pipeline still needs stronger final-body completion and better
+  latency on composition-heavy prompts
+- a chart/image pipeline still does not exist; current report enhancement is
+  still text/table-first rather than figure-first
 
 ## Main Blockers
 
@@ -784,20 +760,13 @@ Remaining gaps:
 
 ### 2026-04-23
 
-- Replaced the two earlier report skills with one new project skill,
-  `multi-source-report`; that intermediate branch stage still used a small
-  report-only project-subagent layer, which was later removed again on the
-  current supervisor-runtime branch when report execution was collapsed onto
-  generic workers plus lane artifacts.
-- Rebased report orchestration on a deep-research-style lane workflow while
-  keeping the current repo's local evidence skills as first-class sources.
-- Added focused unit coverage and new live skill-test cases for
-  `multi-source-report`, including a behavior case, a structure/materialization
-  case, and a risk-oriented end-to-end artifact case.
-- Extended `multi-source-report` again so formal reports now prefer
-  source-backed Markdown tables when lanes provide valid numeric evidence, while
-  still defaulting to `5000+` Chinese characters and explicitly declining to
-  tabulate weak or incomplete numeric fragments.
+- Reworked report orchestration around a supervisor-managed lane workflow and
+  local evidence skills.
+- Added focused unit coverage and live report-oriented skill-test cases for the
+  branch's then-current report surface.
+- Tightened formal report composition so numeric evidence could be rendered as
+  source-backed Markdown tables when reliable enough, while weak numeric
+  fragments were explicitly left un-tabulated.
 
 ## Read Next
 

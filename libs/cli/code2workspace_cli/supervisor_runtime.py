@@ -258,37 +258,10 @@ async def run_supervisor_orchestration(
         )
         rounds.append(round_result)
         if task_type == "generic" and _generic_analysis_round_finished(round_result):
-            options = _build_generic_approach_options(
-                task=task,
-                analysis_summary=round_result.node_results[0].summary,
-            )
-            _write_generic_approach_options(run_dir=run_dir, options=options)
             _emit_supervisor_event(
-                kind="generic_choice_requested",
+                kind="generic_plan_created",
                 run_dir=str(run_dir),
-                options=[option.to_dict() for option in options],
-            )
-            selected_generic_approach = (
-                await generic_approach_selector(options, run_dir)
-                if generic_approach_selector is not None
-                else "medium"
-            )
-            if selected_generic_approach not in {"simple", "medium", "difficult"}:
-                selected_generic_approach = "medium"
-            _write_json(
-                run_dir / "generic_approach_selection.json",
-                {
-                    "selected_approach": selected_generic_approach,
-                    "selected_label": _generic_approach_label(
-                        selected_generic_approach,
-                        options,
-                    ),
-                },
-            )
-            _emit_supervisor_event(
-                kind="generic_choice_selected",
-                approach=selected_generic_approach,
-                label=_generic_approach_label(selected_generic_approach, options),
+                has_spawned_subgraph=bool(round_result.node_results[0].spawned_subgraph),
             )
             continue
         if task_type == "benchmark" and _benchmark_register_round_finished(round_result):
@@ -1497,6 +1470,25 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
         guidance_lines.append(
             "For report-oriented nodes, prefer writing concrete report artifacts into the workspace such as request notes, lane notes, evidence summaries, or final_report.md when relevant."
         )
+    if node.node_id == "init_generic":
+        guidance_lines.extend(
+            [
+                "This node plans the next generic graph; do not answer the user fully in this node.",
+                "Use the user's request to choose a flexible graph shape. You may use examples such as direct answer, code inspect/fix/verify, data inspect/analyze/recommend, migration planning, or research/evidence judgment, but do not force a template.",
+                "Research and evidence-judgment questions are the main generic scenario. For simple questions use one synthesis node; for harder ones create sequential or parallel evidence/source/analysis lanes as needed.",
+                "Put the next-round graph in spawned_subgraph with keys nodes and edges. Each node must include node_id, title, objective, and capability_bundles. Each edge must include source and target.",
+                "Use only these capability_bundles: repo_fetch, docker_build_run, wdl_run, data_filter, operator_filter, metric_compute, summarize, validate, plan, task_manage, web_search, web_fetch, db_access, api_call.",
+                "Always include a final summarize node unless the graph has exactly one direct synthesis node followed by summarize.",
+            ]
+        )
+    if node.node_id.startswith("summarize") or node.node_id == "summarize":
+        guidance_lines.extend(
+            [
+                "This is a synthesis node. Prefer using prior worker outputs and traces rather than opening new exploratory work.",
+                "Do not start fresh evidence collection, broad repo scans, or unrelated validation unless a hard blocker in prior outputs requires one tiny targeted check.",
+                "Stop as soon as you can produce the requested summary or final answer from existing worker results.",
+            ]
+        )
     guidance_block = "\n".join(f"- {line}" for line in guidance_lines)
     capability_block = "\n".join(capability_summaries)
     implementation_block = "\n".join(implementation_kinds)
@@ -1554,7 +1546,18 @@ def _summarize_worker_output_payload(payload: object) -> object:
         "evidence_count": len(result.get("evidence", []) or []),
     }
     if isinstance(result.get("spawned_subgraph"), dict):
-        summary["spawned_subgraph"] = result.get("spawned_subgraph")
+        spawned = result.get("spawned_subgraph")
+        nodes = spawned.get("nodes") if isinstance(spawned.get("nodes"), list) else []
+        edges = spawned.get("edges") if isinstance(spawned.get("edges"), list) else []
+        summary["spawned_subgraph_summary"] = {
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "node_ids": [
+                str(item.get("node_id"))
+                for item in nodes[:8]
+                if isinstance(item, dict) and item.get("node_id")
+            ],
+        }
     return summary
 
 

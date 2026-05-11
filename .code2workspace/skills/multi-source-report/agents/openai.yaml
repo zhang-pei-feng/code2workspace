@@ -1,4 +1,0 @@
-interface:
-  display_name: "Multi-Source Report"
-  short_description: "多来源 research lanes + 证据汇总 + 最终报告落盘与正文返回"
-  default_prompt: "使用 $multi-source-report 处理正式报告、深度研究、风险评估和多来源综述。先 init 报告目录，再并行推进 evidence lanes，优先复用 academic-search、respiratory-disease-wide-monitor、respiratory-disease-data-fetcher、epietl-api、virus-variation-query，最后 compose 出 `final_report.md` 与 `report_diagnostics.json`，并在最终回答中直接返回完整报告正文。不要依赖任何旧的 report 专用 subagent 名称。"

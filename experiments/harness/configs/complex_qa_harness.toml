@@ -30,12 +30,6 @@ target = ".code2workspace/skills/virus-variation-query/SKILL.md"
 filename = "virus-variation-query-SKILL.md"
 base_file = ".code2workspace/skills/virus-variation-query/SKILL.md"
 
-[surfaces.multi_source_report_skill]
-kind = "workspace_file"
-target = ".code2workspace/skills/multi-source-report/SKILL.md"
-filename = "multi-source-report-SKILL.md"
-base_file = ".code2workspace/skills/multi-source-report/SKILL.md"
-
 [[cases]]
 case_name = "complex-qa-01-may-mainland-dominant-lineage"
 split = "train"

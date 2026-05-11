@@ -178,11 +178,31 @@ async def test_run_supervisor_orchestration_supports_generic_tasks(
     async def worker_runner(node: TaskNode) -> WorkerResult:
         assert node.node_id in {
             "init_generic",
-            "worker_context",
-            "worker_solution",
             "compose_generic",
             "summarize",
         }
+        if node.node_id == "init_generic":
+            return WorkerResult(
+                status="completed",
+                summary="planned flexible direct-answer graph",
+                spawned_subgraph={
+                    "nodes": [
+                        {
+                            "node_id": "compose_generic",
+                            "title": "Compose direct answer",
+                            "objective": "Answer the user directly.",
+                            "capability_bundles": ["summarize", "validate"],
+                        },
+                        {
+                            "node_id": "summarize",
+                            "title": "Summarize",
+                            "objective": "Summarize the answer.",
+                            "capability_bundles": ["summarize"],
+                        },
+                    ],
+                    "edges": [{"source": "compose_generic", "target": "summarize"}],
+                },
+            )
         return WorkerResult(status="completed", summary=f"{node.node_id} ok")
 
     result = await run_supervisor_orchestration(
@@ -193,15 +213,17 @@ async def test_run_supervisor_orchestration_supports_generic_tasks(
 
     run_dir = result.run_dir
     graph_1_payload = json.loads((run_dir / "graph_round_1.json").read_text())
+    graph_2_payload = json.loads((run_dir / "graph_round_2.json").read_text())
     final_payload = json.loads((run_dir / "final_decision.json").read_text())
     assert graph_1_payload["task_type"] == "generic"
     assert [node["node_id"] for node in graph_1_payload["nodes"]] == [
         "init_generic",
-        "worker_context",
-        "worker_solution",
+    ]
+    assert [node["node_id"] for node in graph_2_payload["nodes"]] == [
         "compose_generic",
         "summarize",
     ]
+    assert graph_2_payload["metadata"]["planner_generated"] is True
     assert final_payload["generic_approach"] is None
     assert not (run_dir / "generic_approach_options.json").exists()
     assert not (run_dir / "generic_approach_selection.json").exists()

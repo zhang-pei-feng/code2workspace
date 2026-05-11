@@ -165,7 +165,7 @@
       "focus_skills": [
         "virus-variation-query",
         "academic-search",
-        "multi-source-report"
+        "epietl-api"
       ],
       "weight": 1.0,
       "timeout_minutes": 15
@@ -256,7 +256,7 @@
       "focus_skills": [
         "virus-variation-query",
         "academic-search",
-        "multi-source-report"
+        "epietl-api"
       ],
       "weight": 1.0,
       "timeout_minutes": 18
@@ -303,7 +303,7 @@
       "focus_skills": [
         "virus-variation-query",
         "academic-search",
-        "multi-source-report"
+        "epietl-api"
       ],
       "weight": 1.0,
       "timeout_minutes": 18

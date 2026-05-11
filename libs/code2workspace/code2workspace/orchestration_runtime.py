@@ -35,6 +35,23 @@ WorkerStatus = Literal["completed", "blocked", "failed", "partial"]
 DecisionType = Literal["stop", "replan", "continue"]
 GenericApproach = Literal["simple", "medium", "difficult"]
 
+_CAPABILITY_BUNDLES: set[str] = {
+    "repo_fetch",
+    "docker_build_run",
+    "wdl_run",
+    "data_filter",
+    "operator_filter",
+    "metric_compute",
+    "summarize",
+    "validate",
+    "plan",
+    "task_manage",
+    "web_search",
+    "web_fetch",
+    "db_access",
+    "api_call",
+}
+
 @dataclass(slots=True)
 class TaskNode:
     node_id: str
@@ -507,52 +524,31 @@ class HeuristicSupervisorPlanner:
             nodes = [
                 TaskNode(
                     node_id="init_generic",
-                    title="Initialize generic run",
-                    objective="Create the generic task context, restate the delivery contract, identify 2-3 bounded worker units, and write a batch plan for one parallel execution layer.",
+                    title="Plan generic graph",
+                    objective=(
+                        "Analyze the generic user request and create a flexible execution graph for the next round. "
+                        "Do not assume a fixed template. Choose the smallest useful graph for the task: direct answer, "
+                        "sequential investigation, parallel evidence lanes, code inspect/fix/verify, data inspect/analyze/recommend, "
+                        "or any other shape that fits. Research and evidence-judgment questions are the main scenario; scale "
+                        "their graph by complexity, from one synthesis node to parallel source/evidence lanes when needed. "
+                        "Return a worker result whose spawned_subgraph contains nodes and edges for the next round."
+                    ),
                     capability_bundles=["plan", "task_manage", "validate"],
-                ),
-                TaskNode(
-                    node_id="worker_context",
-                    title="Context and evidence worker",
-                    objective="Handle one bounded generic work unit focused on constraints, evidence, repository facts, or source-backed context needed for the task.",
-                    capability_bundles=["repo_fetch", "web_search", "web_fetch", "db_access", "api_call", "validate"],
-                    metadata={"worker_role": "context"},
-                ),
-                TaskNode(
-                    node_id="worker_solution",
-                    title="Solution and execution worker",
-                    objective="Handle one bounded generic work unit focused on implementation, execution, repair, or solution design needed for the task.",
-                    capability_bundles=[
-                        "repo_fetch",
-                        "docker_build_run",
-                        "wdl_run",
-                        "data_filter",
-                        "operator_filter",
-                        "metric_compute",
-                        "validate",
-                    ],
-                    metadata={"worker_role": "solution"},
-                ),
-                TaskNode(
-                    node_id="compose_generic",
-                    title="Compose generic answer",
-                    objective="Merge the worker notes into one normal long-form user-facing answer, preserving uncertainty without turning the result into a formal report artifact.",
-                    capability_bundles=["summarize", "validate"],
-                ),
-                TaskNode(
-                    node_id="summarize",
-                    title="Summarize generic outcome",
-                    objective="Summarize the strongest verified generic outcome, worker contributions, blockers, and next-step recommendation.",
-                    capability_bundles=["summarize"],
-                ),
+                    metadata={"planner_role": "generic_dynamic_graph_planner"},
+                )
             ]
-            edges = [
-                TaskEdge(source="init_generic", target="worker_context"),
-                TaskEdge(source="init_generic", target="worker_solution"),
-                TaskEdge(source="worker_context", target="compose_generic"),
-                TaskEdge(source="worker_solution", target="compose_generic"),
-                TaskEdge(source="compose_generic", target="summarize"),
-            ]
+            edges = []
+        elif _round_analyze_succeeded(prior_rounds[-1]):
+            graph = _generic_graph_from_planner_result(
+                prior_round=prior_rounds[-1],
+                task=task,
+                round_index=round_index,
+                guidance_ids=guidance_ids,
+                retrieved_cases=retrieved_cases,
+            )
+            if graph is not None:
+                return graph
+            nodes, edges = _generic_fallback_execution_nodes()
         else:
             retry_targets = [
                 item.node_id
@@ -904,7 +900,7 @@ class HeuristicSupervisorPlanner:
                 TaskNode(
                     node_id="compose_report",
                     title="Compose report",
-                    objective="Compose the full report from the completed lanes and preserve evidence-backed uncertainty.",
+                    objective="Compose a full-length report from the completed lanes. Prefer a substantial report body with clear sections, explicit evidence-to-claim linkage, and preserved uncertainty rather than a short brief.",
                     capability_bundles=["summarize", "validate"],
                 ),
                 TaskNode(
@@ -1051,6 +1047,168 @@ def _round_analyze_succeeded(round_result: TaskExecutionRound) -> bool:
         item.node_id == "init_generic" and item.status == "completed"
         for item in round_result.node_results
     )
+
+
+def _generic_graph_from_planner_result(
+    *,
+    prior_round: TaskExecutionRound,
+    task: str,
+    round_index: int,
+    guidance_ids: list[str],
+    retrieved_cases: list[CaseTraceRecord],
+) -> TaskGraph | None:
+    planner_result = next(
+        (item for item in prior_round.node_results if item.node_id == "init_generic"),
+        None,
+    )
+    if planner_result is None or not isinstance(planner_result.spawned_subgraph, dict):
+        return None
+    payload = planner_result.spawned_subgraph
+    raw_nodes = payload.get("nodes")
+    raw_edges = payload.get("edges", [])
+    if not isinstance(raw_nodes, list) or not raw_nodes:
+        return None
+
+    nodes: list[TaskNode] = []
+    seen_ids: set[str] = set()
+    for index, raw_node in enumerate(raw_nodes, start=1):
+        if not isinstance(raw_node, dict):
+            continue
+        node_id = _sanitize_node_id(str(raw_node.get("node_id") or f"generic_step_{index}"))
+        if not node_id or node_id == "init_generic" or node_id in seen_ids:
+            node_id = f"generic_step_{index}"
+        seen_ids.add(node_id)
+        title = str(raw_node.get("title") or node_id.replace("_", " ").title())
+        objective = str(raw_node.get("objective") or "Execute this generic subtask.")
+        capability_bundles = _sanitize_capability_bundles(raw_node.get("capability_bundles"))
+        metadata = raw_node.get("metadata")
+        nodes.append(
+            TaskNode(
+                node_id=node_id,
+                title=title[:120],
+                objective=objective[:1000],
+                capability_bundles=capability_bundles,
+                metadata=metadata if isinstance(metadata, dict) else {},
+            )
+        )
+
+    if not nodes:
+        return None
+    if "summarize" not in {node.node_id for node in nodes}:
+        nodes.append(
+            TaskNode(
+                node_id="summarize",
+                title="Summarize generic outcome",
+                objective="Summarize the strongest verified generic outcome, worker contributions, blockers, and next-step recommendation.",
+                capability_bundles=["summarize"],
+            )
+        )
+
+    edges = _sanitize_edges(raw_edges, {node.node_id for node in nodes})
+    if not edges and len(nodes) > 1:
+        edges = [
+            TaskEdge(source=nodes[index].node_id, target=nodes[index + 1].node_id)
+            for index in range(len(nodes) - 1)
+        ]
+    edges = _connect_terminal_nodes_to_summarize(nodes, edges)
+
+    return TaskGraph(
+        graph_id=f"generic-r{round_index}",
+        task_type="generic",
+        round_index=round_index,
+        nodes=_attach_common_node_metadata(
+            nodes,
+            task=task,
+            task_type="generic",
+            guidance_ids=guidance_ids,
+        ),
+        edges=edges,
+        metadata={
+            **_graph_metadata(task=task, retrieved_cases=retrieved_cases, guidance_ids=guidance_ids),
+            "planner_generated": True,
+            "planner_summary": planner_result.summary,
+        },
+    )
+
+
+def _sanitize_node_id(value: str) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9_]+", "_", value.strip().lower()).strip("_")
+    if not normalized:
+        return ""
+    if normalized[0].isdigit():
+        normalized = f"step_{normalized}"
+    return normalized[:80]
+
+
+def _sanitize_capability_bundles(value: object) -> list[CapabilityBundle]:
+    if not isinstance(value, list):
+        return ["summarize", "validate"]
+    bundles = [
+        str(item)
+        for item in value
+        if isinstance(item, str) and item in _CAPABILITY_BUNDLES
+    ]
+    if not bundles:
+        return ["summarize", "validate"]
+    return list(dict.fromkeys(bundles))  # type: ignore[return-value]
+
+
+def _sanitize_edges(value: object, node_ids: set[str]) -> list[TaskEdge]:
+    if not isinstance(value, list):
+        return []
+    edges: list[TaskEdge] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_edge in value:
+        if not isinstance(raw_edge, dict):
+            continue
+        source = _sanitize_node_id(str(raw_edge.get("source") or ""))
+        target = _sanitize_node_id(str(raw_edge.get("target") or ""))
+        if source not in node_ids or target not in node_ids or source == target:
+            continue
+        key = (source, target)
+        if key in seen:
+            continue
+        seen.add(key)
+        edges.append(TaskEdge(source=source, target=target))
+    return edges
+
+
+def _connect_terminal_nodes_to_summarize(
+    nodes: list[TaskNode],
+    edges: list[TaskEdge],
+) -> list[TaskEdge]:
+    node_ids = {node.node_id for node in nodes}
+    if "summarize" not in node_ids or len(nodes) <= 1:
+        return edges
+    existing = {(edge.source, edge.target) for edge in edges}
+    outgoing = {edge.source for edge in edges}
+    updated = list(edges)
+    for node in nodes:
+        if node.node_id == "summarize" or node.node_id in outgoing:
+            continue
+        key = (node.node_id, "summarize")
+        if key not in existing:
+            updated.append(TaskEdge(source=node.node_id, target="summarize"))
+            existing.add(key)
+    return updated
+
+
+def _generic_fallback_execution_nodes() -> tuple[list[TaskNode], list[TaskEdge]]:
+    nodes = [
+        TaskNode(
+            node_id="compose_generic",
+            title="Compose generic answer",
+            objective="The dynamic generic planner did not return a usable subgraph. Produce the best direct user-facing answer with available context and state any uncertainty.",
+            capability_bundles=["summarize", "validate"],
+        ),
+        TaskNode(
+            node_id="summarize",
+            title="Summarize generic outcome",
+            objective="Summarize the strongest verified generic outcome, worker contributions, blockers, and next-step recommendation.",
+            capability_bundles=["summarize"],
+        ),
+    ]
+    return nodes, [TaskEdge(source="compose_generic", target="summarize")]
 
 
 def _generic_execute_objective(approach: GenericApproach) -> str:

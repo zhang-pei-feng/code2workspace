@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import subprocess
 import sys
 import types
 from pathlib import Path
@@ -369,76 +368,6 @@ proposal.write_text("# Proposal\\n\\n- Summary: improve visible repo outcomes\\n
     assert run_root.joinpath("history", "visible", "iterations", "001", "proposer_workspace", "result.json").exists()
     assert run_root.joinpath("history", "private", "holdout", "iter-001", "result.json").exists()
     assert run_root.joinpath("report.json").exists()
-
-
-def test_multi_source_report_helper_survives_surface_override(tmp_path: Path) -> None:
-    helper = (
-        repo_root()
-        / ".code2workspace"
-        / "skills"
-        / "multi-source-report"
-        / "scripts"
-        / "report_tool.py"
-    )
-    skill_file = (
-        repo_root()
-        / ".code2workspace"
-        / "skills"
-        / "multi-source-report"
-        / "SKILL.md"
-    )
-    config = tmp_path / "experiment.toml"
-    config.write_text(
-        f"""
-[experiment]
-name = "epidemic-surface-demo"
-workspace_root = "{tmp_path / "workspace"}"
-output_root = "{tmp_path / "output"}"
-
-[surfaces.report_skill]
-kind = "workspace_file"
-target = "{skill_file.relative_to(repo_root())}"
-filename = "SKILL.md"
-base_value = {json.dumps(skill_file.read_text(encoding="utf-8"))}
-
-[[cases]]
-case_id = "train-case"
-repo_url = "https://github.com/example/train-repo"
-split = "train"
-max_runtime_minutes = 15
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    experiment = load_experiment(config)
-    baseline = build_baseline_variant(experiment)
-    variant = type(baseline)(
-        label="skill-edit",
-        changed_surfaces=("report_skill",),
-        values={"report_skill": baseline.values["report_skill"] + "\n<!-- test override -->\n"},
-    )
-    out_dir = tmp_path / "report-run"
-
-    with workspace_override_context(experiment, variant):
-        completed = subprocess.run(
-            [
-                sys.executable,
-                str(helper),
-                "init",
-                "--topic",
-                "Harness regression report",
-                "--output-dir",
-                str(out_dir),
-            ],
-            cwd=repo_root(),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-    assert completed.returncode == 0
-    assert out_dir.joinpath("manifest.json").exists()
-    assert out_dir.joinpath("lanes", "01_monitoring.md").exists()
 
 
 def test_run_experiment_supports_deepagents_proposer(tmp_path: Path, monkeypatch) -> None:

@@ -587,7 +587,7 @@ def create_workspace_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph ass
                 ),
                 max_delegation_depth=int(spec.get("max_delegation_depth", 3)),
                 delegation_call_budget=int(spec.get("nested_task_budget", 1)),
-                scope_guard=str(spec.get("nested_scope_guard", "multi-source-report")),
+                scope_guard=str(spec.get("nested_scope_guard", "report")),
             )
         )
 

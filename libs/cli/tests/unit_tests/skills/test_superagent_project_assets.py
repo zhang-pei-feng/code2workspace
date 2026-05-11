@@ -25,7 +25,6 @@ def test_project_superagent_skills_are_discoverable() -> None:
         "benchmark-workflow-orchestrator",
         "data-governance-ops",
         "epietl-api",
-        "multi-source-report",
         "respiratory-disease-data-fetcher",
         "respiratory-disease-wide-monitor",
         "virus-variation-query",
@@ -52,7 +51,6 @@ def test_superagent_scripts_expose_help() -> None:
     scripts = [
         _repo_root() / ".code2workspace" / "skills" / "benchmark-workflow-orchestrator" / "scripts" / "benchmark_workflow.py",
         _repo_root() / ".code2workspace" / "skills" / "data-governance-ops" / "scripts" / "governance_ops.py",
-        _repo_root() / ".code2workspace" / "skills" / "multi-source-report" / "scripts" / "report_tool.py",
     ]
 
     for script in scripts:
