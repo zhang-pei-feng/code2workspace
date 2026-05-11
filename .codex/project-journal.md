@@ -6,6 +6,41 @@
 
 ## Entries
 
+### 2026-05-11 19:15 CST
+- Session goal: Make supervisor runtime return natural user-facing answers instead of the structured Supervisor Summary in chat.
+- Major changes:
+  - Added `user_response` to the supervisor run result and write it to `final_response.md`, while preserving the full diagnostic `final_summary.md` artifact.
+  - Changed the supervisor wrapper to return `user_response` as the chat `AIMessage`, using deterministic extraction from completed delivery nodes such as `final_summarize` / `compose_generic` instead of a second LLM call.
+  - Added worker prompt guidance so final delivery nodes put the actual user-facing answer in `summary` and keep process details in evidence/hints.
+- Validation: `test_supervisor_runtime.py` passed (`26 passed`); live `code2workspace -n "你好" -q` returned only the natural greeting while the full Supervisor Summary remained in the run artifact.
+- Next step: consider extending the final-response selector with task-family-specific formatting for benchmark/report outputs if those should also hide operational details by default.
+
+### 2026-05-11 19:07 CST
+- Session goal: Fix Paseo not listing `gpt-5.5` for the Codex provider.
+- Major changes:
+  - Upgraded the user-level global `@openai/codex` npm package from `0.124.0` to `0.130.0`.
+  - Restarted the local Paseo daemon so it launched the updated Codex app server.
+- Validation: `paseo daemon status --json` reports Codex `codex-cli 0.130.0`; `paseo provider models codex --json` now lists `gpt-5.5`.
+- Next step: use `codex/gpt-5.5` from Paseo normally; no repository code changes were needed.
+### 2026-05-11 19:05 CST
+- Session goal: Diagnose why a successful TUI startup failed on the simple prompt `你好`.
+- Major changes:
+  - Traced the supervisor failure to model invocation, not graph scheduling: the run artifact showed `ValueError: No generations found in stream` before node outputs were written.
+  - Reproduced a direct model call failure with `.env` `OPENAI_BASE_URL=http://8.221.123.105:8080/`; the OpenAI-compatible client received an invalid string response.
+  - Fixed local `.env` to use the working OpenAI-compatible endpoint `http://8.221.123.105:8080/v1`.
+- Validation: direct `create_model('openai:gpt-5.4').ainvoke('你好')` returned a normal Chinese greeting; `code2workspace -n "你好" -q` completed all supervisor nodes.
+- Next step: consider making model config validation warn when an OpenAI-compatible base URL lacks `/v1`.
+
+### 2026-05-11 18:59 CST
+- Session goal: Diagnose and fix local CLI/TUI startup failure in the supervisor-runtime worktree.
+- Major changes:
+  - Identified `.env` `LANGSMITH_TRACING=` as the trigger for LangGraph API startup failure because Starlette cannot cast an empty string to bool.
+  - Updated `libs/cli/code2workspace_cli/server.py` so the LangGraph server subprocess drops empty LangSmith tracing bool flags while preserving explicit `true` / `false` values.
+  - Added focused tests in `libs/cli/tests/unit_tests/test_server_helpers.py`.
+- Validation: `test_server_helpers.py` passed (`13 passed`); non-interactive startup no longer crashes the server; interactive TUI reached `Ready to code!`.
+- Next step: investigate the separate generic worker failure seen after non-interactive startup if exact prompt execution quality matters.
+
+
 ### 2026-05-11 14:27 CST
 - Session goal: Remove the retired `multi-source-report` surface and keep the active supervisor report path only.
 - Major changes:

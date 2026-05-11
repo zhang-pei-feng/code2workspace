@@ -229,6 +229,69 @@ async def test_run_supervisor_orchestration_supports_generic_tasks(
     assert not (run_dir / "generic_approach_selection.json").exists()
 
 
+@pytest.mark.asyncio
+async def test_run_supervisor_orchestration_returns_user_facing_response(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace" / "20260430134500"
+    workspace.mkdir(parents=True)
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "init_generic":
+            return WorkerResult(
+                status="completed",
+                summary="planned greeting graph",
+                spawned_subgraph={
+                    "nodes": [
+                        {
+                            "node_id": "direct_greeting_reply",
+                            "title": "Generate greeting",
+                            "objective": "Reply to the greeting.",
+                            "capability_bundles": ["summarize"],
+                        },
+                        {
+                            "node_id": "final_summarize",
+                            "title": "Final answer",
+                            "objective": "Produce the final user-facing answer.",
+                            "capability_bundles": ["summarize", "validate"],
+                        },
+                    ],
+                    "edges": [
+                        {
+                            "source": "direct_greeting_reply",
+                            "target": "final_summarize",
+                        }
+                    ],
+                },
+            )
+        if node.node_id == "direct_greeting_reply":
+            return WorkerResult(
+                status="completed",
+                summary='已生成回复："你好！很高兴见到你。"',
+            )
+        if node.node_id == "final_summarize":
+            return WorkerResult(status="completed", summary="你好！很高兴见到你。")
+        return WorkerResult(
+            status="completed",
+            summary=(
+                "最强已验证结果：最终回复为“你好！很高兴见到你。”\n\n"
+                "worker 贡献：已完成。\n\n下一步建议：直接发送。"
+            ),
+        )
+
+    result = await run_supervisor_orchestration(
+        task="你好",
+        workspace_root=workspace,
+        worker_runner=worker_runner,
+    )
+
+    assert result.user_response == "你好！很高兴见到你。"
+    assert "Supervisor Summary" in result.final_summary
+    assert (result.run_dir / "final_response.md").read_text(encoding="utf-8") == (
+        "你好！很高兴见到你。"
+    )
+
+
 def test_sqlite_case_index_rebuild_and_retrieve(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     run_dir = workspace_root / "20260430120000" / "orchestration_runs" / "run-a"

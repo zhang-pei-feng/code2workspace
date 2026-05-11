@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 class SupervisorRunResult:
     run_dir: Path
     final_summary: str
+    user_response: str
     final_decision: SupervisorDecision
     round_count: int
 
@@ -282,7 +283,14 @@ async def run_supervisor_orchestration(
         decision=final_decision,
         generic_approach=selected_generic_approach,
     )
+    user_response = _render_user_response(
+        task_type=task_type,
+        rounds=rounds,
+        decision=final_decision,
+        final_summary=final_summary,
+    )
     (run_dir / "final_summary.md").write_text(final_summary, encoding="utf-8")
+    (run_dir / "final_response.md").write_text(user_response, encoding="utf-8")
     _write_json(
         run_dir / "final_decision.json",
         {
@@ -293,6 +301,7 @@ async def run_supervisor_orchestration(
             "generic_approach": selected_generic_approach,
             "round_count": len(rounds),
             "run_dir": str(run_dir),
+            "final_response_path": str(run_dir / "final_response.md"),
         },
     )
     _emit_supervisor_event(
@@ -308,6 +317,7 @@ async def run_supervisor_orchestration(
     return SupervisorRunResult(
         run_dir=run_dir,
         final_summary=final_summary,
+        user_response=user_response,
         final_decision=final_decision,
         round_count=len(rounds),
     )
@@ -355,7 +365,7 @@ def build_supervisor_enabled_agent(
                 else None
             ),
         )
-        return {"messages": [AIMessage(content=result.final_summary)]}
+        return {"messages": [AIMessage(content=result.user_response)]}
 
     builder = StateGraph(AgentState)
     builder.add_node("route", route)
@@ -1489,6 +1499,10 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
                 "Stop as soon as you can produce the requested summary or final answer from existing worker results.",
             ]
         )
+    if _looks_like_user_delivery_node(node.node_id):
+        guidance_lines.append(
+            "If this node prepares the final user-facing answer, put that answer itself in summary; put process notes, worker contributions, blockers, and evidence details in evidence or next_action_hint instead."
+        )
     guidance_block = "\n".join(f"- {line}" for line in guidance_lines)
     capability_block = "\n".join(capability_summaries)
     implementation_block = "\n".join(implementation_kinds)
@@ -1661,6 +1675,23 @@ def _looks_like_worker_result_dict(payload: dict[str, Any]) -> bool:
     )
 
 
+def _looks_like_user_delivery_node(node_id: str) -> bool:
+    normalized = node_id.lower()
+    if normalized in {
+        "compose_generic",
+        "compose_report",
+        "final_summarize",
+        "final_summary",
+        "final_answer",
+        "final_response",
+    }:
+        return True
+    return any(
+        marker in normalized
+        for marker in ("answer", "reply", "response", "deliver")
+    )
+
+
 def _last_ai_text(messages: list[Any]) -> str:
     for message in reversed(messages):
         if getattr(message, "type", None) != "ai":
@@ -1696,6 +1727,111 @@ def _extract_task_classifier_payload(text: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _render_user_response(
+    *,
+    task_type: str,
+    rounds,
+    decision: SupervisorDecision,
+    final_summary: str,
+) -> str:
+    """Return the chat-facing answer while keeping supervisor diagnostics in artifacts."""
+
+    if decision.decision != "stop" or decision.failed_nodes:
+        return final_summary
+
+    candidate = _select_user_response_candidate(task_type=task_type, rounds=rounds)
+    if candidate:
+        return candidate
+    return final_summary
+
+
+def _select_user_response_candidate(*, task_type: str, rounds) -> str | None:
+    candidates: list[tuple[int, str]] = []
+    for round_offset, round_result in enumerate(reversed(rounds)):
+        round_penalty = round_offset * 10
+        for item_offset, item in enumerate(reversed(round_result.node_results)):
+            if item.status != "completed":
+                continue
+            cleaned = _clean_user_response_text(str(item.summary or ""))
+            if not cleaned:
+                continue
+            score = (
+                _user_response_node_score(str(item.node_id), task_type=task_type)
+                - round_penalty
+                - item_offset
+            )
+            score += _user_response_text_score(cleaned)
+            candidates.append((score, cleaned))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    best_score, best_text = candidates[0]
+    if best_score < 0:
+        return None
+    return best_text
+
+
+def _user_response_node_score(node_id: str, *, task_type: str) -> int:
+    normalized = node_id.lower()
+    score = 0
+    if normalized.startswith(("init_", "retry_")):
+        score -= 60
+    if normalized == "summarize":
+        score -= 15
+    if task_type == "generic":
+        score += 10
+    if normalized in {"final_answer", "final_response", "final_summarize"}:
+        score += 80
+    elif normalized in {"compose_generic", "compose_report"}:
+        score += 60
+    elif _looks_like_user_delivery_node(normalized):
+        score += 45
+    return score
+
+
+def _user_response_text_score(text: str) -> int:
+    lowered = text.casefold()
+    score = 0
+    diagnostic_markers = (
+        "worker 贡献",
+        "blockers",
+        "下一步建议",
+        "最强已验证结果",
+        "supervisor summary",
+        "round ",
+        "node ",
+    )
+    if any(marker in lowered for marker in diagnostic_markers):
+        score -= 35
+    if len(text) <= 500:
+        score += 10
+    if "\n\n" not in text and text.count("\n") <= 2:
+        score += 10
+    return score
+
+
+def _clean_user_response_text(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    quoted = _extract_quoted_final_answer(stripped)
+    if quoted is not None:
+        return quoted
+    return stripped
+
+
+def _extract_quoted_final_answer(text: str) -> str | None:
+    if len(text) > 800:
+        return None
+    if not any(marker in text for marker in ("回复", "答案", "输出", "交付", "answer", "response")):
+        return None
+    matches = re.findall(r"[“\"]([^”\"]{1,500})[”\"]", text)
+    if not matches:
+        return None
+    candidate = matches[-1].strip()
+    return candidate or None
 
 
 def _render_final_summary(
