@@ -1313,6 +1313,7 @@ def create_cli_agent(
         )
 
     base_agent = _build_workspace_agent(middleware_stack=agent_middleware)
+    supervisor_worker_agent = _build_workspace_agent(middleware_stack=agent_middleware)
 
     # Plain chat mode keeps specialized skills and only omits orchestration
     # skill directories when the source tree is categorized.
@@ -1337,6 +1338,7 @@ def create_cli_agent(
         base_agent=base_agent,
         fallback_agent=fallback_agent,
         workspace_root=root_dir,
+        worker_agent=supervisor_worker_agent,
         classifier_model=classifier_model,
         enable_generic_ask_user=enable_ask_user,
         checkpointer=checkpointer,

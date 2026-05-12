@@ -904,3 +904,12 @@
   - Repaired migration fallout by updating benchmark helper paths, supervisor guidance asset paths, skill script command paths, harness configs, and project skill tests; fixed relocated helper imports in `benchmark_workflow.py` and `governance_ops.py`.
 - Validation: `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_agent.py libs/cli/tests/unit_tests/skills/test_superagent_project_assets.py libs/code2workspace/tests/unit_tests/middleware/test_skills_middleware.py -q` passed (`154 passed`); `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py experiments/harness/tests/test_project_skill_helpers.py -q` passed (`36 passed`).
 - Next step: if we want cleaner long-term ergonomics, teach project skill creation commands about the `capabilities` / `orchestration` categories so new skills land in the right subtree by default.
+
+### 2026-05-12 14:53 CST
+- Session goal: Move Supervisor Graph worker execution toward a unified subagent-backed implementation.
+- Major changes:
+  - Added `SupervisorWorkerRunner` in `libs/cli/code2workspace_cli/supervisor_runtime.py`, preserving deterministic benchmark adapters while dispatching normal worker nodes to a dedicated worker agent runnable.
+  - Updated `create_cli_agent()` to build and pass a separate supervisor worker agent, leaving the original base agent as fallback.
+  - Fixed `SubAgentMiddleware` so non-HITL subagents are compiled into the `task` tool; synchronized overview/thesis traceability notes.
+- Validation: `test_supervisor_runtime.py` passed (`27 passed`); `test_agent.py` passed (`89 passed`); `test_subagent_middleware_init.py` passed (`7 passed`); `test_subagents.py` passed (`21 passed, 1 xfailed`).
+- Next step: specialize worker/subagent mappings per node family or capability bundle instead of using one coarse default worker runnable for all non-deterministic nodes.

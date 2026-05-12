@@ -72,6 +72,55 @@ class GenericApproachOption:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class SupervisorWorkerSubagent:
+    """Runnable-backed worker selected directly by the supervisor runtime."""
+
+    name: str
+    runnable: Any
+    node_ids: frozenset[str] = frozenset()
+
+    def matches(self, node: TaskNode) -> bool:
+        return node.node_id in self.node_ids
+
+
+class SupervisorWorkerRunner:
+    """Execute supervisor nodes through deterministic adapters or subagents."""
+
+    def __init__(
+        self,
+        *,
+        base_agent: Any,
+        workspace_root: Path,
+        default_subagent: Any | None = None,
+        subagents: list[SupervisorWorkerSubagent] | None = None,
+    ) -> None:
+        self._base_agent = base_agent
+        self._workspace_root = workspace_root
+        self._default_subagent = default_subagent
+        self._subagents = list(subagents or [])
+
+    async def run(self, node: TaskNode) -> WorkerResult:
+        deterministic = await asyncio.to_thread(
+            _maybe_run_deterministic_worker,
+            node=node,
+            workspace_root=self._workspace_root,
+        )
+        if deterministic is not None:
+            return deterministic
+        return await _invoke_worker_runnable(
+            agent=self._select_runnable(node),
+            node=node,
+            workspace_root=self._workspace_root,
+        )
+
+    def _select_runnable(self, node: TaskNode) -> Any:
+        for subagent in self._subagents:
+            if subagent.matches(node):
+                return subagent.runnable
+        return self._default_subagent or self._base_agent
+
+
 _BENCHMARK_HELPER_RELATIVE_PATH = (
     ".code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py"
 )
@@ -331,6 +380,8 @@ def build_supervisor_enabled_agent(
     base_agent,
     fallback_agent=None,
     workspace_root: Path,
+    worker_agent=None,
+    worker_subagents: list[SupervisorWorkerSubagent] | None = None,
     classifier_model=None,
     enable_generic_ask_user: bool = True,
     checkpointer: Checkpointer | None = None,
@@ -352,14 +403,16 @@ def build_supervisor_enabled_agent(
             model=classifier_model,
             task=task,
         )
+        worker_runner = SupervisorWorkerRunner(
+            base_agent=base_agent,
+            workspace_root=workspace_root,
+            default_subagent=worker_agent,
+            subagents=worker_subagents,
+        )
         result = await run_supervisor_orchestration(
             task=task,
             workspace_root=workspace_root,
-            worker_runner=lambda node: _invoke_worker_agent(
-                agent=base_agent,
-                node=node,
-                workspace_root=workspace_root,
-            ),
+            worker_runner=worker_runner.run,
             classification=task_classification,
             classification_details=classification_details,
             generic_approach_selector=(
@@ -568,6 +621,14 @@ async def _invoke_worker_agent(*, agent, node: TaskNode, workspace_root: Path) -
     )
     if deterministic is not None:
         return deterministic
+    return await _invoke_worker_runnable(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
+
+
+async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path) -> WorkerResult:
     prompt = _build_worker_prompt(node=node, workspace_root=workspace_root)
     invoke_payload, invoke_kwargs = _build_worker_invoke_request(prompt)
     last_error: Exception | None = None

@@ -61,6 +61,7 @@ class TestSubagentMiddlewareInit:
         # System prompt includes TASK_SYSTEM_PROMPT plus available subagent types
         assert middleware.system_prompt.startswith(TASK_SYSTEM_PROMPT)
         assert "weather" in middleware.system_prompt
+        assert "weather" in middleware.tools[0].description
 
     def test_subagent_middleware_custom_system_prompt(self) -> None:
         """Test SubAgentMiddleware with a custom system prompt."""

@@ -1642,7 +1642,7 @@ class TestMiddlewareStackConformance:
                 enable_shell=False,
             )
 
-        assert len(captured_middleware) == 2
+        assert len(captured_middleware) == 3
         for middleware_list in captured_middleware:
             assert len(middleware_list) > 0, "Expected at least one middleware"
 

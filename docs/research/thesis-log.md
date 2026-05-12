@@ -24,6 +24,21 @@ and evidence-backed completion judgment.
 
 ## Chronology
 
+### 2026-05-12
+
+- Unified Supervisor Graph worker execution behind an explicit runner boundary:
+  - added `SupervisorWorkerRunner` and runnable-backed worker dispatch in
+    `libs/cli/code2workspace_cli/supervisor_runtime.py`
+  - changed `create_cli_agent()` so supervisor nodes use a dedicated worker
+    agent runnable while the original base agent remains available as fallback
+  - preserved deterministic benchmark helpers as first-priority adapters before
+    normal worker-agent dispatch
+- Fixed a subagent middleware construction issue so regular subagents are
+  compiled into the `task` tool even when no HITL `interrupt_on` config is set.
+- Validation: focused supervisor, agent assembly, and subagent tests passed
+  (`test_supervisor_runtime.py`, `test_agent.py`,
+  `test_subagent_middleware_init.py`, and `test_subagents.py`).
+
 ### 2026-05-10
 
 - Strengthened the generic Supervisor Graph execution contract rather than only

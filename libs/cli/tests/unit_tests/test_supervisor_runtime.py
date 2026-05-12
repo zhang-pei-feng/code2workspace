@@ -29,6 +29,7 @@ from code2workspace_cli.supervisor_runtime import (
     _run_worker_and_capture,
     _parse_worker_result,
     SQLiteCaseIndex,
+    SupervisorWorkerRunner,
     run_supervisor_orchestration,
 )
 
@@ -399,9 +400,10 @@ def test_create_cli_agent_wraps_default_agent_with_supervisor_runtime(
 
     assert agent is mock_wrapped_agent
     assert mock_build.call_count == 1
-    assert len(built_agents) == 2
+    assert len(built_agents) == 3
     assert mock_build.call_args.kwargs["base_agent"] is built_agents[0]
-    assert mock_build.call_args.kwargs["fallback_agent"] is built_agents[1]
+    assert mock_build.call_args.kwargs["worker_agent"] is built_agents[1]
+    assert mock_build.call_args.kwargs["fallback_agent"] is built_agents[2]
 
 
 def test_build_worker_prompt_uses_capability_registry_and_guidance() -> None:
@@ -646,6 +648,40 @@ async def test_invoke_worker_agent_retries_transient_errors(
 
     assert result.status == "completed"
     assert agent.ainvoke.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_supervisor_worker_runner_prefers_worker_subagent(
+    tmp_path: Path,
+) -> None:
+    node = TaskNode(
+        node_id="worker_solution",
+        title="Solve",
+        objective="Solve the request",
+        capability_bundles=["summarize", "validate"],
+        metadata={"task": "hello", "task_type": "generic"},
+    )
+    base_agent = AsyncMock()
+    worker_agent = AsyncMock()
+    worker_agent.ainvoke.return_value = {
+        "messages": [
+            AIMessage(
+                content='{"status":"completed","summary":"from worker subagent","artifacts":[],"evidence":[]}'
+            )
+        ]
+    }
+    runner = SupervisorWorkerRunner(
+        base_agent=base_agent,
+        default_subagent=worker_agent,
+        workspace_root=tmp_path,
+    )
+
+    result = await runner.run(node)
+
+    assert result.status == "completed"
+    assert result.summary == "from worker subagent"
+    worker_agent.ainvoke.assert_awaited_once()
+    base_agent.ainvoke.assert_not_called()
 
 
 def test_build_benchmark_comparison_handles_mixed_metric_winners() -> None:

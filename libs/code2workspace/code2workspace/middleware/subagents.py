@@ -652,22 +652,22 @@ class SubAgentMiddleware(AgentMiddleware[Any, ContextT, ResponseT]):
             if interrupt_on:
                 middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
 
-                specs.append(
-                    {
-                        "name": spec["name"],
-                        "description": spec["description"],
-                        "runnable": create_agent(
-                            model,
-                            system_prompt=spec["system_prompt"],
-                            tools=spec["tools"],
-                            middleware=middleware,
-                            name=spec["name"],
-                        ),
-                        "max_delegation_depth": spec.get("max_delegation_depth"),
-                        "delegation_call_budget": spec.get("nested_task_budget"),
-                        "scope_guard": spec.get("nested_scope_guard"),
-                    }
-                )
+            specs.append(
+                {
+                    "name": spec["name"],
+                    "description": spec["description"],
+                    "runnable": create_agent(
+                        model,
+                        system_prompt=spec["system_prompt"],
+                        tools=spec["tools"],
+                        middleware=middleware,
+                        name=spec["name"],
+                    ),
+                    "max_delegation_depth": spec.get("max_delegation_depth"),
+                    "delegation_call_budget": spec.get("nested_task_budget"),
+                    "scope_guard": spec.get("nested_scope_guard"),
+                }
+            )
 
         return specs
 

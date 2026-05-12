@@ -32,7 +32,9 @@ This is the fastest engineering snapshot for the repository.
   - uses a generic default graph for unknown tasks
   - uses known-family guidance/templates for `github2workspace`, `benchmark`,
     and `report`
-  - executes those rounds through one generic worker contract
+  - executes those rounds through one supervisor worker runner contract, with
+    non-deterministic nodes dispatched to a dedicated worker agent runnable and
+    deterministic benchmark helpers kept as adapters
   - writes canonical orchestration artifacts under the current thread workspace
     at `orchestration_runs/<run_id>/`
   - rebuilds and queries a lightweight SQLite case index from workspace
@@ -99,6 +101,14 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
   worker/fallback agent, then wraps it in a supervisor-enabled graph so every
   task enters supervisor first; generic tasks use the default graph, while known
   families receive guidance/template overlays.
+- Supervisor worker execution now has an explicit runner boundary:
+  - `SupervisorWorkerRunner` checks deterministic adapters first, then dispatches
+    normal worker nodes to a dedicated worker agent runnable instead of invoking
+    the base chat agent directly
+  - the older `_invoke_worker_agent()` path remains as a compatibility helper
+    and still shares the same worker prompt/result parser
+  - subagent runnable construction was fixed so normal subagents are available
+    even when no HITL `interrupt_on` config is present
 - Generic graph planning has now been tightened further:
   - first-round generic graphs no longer stop at a single `analyze_task` node
   - they now default to `init_generic -> worker_context -> worker_solution ->
@@ -219,8 +229,9 @@ Remaining gaps:
 - the planner is still heuristic/programmatic rather than model-generated
 - known-family graph skeletons are still code-defined even though node strategy
   is now skill-backed
-- worker recursion is designed into the contract but not yet expanded into
-  multi-level production flows
+- worker recursion is designed into the contract and the first direct worker
+  runner boundary is in place, but node-specific worker/subagent mappings are
+  still coarse rather than fully specialized per capability
 - the real interactive TUI startup smoke still timed out under scripted capture
   even though the focused startup unit checks passed
 - the main benchmark supervisor path now has full two-tool end-to-end evidence;
