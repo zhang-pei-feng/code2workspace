@@ -156,6 +156,7 @@ def _guidance_asset_lines(kind: str, name: str) -> tuple[str, ...]:
         _repo_root()
         / ".code2workspace"
         / "skills"
+        / "orchestration"
         / "supervisor-guidance"
         / "references"
         / kind

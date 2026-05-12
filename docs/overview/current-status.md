@@ -85,7 +85,7 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
 - Added `libs/cli/code2workspace_cli/supervisor_runtime.py` as the CLI-facing
   runtime wrapper, artifact writer, and SQLite case-index layer.
 - Added `libs/cli/code2workspace_cli/supervisor_capabilities.py` plus
-  `.code2workspace/skills/supervisor-guidance/` so node strategy now comes from
+  `.code2workspace/skills/orchestration/supervisor-guidance/` so node strategy now comes from
   versioned Skill assets while capability-to-tool mappings stay in code.
 - Generic QA orchestration guidance is now stronger at the worker-contract
   layer:
@@ -630,7 +630,7 @@ Status: report requests run through the supervisor-first report family
   `init_report -> monitoring_lane -> local_data_lane -> literature_lane -> compose_report -> summarize`.
 - Report execution no longer depends on a dedicated `multi-source-report`
   project skill. The active path is the report family runtime plus
-  `.code2workspace/skills/supervisor-guidance/` report guidance.
+  `.code2workspace/skills/orchestration/supervisor-guidance/` report guidance.
 - The current report lane design still emphasizes:
   - authoritative monitoring and surveillance evidence
   - local structured data or API evidence where available

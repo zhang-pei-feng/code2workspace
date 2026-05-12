@@ -62,7 +62,7 @@ flowchart TD
   and worker prompt assembly
 - `libs/cli/code2workspace_cli/supervisor_capabilities.py`
   capability-to-tool registry plus node-guidance asset loading
-- `.code2workspace/skills/supervisor-guidance/`
+- `.code2workspace/skills/orchestration/supervisor-guidance/`
   node execution strategy and experience fragments used by the worker prompt
 
 ## Current Execution Model

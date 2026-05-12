@@ -21,7 +21,7 @@ Use this skill for governance-style data-source operations.
 Run the local helper directly:
 
 ```bash
-python3 skills/data-governance-ops/scripts/governance_ops.py --help
+python3 skills/capabilities/data-governance-ops/scripts/governance_ops.py --help
 ```
 
 ## Rules
@@ -37,12 +37,12 @@ python3 skills/data-governance-ops/scripts/governance_ops.py --help
 ## Typical flows
 
 - Source brief:
-  `python3 skills/data-governance-ops/scripts/governance_ops.py source-brief --source ncbi_virus`
+  `python3 skills/capabilities/data-governance-ops/scripts/governance_ops.py source-brief --source ncbi_virus`
 - Refresh snapshot:
-  `python3 skills/data-governance-ops/scripts/governance_ops.py refresh --source ncbi_virus --limit 5`
+  `python3 skills/capabilities/data-governance-ops/scripts/governance_ops.py refresh --source ncbi_virus --limit 5`
 - Query latest:
-  `python3 skills/data-governance-ops/scripts/governance_ops.py query-latest --source ncbi_virus --field accession --value PZ`
+  `python3 skills/capabilities/data-governance-ops/scripts/governance_ops.py query-latest --source ncbi_virus --field accession --value PZ`
 - Compare snapshots:
-  `python3 skills/data-governance-ops/scripts/governance_ops.py compare --source ncbi_virus`
+  `python3 skills/capabilities/data-governance-ops/scripts/governance_ops.py compare --source ncbi_virus`
 - Quality triage:
-  `python3 skills/data-governance-ops/scripts/governance_ops.py quality --source ncbi_virus`
+  `python3 skills/capabilities/data-governance-ops/scripts/governance_ops.py quality --source ncbi_virus`

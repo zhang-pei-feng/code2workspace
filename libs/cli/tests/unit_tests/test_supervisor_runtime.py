@@ -180,6 +180,7 @@ async def test_run_supervisor_orchestration_supports_generic_tasks(
             "init_generic",
             "compose_generic",
             "summarize",
+            "final_response",
         }
         if node.node_id == "init_generic":
             return WorkerResult(
@@ -270,6 +271,8 @@ async def test_run_supervisor_orchestration_returns_user_facing_response(
                 summary='已生成回复："你好！很高兴见到你。"',
             )
         if node.node_id == "final_summarize":
+            return WorkerResult(status="completed", summary="你好！很高兴见到你。")
+        if node.node_id == "final_response":
             return WorkerResult(status="completed", summary="你好！很高兴见到你。")
         return WorkerResult(
             status="completed",

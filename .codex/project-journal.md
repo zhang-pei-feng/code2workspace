@@ -877,3 +877,30 @@
   - Included thesis markdown drafts/outlines, generated DOCX/DOC files, reference templates, translation docs, and harness surface/template text files; left code generators/tests in place.
 - Validation: listed the backup tree and confirmed the moved files now exist under the target backup path.
 - Next step: if desired, flatten the backup layout from `毕业论文资料备份/experiments/harness/` to a shallower folder structure, or restore selected files back into the worktree.
+
+### 2026-05-12 10:15 CST
+- Session goal: Try a pure LLM finalizer for supervisor chat-facing answers.
+- Major changes:
+  - Replaced the primary final-answer path in `libs/cli/code2workspace_cli/supervisor_runtime.py` with a `final_response` worker node that rewrites existing supervisor/worker results into the user-visible answer.
+  - Added finalizer prompt guidance to emphasize successfully obtained information, keep failures brief, preserve strict output constraints, and avoid inventing new facts or success states.
+  - Kept the previous candidate-scoring logic as a fallback if the finalizer fails.
+- Validation: `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q` passed (`26 passed`); live CLI smokes returned exact `OK` for `Reply with OK only.` and a natural Chinese greeting for `你好`.
+- Next step: rerun medium generic cases to see whether finalizer improves answer completeness without hiding important partial/blocked state.
+
+### 2026-05-12 10:59 CST
+- Session goal: Make `/chat` bypass supervisor orchestration without dropping domain skills.
+- Major changes:
+  - Added `exclude_skill_names` support to `SkillsMiddleware`, then used it in `libs/cli/code2workspace_cli/agent.py` so the plain-chat fallback agent keeps normal skills but filters out orchestration-owned skills.
+  - Classified the current project skills and marked `benchmark-workflow-orchestrator` plus `supervisor-guidance` as plain-chat exclusions; repository/domain skills such as `academic-search`, `epietl-api`, `respiratory-disease-*`, `virus-variation-query`, and `data-governance-ops` remain available in `/chat`.
+  - Updated agent and middleware unit tests to cover the new two-middleware setup (full skills for supervisor path, filtered skills for plain chat path).
+- Validation: `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_agent.py -q` passed (`89 passed`); `uv run --project libs/cli --group test pytest libs/code2workspace/tests/unit_tests/middleware/test_skills_middleware.py -q` passed (`61 passed`); `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q` passed (`26 passed`).
+- Next step: if needed, promote the exclusion list into skill metadata (for example `supervisor-only`) so future orchestrator skills do not require manual code updates.
+
+### 2026-05-12 11:00 CST
+- Session goal: Replace the temporary `/chat` skill exclusion list with a directory-based skills split.
+- Major changes:
+  - Reorganized project skills under `.code2workspace/skills/capabilities/` and `.code2workspace/skills/orchestration/`, moving domain skills into `capabilities` and supervisor/benchmark assets into `orchestration`.
+  - Updated `libs/cli/code2workspace_cli/agent.py` and `libs/cli/code2workspace_cli/skills/load.py` so categorized skill roots expand into different source lists: supervisor sees both folders, while plain chat sees only `capabilities` from categorized roots and still supports legacy flat roots.
+  - Repaired migration fallout by updating benchmark helper paths, supervisor guidance asset paths, skill script command paths, harness configs, and project skill tests; fixed relocated helper imports in `benchmark_workflow.py` and `governance_ops.py`.
+- Validation: `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_agent.py libs/cli/tests/unit_tests/skills/test_superagent_project_assets.py libs/code2workspace/tests/unit_tests/middleware/test_skills_middleware.py -q` passed (`154 passed`); `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py experiments/harness/tests/test_project_skill_helpers.py -q` passed (`36 passed`).
+- Next step: if we want cleaner long-term ergonomics, teach project skill creation commands about the `capabilities` / `orchestration` categories so new skills land in the right subtree by default.

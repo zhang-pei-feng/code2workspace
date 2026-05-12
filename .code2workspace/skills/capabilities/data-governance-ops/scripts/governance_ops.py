@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-SHARED_HELPER_DIR = Path(__file__).resolve().parents[2] / "_shared-superagent-helpers" / "scripts"
+SHARED_HELPER_DIR = Path(__file__).resolve().parents[3] / "_shared-superagent-helpers" / "scripts"
 if str(SHARED_HELPER_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_HELPER_DIR))
 
@@ -60,7 +60,7 @@ SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
 
 
 def _storage_root() -> Path:
-    return ensure_dir(Path(__file__).resolve().parents[4] / "results" / "skills" / "data-governance-ops" / "snapshots")
+    return ensure_dir(Path(__file__).resolve().parents[5] / "results" / "skills" / "data-governance-ops" / "snapshots")
 
 
 def _source_root(source: str) -> Path:

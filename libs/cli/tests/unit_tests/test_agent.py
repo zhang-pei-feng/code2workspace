@@ -1043,13 +1043,13 @@ class TestCreateCliAgentSkillsSources:
         mock_settings.model_context_limit = None
         mock_settings.project_root = None
 
-        captured_sources: list[list[str]] = []
+        captured_skills_kwargs: list[dict[str, Any]] = []
 
         class FakeSkillsMiddleware:
             """Capture the sources arg passed to SkillsMiddleware."""
 
             def __init__(self, **kwargs: Any) -> None:
-                captured_sources.append(kwargs.get("sources", []))
+                captured_skills_kwargs.append(kwargs)
 
         mock_agent = Mock()
         mock_agent.with_config.return_value = mock_agent
@@ -1073,8 +1073,8 @@ class TestCreateCliAgentSkillsSources:
                 enable_shell=False,
             )
 
-        assert len(captured_sources) == 1
-        sources = captured_sources[0]
+        assert len(captured_skills_kwargs) == 2
+        sources = captured_skills_kwargs[0]["sources"]
         assert sources == [
             str(built_in_dir),
             str(skills_dir),
@@ -1084,6 +1084,7 @@ class TestCreateCliAgentSkillsSources:
             str(tmp_path / "user-claude-skills"),
             str(tmp_path / "project-claude-skills"),
         ]
+        assert captured_skills_kwargs[1]["sources"] == sources
 
 
 class TestCreateCliAgentMemorySources:
@@ -1274,13 +1275,13 @@ class TestCreateCliAgentProjectContext:
         mock_settings.project_root = None
         mock_settings.user_langchain_project = None
 
-        captured_sources: list[list[str]] = []
+        captured_skills_kwargs: list[dict[str, Any]] = []
 
         class FakeSkillsMiddleware:
-            """Capture the sources argument passed to SkillsMiddleware."""
+            """Capture the kwargs passed to SkillsMiddleware."""
 
             def __init__(self, **kwargs: Any) -> None:
-                captured_sources.append(kwargs.get("sources", []))
+                captured_skills_kwargs.append(kwargs)
 
         mock_agent = Mock()
         mock_agent.with_config.return_value = mock_agent
@@ -1303,10 +1304,11 @@ class TestCreateCliAgentProjectContext:
                 project_context=project_context,
             )
 
-        assert len(captured_sources) == 1
-        sources = captured_sources[0]
+        assert len(captured_skills_kwargs) == 2
+        sources = captured_skills_kwargs[0]["sources"]
         assert str(project_skills_dir) in sources
         assert str(project_agent_skills_dir) in sources
+        assert captured_skills_kwargs[1]["sources"] == sources
         mock_list.assert_called_once_with(
             user_agents_dir=tmp_path / "agents",
             project_agents_dir=project_agents_dir,
@@ -1495,11 +1497,11 @@ class TestCreateCliAgentProjectContext:
         mock_settings.project_root = None
         mock_settings.user_langchain_project = None
 
-        captured_sources: list[list[str]] = []
+        captured_skills_kwargs: list[dict[str, Any]] = []
 
         class FakeSkillsMiddleware:
             def __init__(self, **kwargs: Any) -> None:
-                captured_sources.append(kwargs.get("sources", []))
+                captured_skills_kwargs.append(kwargs)
 
         mock_agent = Mock()
         mock_agent.with_config.return_value = mock_agent
@@ -1522,8 +1524,9 @@ class TestCreateCliAgentProjectContext:
                 project_context=project_context,
             )
 
-        assert len(captured_sources) == 1
-        assert str(source_skills_dir) in captured_sources[0]
+        assert len(captured_skills_kwargs) == 2
+        assert str(source_skills_dir) in captured_skills_kwargs[0]["sources"]
+        assert str(source_skills_dir) in captured_skills_kwargs[1]["sources"]
 
     def test_cwd_sets_local_filesystem_root_dir_without_shell(
         self, tmp_path: Path

@@ -73,7 +73,7 @@ class GenericApproachOption:
 
 
 _BENCHMARK_HELPER_RELATIVE_PATH = (
-    ".code2workspace/skills/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py"
+    ".code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py"
 )
 _TASK_PATH_RE = re.compile(r"(/[^ \n\t,;:]+)")
 _TRANSIENT_WORKER_ERROR_MARKERS = (
@@ -283,11 +283,14 @@ async def run_supervisor_orchestration(
         decision=final_decision,
         generic_approach=selected_generic_approach,
     )
-    user_response = _render_user_response(
+    user_response = await _render_user_response(
+        task=task,
         task_type=task_type,
         rounds=rounds,
         decision=final_decision,
         final_summary=final_summary,
+        run_dir=run_dir,
+        worker_runner=worker_runner,
     )
     (run_dir / "final_summary.md").write_text(final_summary, encoding="utf-8")
     (run_dir / "final_response.md").write_text(user_response, encoding="utf-8")
@@ -1503,6 +1506,17 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
         guidance_lines.append(
             "If this node prepares the final user-facing answer, put that answer itself in summary; put process notes, worker contributions, blockers, and evidence details in evidence or next_action_hint instead."
         )
+    if node.node_id == "final_response":
+        guidance_lines.extend(
+            [
+                "You are the final chat-facing answer editor. Write the answer the user should see, not an execution log.",
+                "Use only the source material already gathered by supervisor and workers. Do not invent files, commands, evidence, test results, or completion status.",
+                "Lead with useful information that was successfully obtained. Mention unfinished, failed, or blocked work only when it materially changes what the user can rely on.",
+                "When something is partial, phrase it calmly and briefly; do not over-emphasize internal node names, rounds, worker contributions, or supervisor diagnostics.",
+                "Respect strict output constraints from the original user request. If the user asked for an exact short answer, put only that answer in summary.",
+                "Return JSON only; the summary field must contain the final natural-language response itself.",
+            ]
+        )
     guidance_block = "\n".join(f"- {line}" for line in guidance_lines)
     capability_block = "\n".join(capability_summaries)
     implementation_block = "\n".join(implementation_kinds)
@@ -1530,6 +1544,7 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
         f"Implementation style:\n{implementation_block}\n"
         f"Preferred tool surface: {allowed_tools_block}\n"
         f"{metadata_hint}\n"
+        f"{_final_response_source_material(node)}"
         f"Node guidance:\n{guidance_block}\n\n"
         "Return JSON only with keys: "
         "status, summary, artifacts, evidence, next_action_hint, failure_reason, spawned_subgraph.\n"
@@ -1592,6 +1607,25 @@ def _compact_metadata_hint(metadata: dict[str, Any]) -> str:
                 if isinstance(item, dict)
             ]
     return f"\nNode metadata summary: {json.dumps(hint_payload, ensure_ascii=False, sort_keys=True)}"
+
+
+def _final_response_source_material(node: TaskNode) -> str:
+    if node.node_id != "final_response":
+        return ""
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    payload = {
+        "decision": metadata.get("final_decision"),
+        "reason": metadata.get("final_decision_reason"),
+        "failed_nodes": metadata.get("failed_nodes", []),
+        "task_type": metadata.get("task_type"),
+    }
+    return (
+        "Final response source material:\n"
+        f"- Original user task: {metadata.get('task', '')}\n"
+        f"- Supervisor decision: {json.dumps(payload, ensure_ascii=False, sort_keys=True)}\n"
+        f"- Supervisor final summary:\n{metadata.get('final_summary', '')}\n"
+        "End final response source material.\n"
+    )
 
 
 def _parse_worker_result(text: str) -> WorkerResult:
@@ -1729,22 +1763,58 @@ def _extract_task_classifier_payload(text: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _render_user_response(
+async def _render_user_response(
     *,
+    task: str,
     task_type: str,
     rounds,
     decision: SupervisorDecision,
     final_summary: str,
+    run_dir: Path,
+    worker_runner,
 ) -> str:
-    """Return the chat-facing answer while keeping supervisor diagnostics in artifacts."""
+    """Use a final LLM pass for the chat-facing answer.
 
-    if decision.decision != "stop" or decision.failed_nodes:
-        return final_summary
+    The full supervisor diagnostics remain in final_summary.md. The finalizer is
+    intentionally narrow: it may rewrite and select from existing worker results,
+    but it must not add new facts or turn partial work into a claimed success.
+    """
 
-    candidate = _select_user_response_candidate(task_type=task_type, rounds=rounds)
-    if candidate:
-        return candidate
-    return final_summary
+    fallback = _select_user_response_candidate(task_type=task_type, rounds=rounds)
+    fallback = fallback or final_summary
+    finalizer_node = TaskNode(
+        node_id="final_response",
+        title="Write final user response",
+        objective=(
+            "Turn the supervisor run result into the final answer shown to the user. "
+            "Prefer successful findings and useful next information; keep failures brief "
+            "unless they change the answer's reliability."
+        ),
+        capability_bundles=["summarize", "validate"],
+        metadata={
+            "task": task,
+            "task_type": task_type,
+            "final_summary": final_summary,
+            "final_decision": decision.decision,
+            "final_decision_reason": decision.reason,
+            "failed_nodes": list(decision.failed_nodes),
+            "fallback_candidate": fallback,
+        },
+    )
+    try:
+        result = await _run_worker_and_capture(
+            node=finalizer_node,
+            graph_round=len(rounds) + 1,
+            run_dir=run_dir,
+            worker_runner=worker_runner,
+        )
+    except GraphBubbleUp:
+        raise
+    except Exception:
+        return fallback
+    if result.status == "completed" and result.summary.strip():
+        return _clean_user_response_text(result.summary)
+    return fallback
 
 
 def _select_user_response_candidate(*, task_type: str, rounds) -> str | None:

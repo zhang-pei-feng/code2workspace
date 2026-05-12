@@ -631,16 +631,25 @@ class SkillsMiddleware(AgentMiddleware[SkillsState, ContextT, ResponseT]):
 
     state_schema = SkillsState
 
-    def __init__(self, *, backend: BACKEND_TYPES, sources: list[str]) -> None:
+    def __init__(
+        self,
+        *,
+        backend: BACKEND_TYPES,
+        sources: list[str],
+        exclude_skill_names: set[str] | None = None,
+    ) -> None:
         """Initialize the skills middleware.
 
         Args:
             backend: Backend instance (e.g. ``StateBackend()``).
             sources: List of skill source paths (e.g.,
                 `['/skills/user/', '/skills/project/']`).
+            exclude_skill_names: Optional set of skill names to hide from the
+                loaded metadata and injected system prompt.
         """
         self._backend = backend
         self.sources = sources
+        self.exclude_skill_names = set(exclude_skill_names or ())
         self.system_prompt_template = SKILLS_SYSTEM_PROMPT
 
     def _get_backend(self, state: SkillsState, runtime: Runtime, config: RunnableConfig) -> BackendProtocol:
@@ -757,7 +766,11 @@ class SkillsMiddleware(AgentMiddleware[SkillsState, ContextT, ResponseT]):
             for skill in source_skills:
                 all_skills[skill["name"]] = skill
 
-        skills = list(all_skills.values())
+        skills = [
+            skill
+            for skill in all_skills.values()
+            if skill["name"] not in self.exclude_skill_names
+        ]
         return SkillsStateUpdate(skills_metadata=skills)
 
     async def abefore_agent(self, state: SkillsState, runtime: Runtime, config: RunnableConfig) -> SkillsStateUpdate | None:  # ty: ignore[invalid-method-override]
@@ -793,7 +806,11 @@ class SkillsMiddleware(AgentMiddleware[SkillsState, ContextT, ResponseT]):
             for skill in source_skills:
                 all_skills[skill["name"]] = skill
 
-        skills = list(all_skills.values())
+        skills = [
+            skill
+            for skill in all_skills.values()
+            if skill["name"] not in self.exclude_skill_names
+        ]
         return SkillsStateUpdate(skills_metadata=skills)
 
     def wrap_model_call(

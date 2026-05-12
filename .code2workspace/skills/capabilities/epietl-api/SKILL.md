@@ -87,16 +87,16 @@ export EPIETL_API_KEY="..."
 Run the helper script from this skill:
 
 ```bash
-python3 skills/epietl-api/scripts/epietl_api.py health
-python3 skills/epietl-api/scripts/epietl_api.py channels --limit 20
-python3 skills/epietl-api/scripts/epietl_api.py events --severity critical --pathogen cholera --limit 10
-EPIETL_API_KEY="$EPIETL_API_KEY" python3 skills/epietl-api/scripts/epietl_api.py reports --country China --limit 5
+python3 skills/capabilities/epietl-api/scripts/epietl_api.py health
+python3 skills/capabilities/epietl-api/scripts/epietl_api.py channels --limit 20
+python3 skills/capabilities/epietl-api/scripts/epietl_api.py events --severity critical --pathogen cholera --limit 10
+EPIETL_API_KEY="$EPIETL_API_KEY" python3 skills/capabilities/epietl-api/scripts/epietl_api.py reports --country China --limit 5
 ```
 
 Use `--param key=value` for query parameters not exposed as first-class flags:
 
 ```bash
-python3 skills/epietl-api/scripts/epietl_api.py events --param pathogen=cholera --param severity=critical --limit 10
+python3 skills/capabilities/epietl-api/scripts/epietl_api.py events --param pathogen=cholera --param severity=critical --limit 10
 ```
 
 ## Workflow

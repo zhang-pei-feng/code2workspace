@@ -14,21 +14,21 @@ max_runtime_minutes = 20
 
 [surfaces.academic_search_skill]
 kind = "workspace_file"
-target = ".code2workspace/skills/academic-search/SKILL.md"
+target = ".code2workspace/skills/capabilities/academic-search/SKILL.md"
 filename = "academic-search-SKILL.md"
-base_file = ".code2workspace/skills/academic-search/SKILL.md"
+base_file = ".code2workspace/skills/capabilities/academic-search/SKILL.md"
 
 [surfaces.respiratory_fetcher_skill]
 kind = "workspace_file"
-target = ".code2workspace/skills/respiratory-disease-data-fetcher/SKILL.md"
+target = ".code2workspace/skills/capabilities/respiratory-disease-data-fetcher/SKILL.md"
 filename = "respiratory-disease-data-fetcher-SKILL.md"
-base_file = ".code2workspace/skills/respiratory-disease-data-fetcher/SKILL.md"
+base_file = ".code2workspace/skills/capabilities/respiratory-disease-data-fetcher/SKILL.md"
 
 [surfaces.virus_variation_skill]
 kind = "workspace_file"
-target = ".code2workspace/skills/virus-variation-query/SKILL.md"
+target = ".code2workspace/skills/capabilities/virus-variation-query/SKILL.md"
 filename = "virus-variation-query-SKILL.md"
-base_file = ".code2workspace/skills/virus-variation-query/SKILL.md"
+base_file = ".code2workspace/skills/capabilities/virus-variation-query/SKILL.md"
 
 [[cases]]
 case_name = "complex-qa-01-may-mainland-dominant-lineage"

@@ -10,7 +10,7 @@
   - identify the benchmark root path from the original task
   - choose one shared dataset and compatible tools from the benchmark catalog, staged case manifests, or directly from the benchmark directory's WDL/input/case layout
   - run the deterministic helper:
-    `python3 .code2workspace/skills/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py init --task "<original task>" --output-dir "<run_dir>" --repos <selected_repo> ...`
+    `python3 .code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py init --task "<original task>" --output-dir "<run_dir>" --repos <selected_repo> ...`
   - for each selected repo, run:
     `prepare-case --repo <repo> --run-dir <run_dir>`
   - then run:

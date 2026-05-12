@@ -10,7 +10,7 @@ interface:
     influenza, and mpox; (2) `covid_data`, the data_governance_agent local database containing
     `ncov_lineage_mutations`, `ncov_lineage_catalog`, `ncov_source_records`, import runs, and EpiETL
     report/event/channel tables. Before writing SQL, read
-    `skills/virus-variation-query/SKILL.md` and use only the documented
+    `skills/capabilities/virus-variation-query/SKILL.md` and use only the documented
     read-only connection patterns. For `virus_variation`, use
     `mysql -u agent_virus -p'VirusAgent@2026!' virus_variation -e "SQL"`. For `covid_data`, prefer
     the config-driven data_governance_agent entry:

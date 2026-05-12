@@ -78,10 +78,41 @@ DEFAULT_AGENT_NAME = "agent"
 REQUIRE_COMPACT_TOOL_APPROVAL: bool = True
 """When `True`, `compact_conversation` requires HITL approval like other gated tools."""
 
+_SKILLS_CAPABILITIES_DIRNAME = "capabilities"
+_SKILLS_ORCHESTRATION_DIRNAME = "orchestration"
+
 
 def _fallback_repo_root() -> Path:
     """Best-effort project source root when running from the repo checkout."""
     return Path(__file__).resolve().parents[3]
+
+
+def _expand_skill_source_paths(
+    source: Path,
+    *,
+    include_orchestration: bool,
+) -> list[str]:
+    """Expand a skill source into mode-specific subdirectories when present.
+
+    If the source contains `capabilities/` or `orchestration/`, expose those
+    subdirectories instead of the source root. Otherwise keep the legacy flat
+    source layout unchanged.
+    """
+
+    if not source.exists():
+        return []
+    capabilities_dir = source / _SKILLS_CAPABILITIES_DIRNAME
+    orchestration_dir = source / _SKILLS_ORCHESTRATION_DIRNAME
+    has_capabilities = capabilities_dir.is_dir()
+    has_orchestration = orchestration_dir.is_dir()
+    if not has_capabilities and not has_orchestration:
+        return [str(source)]
+    expanded: list[str] = []
+    if has_capabilities:
+        expanded.append(str(capabilities_dir))
+    if include_orchestration and has_orchestration:
+        expanded.append(str(orchestration_dir))
+    return expanded
 
 
 class ShellAllowListMiddleware(AgentMiddleware):
@@ -1125,31 +1156,44 @@ def create_cli_agent(
             )
         )
 
+    skill_sources: list[str] = []
+    plain_chat_skill_sources: list[str] = []
+
     # Add skills middleware
     if enable_skills:
         # Lowest to highest precedence:
         # built-in -> user .code2workspace -> user .agents
         # -> project .code2workspace -> project .agents
         # -> user .claude (experimental) -> project .claude (experimental)
-        sources = [str(settings.get_built_in_skills_dir())]
-        sources.extend([str(skills_dir), str(user_agent_skills_dir)])
-        if project_skills_dir:
-            sources.append(str(project_skills_dir))
-        if project_agent_skills_dir:
-            sources.append(str(project_agent_skills_dir))
+        raw_skill_sources: list[Path] = [settings.get_built_in_skills_dir()]
+        for source in (skills_dir, user_agent_skills_dir):
+            if isinstance(source, Path):
+                raw_skill_sources.append(source)
+        if isinstance(project_skills_dir, Path):
+            raw_skill_sources.append(project_skills_dir)
+        if isinstance(project_agent_skills_dir, Path):
+            raw_skill_sources.append(project_agent_skills_dir)
 
         # Experimental: Claude Code skill directories
         user_claude_skills_dir = settings.get_user_claude_skills_dir()
-        if user_claude_skills_dir.exists():
-            sources.append(str(user_claude_skills_dir))
+        if isinstance(user_claude_skills_dir, Path) and user_claude_skills_dir.exists():
+            raw_skill_sources.append(user_claude_skills_dir)
         project_claude_skills_dir = settings.get_project_claude_skills_dir()
-        if project_claude_skills_dir:
-            sources.append(str(project_claude_skills_dir))
+        if isinstance(project_claude_skills_dir, Path):
+            raw_skill_sources.append(project_claude_skills_dir)
+
+        for source in raw_skill_sources:
+            skill_sources.extend(
+                _expand_skill_source_paths(source, include_orchestration=True)
+            )
+            plain_chat_skill_sources.extend(
+                _expand_skill_source_paths(source, include_orchestration=False)
+            )
 
         agent_middleware.append(
             SkillsMiddleware(
                 backend=FilesystemBackend(),
-                sources=sources,
+                sources=skill_sources,
             )
         )
 
@@ -1270,13 +1314,21 @@ def create_cli_agent(
 
     base_agent = _build_workspace_agent(middleware_stack=agent_middleware)
 
-    # Plain chat mode intentionally bypasses project memory/skills layers while
-    # keeping the same model, tools, shell policy, and local context.
+    # Plain chat mode keeps specialized skills and only omits orchestration
+    # skill directories when the source tree is categorized.
     plain_chat_middleware = [
         middleware
         for middleware in agent_middleware
-        if middleware.__class__.__name__ not in {"MemoryMiddleware", "SkillsMiddleware"}
+        if middleware.__class__.__name__ != "MemoryMiddleware"
+        and middleware.__class__.__name__ != "SkillsMiddleware"
     ]
+    if enable_skills and plain_chat_skill_sources:
+        plain_chat_middleware.append(
+            SkillsMiddleware(
+                backend=FilesystemBackend(),
+                sources=plain_chat_skill_sources,
+            )
+        )
     fallback_agent = _build_workspace_agent(middleware_stack=plain_chat_middleware)
     classifier_model = resolve_model(model)
 

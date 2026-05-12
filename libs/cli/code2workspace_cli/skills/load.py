@@ -28,6 +28,9 @@ from code2workspace_cli._version import __version__ as _cli_version
 
 logger = logging.getLogger(__name__)
 
+_SKILLS_CAPABILITIES_DIRNAME = "capabilities"
+_SKILLS_ORCHESTRATION_DIRNAME = "orchestration"
+
 
 class ExtendedSkillMetadata(SkillMetadata):
     """Extended skill metadata for CLI display, adds source tracking.
@@ -42,6 +45,15 @@ class ExtendedSkillMetadata(SkillMetadata):
 
 # Re-export for CLI commands
 __all__ = ["SkillMetadata", "list_skills", "load_skill_content"]
+
+
+def _expand_skill_discovery_dirs(skill_dir: Path) -> list[Path]:
+    """Expand a skills root into categorized child directories when present."""
+
+    capabilities_dir = skill_dir / _SKILLS_CAPABILITIES_DIRNAME
+    orchestration_dir = skill_dir / _SKILLS_ORCHESTRATION_DIRNAME
+    expanded = [path for path in (capabilities_dir, orchestration_dir) if path.exists()]
+    return expanded or [skill_dir]
 
 
 def list_skills(
@@ -106,23 +118,24 @@ def list_skills(
         if not skill_dir or not skill_dir.exists():
             continue
         try:
-            backend = FilesystemBackend(root_dir=str(skill_dir))
-            skills = list_skills_from_backend(backend=backend, source_path=".")
-            if experimental and skills:
-                logger.info(
-                    "Discovered %d skill(s) from experimental Claude path: %s",
-                    len(skills),
-                    skill_dir,
-                )
-            for skill in skills:
-                extra: dict[str, object] = {"source": source_label}
-                if source_label == "built-in":
-                    extra["metadata"] = {
-                        **skill["metadata"],
-                        "code2workspace-cli-version": _cli_version,
-                    }
-                extended = cast("ExtendedSkillMetadata", {**skill, **extra})
-                all_skills[skill["name"]] = extended
+            for discover_dir in _expand_skill_discovery_dirs(skill_dir):
+                backend = FilesystemBackend(root_dir=str(discover_dir))
+                skills = list_skills_from_backend(backend=backend, source_path=".")
+                if experimental and skills:
+                    logger.info(
+                        "Discovered %d skill(s) from experimental Claude path: %s",
+                        len(skills),
+                        discover_dir,
+                    )
+                for skill in skills:
+                    extra: dict[str, object] = {"source": source_label}
+                    if source_label == "built-in":
+                        extra["metadata"] = {
+                            **skill["metadata"],
+                            "code2workspace-cli-version": _cli_version,
+                        }
+                    extended = cast("ExtendedSkillMetadata", {**skill, **extra})
+                    all_skills[skill["name"]] = extended
         except (OSError, KeyError, TypeError):
             logger.warning(
                 "Could not load skills from %s",

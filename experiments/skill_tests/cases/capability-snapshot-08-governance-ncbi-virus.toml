@@ -13,6 +13,5 @@ timeout_minutes = 3
 command = [
   "bash",
   "-lc",
-  "set -euo pipefail\npython3 .code2workspace/skills/data-governance-ops/scripts/governance_ops.py refresh --source ncbi_virus --limit 5\npython3 .code2workspace/skills/data-governance-ops/scripts/governance_ops.py quality --source ncbi_virus --limit 10\n",
+  "set -euo pipefail\npython3 .code2workspace/skills/capabilities/data-governance-ops/scripts/governance_ops.py refresh --source ncbi_virus --limit 5\npython3 .code2workspace/skills/capabilities/data-governance-ops/scripts/governance_ops.py quality --source ncbi_virus --limit 10\n",
 ]
-

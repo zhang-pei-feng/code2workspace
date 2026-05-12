@@ -1,6 +1,6 @@
 ---
 name: respiratory-disease-wide-monitor
-description: "呼吸道病原官方网页/报告来源索引与抓取 skill。不要用于 EpiETL/source catalog/source type/structured XLS、CSV、JSON 数据源目录问题；这类问题即使涉及 COVID、流感、RSV，也应使用 `epietl-api`。本 skill 读取 `skills/respiratory-disease-wide-monitor/整理后的数据源表.xlsx` 中整理的 50+ WHO、CDC、中国疾控、省级疾控、港澳台、亚洲、北美、南美、欧洲、澳洲、非洲、GISAID、ECDC、CoV-Spectrum、Nextstrain、EVEscape、CoV-AbDab 等呼吸道疾病/新冠/流感/RSV/变异株数据源；只要用户要查的呼吸道病原、COVID、新冠、流感、RSV、变异株、毒株谱系、病毒监测、周报、月报、疾控/卫生部门通报、原始网页/PDF、跨地区监测信息可能存在于这张来源表里，就应优先使用本 skill 先筛选相关来源并抓取符合需求的数据源信息，不要求用户明确说“大量来源/全量扫描”。也适用于“监测五十多个数据源/广域数据源/全量数据源/整理后的数据源表/更多数据源/多数据源监测/全球呼吸道病原监测/网页数据监测/下探一级网页或 PDF/从数据源表抓取”等显式说法。不要删除或替代原 `respiratory-disease-data-fetcher`；当用户明确只要旧 skill 覆盖的少量固定源快速结果时可继续用旧 skill，否则相关数据可能在来源表中时先用本 skill。"
+description: "呼吸道病原官方网页/报告来源索引与抓取 skill。不要用于 EpiETL/source catalog/source type/structured XLS、CSV、JSON 数据源目录问题；这类问题即使涉及 COVID、流感、RSV，也应使用 `epietl-api`。本 skill 读取 `skills/capabilities/respiratory-disease-wide-monitor/整理后的数据源表.xlsx` 中整理的 50+ WHO、CDC、中国疾控、省级疾控、港澳台、亚洲、北美、南美、欧洲、澳洲、非洲、GISAID、ECDC、CoV-Spectrum、Nextstrain、EVEscape、CoV-AbDab 等呼吸道疾病/新冠/流感/RSV/变异株数据源；只要用户要查的呼吸道病原、COVID、新冠、流感、RSV、变异株、毒株谱系、病毒监测、周报、月报、疾控/卫生部门通报、原始网页/PDF、跨地区监测信息可能存在于这张来源表里，就应优先使用本 skill 先筛选相关来源并抓取符合需求的数据源信息，不要求用户明确说“大量来源/全量扫描”。也适用于“监测五十多个数据源/广域数据源/全量数据源/整理后的数据源表/更多数据源/多数据源监测/全球呼吸道病原监测/网页数据监测/下探一级网页或 PDF/从数据源表抓取”等显式说法。不要删除或替代原 `respiratory-disease-data-fetcher`；当用户明确只要旧 skill 覆盖的少量固定源快速结果时可继续用旧 skill，否则相关数据可能在来源表中时先用本 skill。"
 metadata: { "openclaw": { "emoji": "🌐", "requires": { "bins": ["python3"] } } }
 ---
 
@@ -35,7 +35,7 @@ metadata: { "openclaw": { "emoji": "🌐", "requires": { "bins": ["python3"] } }
 默认表格：
 
 ```text
-skills/respiratory-disease-wide-monitor/整理后的数据源表.xlsx
+skills/capabilities/respiratory-disease-wide-monitor/整理后的数据源表.xlsx
 ```
 
 字段包括：`数据源名称`、`数据源类别`、`数据维护方`、`URL`、`病原类型`、`描述`。脚本会跳过“站点名称”分组行，只抓取有 URL 的实际数据源。
@@ -45,7 +45,7 @@ skills/respiratory-disease-wide-monitor/整理后的数据源表.xlsx
 全量抓取，根页面 + 每个源下探 1 个最相关的网页或 PDF：
 
 ```bash
-python3 skills/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
+python3 skills/capabilities/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
   --format markdown \
   --child-limit 1 \
   --workers 8 \
@@ -56,7 +56,7 @@ python3 skills/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
 调试或快速试跑：
 
 ```bash
-python3 skills/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
+python3 skills/capabilities/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
   --limit 5 \
   --child-limit 1 \
   --format json
@@ -65,7 +65,7 @@ python3 skills/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
 按关键词/意图筛选。`--query` 会先做意图扩展和来源打分，例如 `XFG`、`JN.1`、`NB.1.8.1` 这类谱系名会自动落到变异株相关来源，而不是要求这些字符必须出现在表格字段里：
 
 ```bash
-python3 skills/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
+python3 skills/capabilities/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
   --query "variant" \
   --child-limit 1 \
   --format markdown
@@ -74,7 +74,7 @@ python3 skills/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
 按病原筛选：
 
 ```bash
-python3 skills/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
+python3 skills/capabilities/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
   --pathogen "新冠" \
   --child-limit 1 \
   --format markdown
@@ -82,7 +82,7 @@ python3 skills/respiratory-disease-wide-monitor/scripts/fetch_sources.py \
 
 ## 使用规则
 
-1. 默认不改动数据源表；只读取 `skills/respiratory-disease-wide-monitor/整理后的数据源表.xlsx`。
+1. 默认不改动数据源表；只读取 `skills/capabilities/respiratory-disease-wide-monitor/整理后的数据源表.xlsx`。
 2. 查询/抓取数据时不要编辑 `scripts/fetch_sources.py`、`scripts/get_latest_monitoring_data.py` 或 skill 文件；直接运行现有脚本。只有用户明确要求修改 skill 代码时才可以编辑。
 3. 不要尝试替换不存在的占位文本，例如 `# TODO: Fetch sources`；这类 edit 失败不应阻断查询。
 4. 默认尽量下探一级：从根页面抽取高相关链接，优先报告、周报、月报、监测、PDF、variant、COVID、influenza、RSV 等链接。

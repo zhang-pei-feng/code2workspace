@@ -21,7 +21,7 @@ especially for local workflow and result directories.
 ## Entry points
 
 - Skill front-door:
-  `python3 skills/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py --help`
+  `python3 skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py --help`
 
 ## Workflow
 
@@ -31,7 +31,7 @@ especially for local workflow and result directories.
 2. If the environment is not ready, do not fake execution. Produce a structured
    plan/result stub and clearly say what is missing.
 3. For local summary-only tasks, run
-   `python3 skills/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py summarize ...`
+   `python3 skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py summarize ...`
 4. When the result directory already exists, summarize real result files instead
    of inventing benchmark metrics.
 5. When some cases succeed and others are still pending, update the report with

@@ -20,7 +20,7 @@ def _repo_root() -> Path:
 
 REPO_ROOT = _repo_root()
 BENCHMARK_SCRIPT = (
-    REPO_ROOT / ".code2workspace" / "skills" / "benchmark-workflow-orchestrator" / "scripts" / "benchmark_workflow.py"
+    REPO_ROOT / ".code2workspace" / "skills" / "orchestration" / "benchmark-workflow-orchestrator" / "scripts" / "benchmark_workflow.py"
 )
 
 

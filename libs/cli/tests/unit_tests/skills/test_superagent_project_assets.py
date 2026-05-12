@@ -49,8 +49,8 @@ def test_shared_helper_directory_is_not_discoverable_as_skill() -> None:
 
 def test_superagent_scripts_expose_help() -> None:
     scripts = [
-        _repo_root() / ".code2workspace" / "skills" / "benchmark-workflow-orchestrator" / "scripts" / "benchmark_workflow.py",
-        _repo_root() / ".code2workspace" / "skills" / "data-governance-ops" / "scripts" / "governance_ops.py",
+        _repo_root() / ".code2workspace" / "skills" / "orchestration" / "benchmark-workflow-orchestrator" / "scripts" / "benchmark_workflow.py",
+        _repo_root() / ".code2workspace" / "skills" / "capabilities" / "data-governance-ops" / "scripts" / "governance_ops.py",
     ]
 
     for script in scripts:
@@ -60,10 +60,10 @@ def test_superagent_scripts_expose_help() -> None:
 def test_workflow_skills_are_local_only_after_bioos_removal() -> None:
     root = _repo_root()
     benchmark_skill = (
-        root / ".code2workspace" / "skills" / "benchmark-workflow-orchestrator" / "SKILL.md"
+        root / ".code2workspace" / "skills" / "orchestration" / "benchmark-workflow-orchestrator" / "SKILL.md"
     ).read_text(encoding="utf-8")
     benchmark_ui = (
-        root / ".code2workspace" / "skills" / "benchmark-workflow-orchestrator" / "agents" / "openai.yaml"
+        root / ".code2workspace" / "skills" / "orchestration" / "benchmark-workflow-orchestrator" / "agents" / "openai.yaml"
     ).read_text(encoding="utf-8")
     assert "Bio-OS" not in benchmark_skill
     assert "bioos-operator" not in benchmark_skill

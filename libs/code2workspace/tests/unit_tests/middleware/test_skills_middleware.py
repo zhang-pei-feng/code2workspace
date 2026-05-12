@@ -1053,6 +1053,33 @@ def test_before_agent_empty_registries(tmp_path: Path) -> None:
     assert result["skills_metadata"] == []
 
 
+def test_before_agent_excludes_named_skills(tmp_path: Path) -> None:
+    """Named exclusions should hide orchestration-only skills from metadata."""
+    backend = FilesystemBackend(root_dir=str(tmp_path), virtual_mode=False)
+
+    skills_dir = tmp_path / "skills" / "project"
+    included_path = str(skills_dir / "academic-search" / "SKILL.md")
+    excluded_path = str(skills_dir / "supervisor-guidance" / "SKILL.md")
+
+    backend.upload_files(
+        [
+            (included_path, make_skill_content("academic-search", "Academic search skill").encode("utf-8")),
+            (excluded_path, make_skill_content("supervisor-guidance", "Supervisor guidance skill").encode("utf-8")),
+        ]
+    )
+
+    middleware = SkillsMiddleware(
+        backend=backend,
+        sources=[str(skills_dir)],
+        exclude_skill_names={"supervisor-guidance"},
+    )
+
+    result = middleware.before_agent({}, None, {})  # type: ignore[arg-type]
+
+    assert result is not None
+    assert [skill["name"] for skill in result["skills_metadata"]] == ["academic-search"]
+
+
 def test_agent_with_skills_middleware_system_prompt(tmp_path: Path) -> None:
     """Test that skills middleware injects skills into the system prompt."""
     backend = FilesystemBackend(root_dir=str(tmp_path), virtual_mode=False)
