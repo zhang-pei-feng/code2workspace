@@ -6,6 +6,44 @@
 
 ## Entries
 
+### 2026-05-12 20:44 CST
+- Session goal: Concurrently test the local `code2workspace` / Supervisor Graph CLI with seven long-running real tasks under a 40-minute outer timeout.
+- Major changes:
+  - Launched all tasks through `uv run --project .../libs/cli code2workspace --stdin --no-stream -S all`; logs are under `.works/supervisor_parallel_20260512_40m/`.
+  - Observed provider concurrency-limit retries across research/report nodes; several generic research tasks stopped with unresolved nodes and partial answers.
+  - Benchmark task selected shared dataset `short-read-ecoli-srr001666`, ran `spades` and `megahit` in parallel, and both repo-native runs completed, but benchmark `final_response` incorrectly failed with `missing_case_manifest`.
+  - SPAdes repo task built image `spades` and passed container `spades.py --test`, then entered WDL generation/execution but hit the 40-minute outer timeout before WDL completion.
+- Validation: Confirmed no launched supervisor-parallel processes remained; inspected final decisions, logs, and key artifacts under `workspace/20260512200232`, `workspace/20260512200233`, and report run directories.
+- Next step: Fix benchmark `final_response` routing, reduce or queue LLM concurrency for multi-task launches, and resume SPAdes WDL completion from `workspace/20260512200232`.
+
+### 2026-05-12 20:53 CST
+- Session goal: Fix the benchmark `final_response` routing bug found during the parallel Supervisor Graph pressure test.
+- Major changes:
+  - Updated benchmark deterministic-worker dispatch so `summarize` is handled explicitly and user-delivery nodes such as `final_response` bypass benchmark case execution.
+  - Hardened `_benchmark_repo_from_node_id()` so final/delivery node IDs are never interpreted as repository names.
+  - Added a regression test proving benchmark `final_response` invokes the worker/finalizer path instead of looking for `cases/final_response/manifest.json`.
+- Validation: `uv run --project libs/cli python -m py_compile ...` passed; `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q` passed (`31 passed`); combined runtime suite passed (`48 passed`).
+- Next step: rerun a short benchmark supervisor task to confirm the final user-visible answer now includes the benchmark comparison instead of falling back to one case summary.
+
+### 2026-05-12 21:24 CST
+- Session goal: Rerun the benchmark task through the local Supervisor Graph CLI to validate the `final_response` routing fix.
+- Major changes:
+  - Launched `code2workspace --stdin --no-stream -S all` with the benchmark prompt and logs under `.works/supervisor_benchmark_rerun_20260512/benchmark.log`.
+  - The run selected shared dataset `short-read-ecoli-srr001666`, executed `spades` and `megahit` in parallel, and completed both repo-native runs.
+  - `final_response` now completed successfully and returned a real benchmark comparison instead of failing with `missing_case_manifest`.
+- Validation: Run root `workspace/20260512210756/orchestration_runs/20260512T130808086364Z`; final decision `stop`, reason `All nodes completed`; metrics showed `spades` best on N50/assembly size and `megahit` lower on contig count.
+- Next step: Continue with SPAdes Docker+WDL closure or any remaining live benchmark/report regressions.
+
+### 2026-05-12 22:01 CST
+- Session goal: Rerun the three generic COVID evidence-judgment tasks after the model concurrency issue was resolved.
+- Major changes:
+  - Launched PQ.2 RBD, BA.3.2/XFG/KP.2 immune breakthrough, and BA.3.2 vaccine clinical-trial checks concurrently through the local Supervisor Graph CLI; logs are under `.works/supervisor_generic_rerun_20260512/`.
+  - All three runs completed with `decision=stop`, reason `All nodes completed`, and natural-language final responses.
+  - PQ.2 now returned the requested RBD substitutions (`A435S`, `F456L`, `K478I`, `Q493E`) with source attribution as inherited upstream defining sites rather than PQ.2-added RBD defining sites.
+  - BA.3.2/XFG now produced a fuller evidence-vs-inference judgment, and BA.3.2 vaccine trial check returned a clear “not found” conclusion without JSON truncation.
+- Validation: Inspected final decisions and final responses under `workspace/20260512214702`, `workspace/20260512214703`, and `workspace/20260512214704`.
+- Next step: Consider tightening source citations/evidence display for generic biomedical answers if publication-grade traceability is needed.
+
 ### 2026-05-12 08:32 CST
 - Session goal: Configure the supervisor-runtime worktree to use ClawdRouter Claude by default.
 - Major changes:
@@ -913,3 +951,12 @@
   - Fixed `SubAgentMiddleware` so non-HITL subagents are compiled into the `task` tool; synchronized overview/thesis traceability notes.
 - Validation: `test_supervisor_runtime.py` passed (`27 passed`); `test_agent.py` passed (`89 passed`); `test_subagent_middleware_init.py` passed (`7 passed`); `test_subagents.py` passed (`21 passed, 1 xfailed`).
 - Next step: specialize worker/subagent mappings per node family or capability bundle instead of using one coarse default worker runnable for all non-deterministic nodes.
+
+### 2026-05-12 15:07 CST
+- Session goal: Make supervisor-dispatched worker/subagent internal tool calls visible.
+- Major changes:
+  - Added worker tool-call/result tracing in `supervisor_runtime.py`, emitting `worker_tool_call` and `worker_tool_result` supervisor events from worker message histories and appending compact previews to `tool_activity.jsonl`.
+  - Updated Textual supervisor-event rendering and verbose non-interactive streaming so worker tool activity appears under its owning supervisor node while quiet mode keeps stdout clean.
+  - Added focused tests for persisted worker tool activity and event rendering; updated overview/thesis traceability notes.
+- Validation: `test_supervisor_runtime.py`, `test_textual_adapter.py`, and `test_non_interactive.py` passed together (`140 passed`); `test_agent.py` passed (`89 passed`); subagent tests passed (`28 passed, 1 xfailed`).
+- Next step: if live streaming latency matters, consider switching worker execution from post-run message scanning to real-time `astream` event forwarding.

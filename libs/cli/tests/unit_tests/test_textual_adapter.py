@@ -1079,6 +1079,31 @@ class TestRenderSupervisorEvent:
         assert "... 1 more" in text
         assert "... 2 more" in text
 
+    def test_renders_worker_tool_events(self) -> None:
+        call_text = _render_supervisor_event(
+            {
+                "kind": "worker_tool_call",
+                "node_id": "worker_solution",
+                "tool_name": "read_file",
+                "args_preview": '{"file_path": "README.md"}',
+            }
+        )
+        result_text = _render_supervisor_event(
+            {
+                "kind": "worker_tool_result",
+                "node_id": "worker_solution",
+                "tool_name": "read_file",
+                "status": "success",
+                "result_preview": "README contents",
+            }
+        )
+
+        assert "worker_solution" in call_text
+        assert "called tool `read_file`" in call_text
+        assert "README.md" in call_text
+        assert "finished for node `worker_solution`" in result_text
+        assert "README contents" in result_text
+
 
 # ---------------------------------------------------------------------------
 # Helpers for dict-iteration safety tests

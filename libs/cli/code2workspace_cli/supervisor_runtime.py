@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langchain.agents import AgentState
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.config import get_stream_writer
 from langgraph.errors import GraphBubbleUp
 from langgraph.graph import END, START, StateGraph
@@ -27,10 +27,12 @@ from code2workspace.orchestration_runtime import (
     CaseTraceRecord,
     GenericApproach,
     HeuristicSupervisorPlanner,
+    ModelRefusalError,
     SupervisorDecision,
     TaskClassification,
     TaskNode,
     WorkerResult,
+    _extract_model_refusal_message,
     classify_task,
     classify_task_with_model,
     decide_supervisor_step,
@@ -297,15 +299,24 @@ async def run_supervisor_orchestration(
             task_type=graph.task_type,
             node_ids=[node.node_id for node in graph.nodes],
         )
-        round_result = await execute_graph_round(
-            graph,
-            lambda node: _run_worker_and_capture(
-                node=node,
-                graph_round=graph.round_index,
+        try:
+            round_result = await execute_graph_round(
+                graph,
+                lambda node: _run_worker_and_capture(
+                    node=node,
+                    graph_round=graph.round_index,
+                    run_dir=run_dir,
+                    worker_runner=worker_runner,
+                ),
+            )
+        except ModelRefusalError as exc:
+            return _finalize_refusal_run(
                 run_dir=run_dir,
-                worker_runner=worker_runner,
-            ),
-        )
+                task=task,
+                task_type=task_type,
+                rounds=rounds,
+                refusal=exc,
+            )
         rounds.append(round_result)
         if task_type == "generic" and _generic_analysis_round_finished(round_result):
             _emit_supervisor_event(
@@ -332,15 +343,24 @@ async def run_supervisor_orchestration(
         decision=final_decision,
         generic_approach=selected_generic_approach,
     )
-    user_response = await _render_user_response(
-        task=task,
-        task_type=task_type,
-        rounds=rounds,
-        decision=final_decision,
-        final_summary=final_summary,
-        run_dir=run_dir,
-        worker_runner=worker_runner,
-    )
+    try:
+        user_response = await _render_user_response(
+            task=task,
+            task_type=task_type,
+            rounds=rounds,
+            decision=final_decision,
+            final_summary=final_summary,
+            run_dir=run_dir,
+            worker_runner=worker_runner,
+        )
+    except ModelRefusalError as exc:
+        return _finalize_refusal_run(
+            run_dir=run_dir,
+            task=task,
+            task_type=task_type,
+            rounds=rounds,
+            refusal=exc,
+        )
     (run_dir / "final_summary.md").write_text(final_summary, encoding="utf-8")
     (run_dir / "final_response.md").write_text(user_response, encoding="utf-8")
     _write_json(
@@ -399,10 +419,13 @@ def build_supervisor_enabled_agent(
 
     async def supervise(state: AgentState) -> dict[str, object]:
         task = _latest_human_text(state) or ""
-        task_classification, classification_details = await classify_task_with_model(
-            model=classifier_model,
-            task=task,
-        )
+        try:
+            task_classification, classification_details = await classify_task_with_model(
+                model=classifier_model,
+                task=task,
+            )
+        except ModelRefusalError as exc:
+            return {"messages": [AIMessage(content=exc.user_message)]}
         worker_runner = SupervisorWorkerRunner(
             base_agent=base_agent,
             workspace_root=workspace_root,
@@ -636,6 +659,14 @@ async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path
         try:
             result = await agent.ainvoke(invoke_payload, **invoke_kwargs)
             messages = result.get("messages", []) if isinstance(result, dict) else []
+            _record_worker_tool_events(node=node, messages=messages)
+            refusal_message = _extract_messages_refusal(messages)
+            if refusal_message is not None:
+                raise ModelRefusalError(
+                    message=refusal_message,
+                    stage=f"worker:{node.node_id}",
+                    details={"node_id": node.node_id},
+                )
             final_text = _last_ai_text(messages)
             parsed = _parse_worker_result(final_text)
             return parsed
@@ -653,6 +684,148 @@ async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path
             await asyncio.sleep(0.5 * (attempt + 1))
     assert last_error is not None
     raise last_error
+
+
+def _record_worker_tool_events(*, node: TaskNode, messages: list[object]) -> None:
+    """Expose internal worker/subagent tool calls through supervisor events."""
+    tool_names_by_id: dict[str, str] = {}
+    for message in messages:
+        for tool_call in _message_tool_calls(message):
+            tool_call_id = str(tool_call.get("id") or "")
+            tool_name = str(tool_call.get("name") or "unknown")
+            if tool_call_id:
+                tool_names_by_id[tool_call_id] = tool_name
+            event = {
+                "event": "worker_tool_call",
+                "node_id": node.node_id,
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "args_preview": _compact_event_value(tool_call.get("args")),
+            }
+            _append_worker_tool_activity(node=node, event=event)
+            _emit_supervisor_event(kind="worker_tool_call", **event)
+
+        tool_result = _message_tool_result(message, tool_names_by_id)
+        if tool_result is None:
+            continue
+        event = {
+            "event": "worker_tool_result",
+            "node_id": node.node_id,
+            **tool_result,
+        }
+        _append_worker_tool_activity(node=node, event=event)
+        _emit_supervisor_event(kind="worker_tool_result", **event)
+
+
+def _extract_messages_refusal(messages: list[object]) -> str | None:
+    for message in messages:
+        refusal_message = _extract_model_refusal_message(message)
+        if refusal_message is not None:
+            return refusal_message
+    return None
+
+
+def _message_tool_calls(message: object) -> list[dict[str, object]]:
+    tool_calls = getattr(message, "tool_calls", None)
+    if not isinstance(tool_calls, list):
+        return []
+    return [item for item in tool_calls if isinstance(item, dict)]
+
+
+def _message_tool_result(
+    message: object,
+    tool_names_by_id: dict[str, str],
+) -> dict[str, object] | None:
+    if not isinstance(message, ToolMessage):
+        return None
+    tool_call_id = str(getattr(message, "tool_call_id", "") or "")
+    tool_name = str(getattr(message, "name", "") or tool_names_by_id.get(tool_call_id, "unknown"))
+    status = str(getattr(message, "status", "") or "success")
+    return {
+        "tool_name": tool_name,
+        "tool_call_id": tool_call_id,
+        "status": status,
+        "result_preview": _compact_event_value(getattr(message, "content", "")),
+    }
+
+
+def _append_worker_tool_activity(*, node: TaskNode, event: dict[str, object]) -> None:
+    run_dir_raw = node.metadata.get("run_dir") if isinstance(node.metadata, dict) else None
+    if not isinstance(run_dir_raw, str) or not run_dir_raw:
+        return
+    try:
+        activity_path = Path(run_dir_raw) / "tool_activity.jsonl"
+        with activity_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except OSError:
+        return
+
+
+def _finalize_refusal_run(
+    *,
+    run_dir: Path,
+    task: str,
+    task_type: str,
+    rounds,
+    refusal: ModelRefusalError,
+) -> SupervisorRunResult:
+    final_decision = SupervisorDecision(
+        decision="stop",
+        reason=f"model_refusal:{refusal.stage}",
+    )
+    final_summary = (
+        "# Supervisor Summary\n\n"
+        f"- Task: {task}\n"
+        "- Decision: stop\n"
+        f"- Reason: model refusal during {refusal.stage}\n"
+    )
+    user_response = refusal.user_message
+    (run_dir / "final_summary.md").write_text(final_summary, encoding="utf-8")
+    (run_dir / "final_response.md").write_text(user_response, encoding="utf-8")
+    _write_json(
+        run_dir / "final_decision.json",
+        {
+            "decision": final_decision.decision,
+            "reason": final_decision.reason,
+            "failed_nodes": [],
+            "task_type": task_type,
+            "generic_approach": None,
+            "round_count": len(rounds),
+            "run_dir": str(run_dir),
+            "final_response_path": str(run_dir / "final_response.md"),
+            "refusal_details": refusal.details,
+        },
+    )
+    _emit_supervisor_event(
+        kind="run_finished",
+        decision=final_decision.decision,
+        reason=final_decision.reason,
+        failed_nodes=[],
+        generic_approach=None,
+        round_count=len(rounds),
+        run_dir=str(run_dir),
+    )
+    return SupervisorRunResult(
+        run_dir=run_dir,
+        final_summary=final_summary,
+        user_response=user_response,
+        final_decision=final_decision,
+        round_count=len(rounds),
+    )
+
+
+def _compact_event_value(value: object, *, max_chars: int = 500) -> str:
+    if isinstance(value, str):
+        text = value
+    else:
+        try:
+            text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except TypeError:
+            text = str(value)
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3].rstrip() + "..."
 
 
 def _build_worker_invoke_request(
@@ -690,6 +863,10 @@ def _maybe_run_deterministic_worker(*, node: TaskNode, workspace_root: Path) -> 
         return None
     if node.node_id in {"register", "retry_register"} and metadata.get("selected_tools"):
         return _run_deterministic_benchmark_register(node=node, workspace_root=workspace_root)
+    if node.node_id == "summarize":
+        return _run_deterministic_benchmark_summary(node=node, workspace_root=workspace_root)
+    if _looks_like_user_delivery_node(node.node_id):
+        return None
     repo = _benchmark_repo_from_node_id(node.node_id)
     if repo is not None:
         return _run_deterministic_benchmark_case(
@@ -697,8 +874,6 @@ def _maybe_run_deterministic_worker(*, node: TaskNode, workspace_root: Path) -> 
             workspace_root=workspace_root,
             repo=repo,
         )
-    if node.node_id == "summarize":
-        return _run_deterministic_benchmark_summary(node=node, workspace_root=workspace_root)
     return None
 
 
@@ -1235,7 +1410,7 @@ def _best_metric_repo(
 
 def _benchmark_repo_from_node_id(node_id: str) -> str | None:
     candidate = node_id.removeprefix("retry_")
-    if candidate in {"register", "summarize"}:
+    if candidate in {"register", "summarize"} or _looks_like_user_delivery_node(candidate):
         return None
     return candidate or None
 

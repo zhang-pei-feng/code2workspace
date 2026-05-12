@@ -9,10 +9,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.errors import GraphInterrupt
 
 from code2workspace.orchestration_runtime import (
+    ModelRefusalError,
     TaskGraph,
     TaskNode,
     WorkerResult,
@@ -30,6 +31,7 @@ from code2workspace_cli.supervisor_runtime import (
     _parse_worker_result,
     SQLiteCaseIndex,
     SupervisorWorkerRunner,
+    build_supervisor_enabled_agent,
     run_supervisor_orchestration,
 )
 
@@ -92,6 +94,38 @@ async def test_classify_task_for_supervisor_falls_back_to_rules_on_invalid_outpu
     assert classification.primary_type == "github2workspace"
     assert details["source"] == "rules_fallback"
     assert details["llm_error"] == "invalid_classifier_output"
+    assert details["llm_attempts"][0]["content_preview"] == "not json"
+
+
+@pytest.mark.asyncio
+async def test_build_supervisor_enabled_agent_returns_refusal_message_from_classifier(
+    tmp_path: Path,
+) -> None:
+    base_agent = AsyncMock()
+    fallback_agent = AsyncMock()
+
+    class _Classifier:
+        async def ainvoke(self, _messages):
+            return AIMessage(
+                content="",
+                response_metadata={
+                    "model_name": "claude-sonnet-4-6",
+                    "model_provider": "anthropic",
+                    "stop_reason": "refusal",
+                },
+            )
+
+    agent = build_supervisor_enabled_agent(
+        base_agent=base_agent,
+        fallback_agent=fallback_agent,
+        workspace_root=tmp_path,
+        classifier_model=_Classifier(),
+        enable_generic_ask_user=False,
+    )
+
+    result = await agent.ainvoke({"messages": [HumanMessage(content="test task")]})
+
+    assert result["messages"][-1].content == "The model refused to answer this request."
 
 
 @pytest.mark.asyncio
@@ -293,6 +327,48 @@ async def test_run_supervisor_orchestration_returns_user_facing_response(
     assert "Supervisor Summary" in result.final_summary
     assert (result.run_dir / "final_response.md").read_text(encoding="utf-8") == (
         "你好！很高兴见到你。"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_supervisor_orchestration_stops_on_worker_refusal(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace" / "20260430134600"
+    workspace.mkdir(parents=True)
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "init_generic":
+            return WorkerResult(
+                status="completed",
+                summary="planned one-node graph",
+                spawned_subgraph={
+                    "nodes": [
+                        {
+                            "node_id": "worker_solution",
+                            "title": "Solve",
+                            "objective": "Solve the task.",
+                            "capability_bundles": ["summarize"],
+                        }
+                    ],
+                    "edges": [],
+                },
+            )
+        raise ModelRefusalError(
+            message="The model refused to answer this request.",
+            stage=f"worker:{node.node_id}",
+        )
+
+    result = await run_supervisor_orchestration(
+        task="帮我做一个会被拒绝的请求。",
+        workspace_root=workspace,
+        worker_runner=worker_runner,
+    )
+
+    assert result.user_response == "The model refused to answer this request."
+    assert result.final_decision.reason == "model_refusal:worker:worker_solution"
+    assert (result.run_dir / "final_response.md").read_text(encoding="utf-8") == (
+        "The model refused to answer this request."
     )
 
 
@@ -648,6 +724,63 @@ async def test_invoke_worker_agent_retries_transient_errors(
 
     assert result.status == "completed"
     assert agent.ainvoke.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_invoke_worker_agent_records_internal_tool_calls(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-a"
+    run_dir.mkdir(parents=True)
+    node = TaskNode(
+        node_id="worker_solution",
+        title="Solve",
+        objective="Use a tool and answer",
+        capability_bundles=["summarize", "validate"],
+        metadata={
+            "task": "inspect files",
+            "task_type": "generic",
+            "run_dir": str(run_dir),
+        },
+    )
+    agent = AsyncMock()
+    agent.ainvoke.return_value = {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"file_path": "README.md"},
+                        "id": "call_read",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            ToolMessage(
+                content="README contents",
+                tool_call_id="call_read",
+                status="success",
+            ),
+            AIMessage(
+                content='{"status":"completed","summary":"done","artifacts":[],"evidence":[]}'
+            ),
+        ]
+    }
+
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=tmp_path,
+    )
+
+    assert result.status == "completed"
+    activity = (run_dir / "tool_activity.jsonl").read_text(encoding="utf-8")
+    assert '"event": "worker_tool_call"' in activity
+    assert '"tool_name": "read_file"' in activity
+    assert '"args_preview": "{\\"file_path\\": \\"README.md\\"}"' in activity
+    assert '"event": "worker_tool_result"' in activity
+    assert '"result_preview": "README contents"' in activity
 
 
 @pytest.mark.asyncio
@@ -1135,3 +1268,48 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_summary_helper(
     assert result.status == "completed"
     assert (run_dir / "benchmark_supervisor_summary.json").exists()
     assert (run_dir / "benchmark_supervisor_summary.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_benchmark_final_response_uses_worker_agent_not_case_helper(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-final"
+    run_dir.mkdir(parents=True)
+    node = TaskNode(
+        node_id="final_response",
+        title="Write final user response",
+        objective="Turn benchmark results into the final user-facing answer.",
+        capability_bundles=["summarize", "validate"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "汇总 benchmark 结果。",
+            "run_dir": str(run_dir),
+            "selected_tools": ["spades", "megahit"],
+        },
+    )
+    agent = AsyncMock()
+    agent.ainvoke.return_value = {
+        "messages": [
+            AIMessage(
+                content=json.dumps(
+                    {
+                        "status": "completed",
+                        "summary": "spades 和 megahit 均已完成，spades 在 N50 上更优。",
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        ]
+    }
+
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
+
+    assert result.status == "completed"
+    assert result.summary == "spades 和 megahit 均已完成，spades 在 N50 上更优。"
+    assert agent.ainvoke.await_count == 1

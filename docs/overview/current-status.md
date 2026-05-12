@@ -109,6 +109,14 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
     and still shares the same worker prompt/result parser
   - subagent runnable construction was fixed so normal subagents are available
     even when no HITL `interrupt_on` config is present
+- Worker/subagent tool visibility is now exposed through the supervisor stream:
+  - worker `AIMessage.tool_calls` and matching `ToolMessage` results are
+    converted into `worker_tool_call` / `worker_tool_result` supervisor events
+  - the TUI renders those events under the owning supervisor node, and verbose
+    non-interactive runs request the same custom stream while quiet mode keeps
+    stdout reserved for the final answer
+  - the same compact call/result previews are appended to each run's
+    `tool_activity.jsonl` for artifact-level inspection
 - Generic graph planning has now been tightened further:
   - first-round generic graphs no longer stop at a single `analyze_task` node
   - they now default to `init_generic -> worker_context -> worker_solution ->

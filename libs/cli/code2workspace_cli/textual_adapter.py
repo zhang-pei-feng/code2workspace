@@ -455,6 +455,28 @@ def _render_supervisor_event(event: dict[str, Any]) -> str:
             f"(attempt `{event.get('attempt', '?')}`)\n"
             f"error: {event.get('error', '')}"
         )
+    if kind == "worker_tool_call":
+        args_preview = _truncate_supervisor_text(event.get("args_preview", ""), max_chars=220)
+        lines = [
+            f"{prefix} node `{event.get('node_id', 'unknown')}` called tool "
+            f"`{event.get('tool_name', 'unknown')}`"
+        ]
+        if args_preview:
+            lines.append(f"args: {args_preview}")
+        return "\n".join(lines)
+    if kind == "worker_tool_result":
+        result_preview = _truncate_supervisor_text(
+            event.get("result_preview", ""),
+            max_chars=260,
+        )
+        lines = [
+            f"{prefix} tool `{event.get('tool_name', 'unknown')}` finished for "
+            f"node `{event.get('node_id', 'unknown')}` "
+            f"with status `{event.get('status', 'success')}`"
+        ]
+        if result_preview:
+            lines.append(f"result: {result_preview}")
+        return "\n".join(lines)
     if kind == "node_finished":
         lines = [
             f"{prefix} node `{event.get('node_id', 'unknown')}` finished "

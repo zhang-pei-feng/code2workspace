@@ -13,6 +13,7 @@ from langgraph.errors import GraphInterrupt
 from code2workspace.orchestration_runtime import (
     CaseTraceRecord,
     HeuristicSupervisorPlanner,
+    ModelRefusalError,
     TaskEdge,
     TaskGraph,
     TaskNode,
@@ -80,6 +81,58 @@ async def test_classify_task_with_model_falls_back_to_rules_on_invalid_output() 
     assert classification.primary_type == "github2workspace"
     assert details["source"] == "rules_fallback"
     assert details["llm_error"] == "invalid_classifier_output"
+    assert details["llm_attempts"][0]["response_type"] == "AIMessage"
+    assert details["llm_attempts"][0]["content_preview"] == "not json"
+
+
+@pytest.mark.asyncio
+async def test_classify_task_with_model_retries_once_on_empty_output() -> None:
+    class _Model:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ainvoke(self, _messages):
+            self.calls += 1
+            if self.calls == 1:
+                return AIMessage(content="")
+            return AIMessage(
+                content='{"task_type":"generic","confidence":0.88,"reason":"Quick informal check.","matched_signals":["不要正式写报告"]}'
+            )
+
+    model = _Model()
+    classification, details = await classify_task_with_model(
+        model=model,
+        task="不要正式写报告，快速判断一下这个问题。",
+    )
+
+    assert model.calls == 2
+    assert classification.primary_type == "generic"
+    assert details["source"] == "llm_classifier"
+    assert details["llm_attempts"][0]["content_is_empty"] is True
+    assert details["llm_attempts"][1]["parsed_payload_found"] is True
+
+
+@pytest.mark.asyncio
+async def test_classify_task_with_model_raises_on_refusal() -> None:
+    class _Model:
+        async def ainvoke(self, _messages):
+            return AIMessage(
+                content="",
+                response_metadata={
+                    "model_name": "claude-sonnet-4-6",
+                    "model_provider": "anthropic",
+                    "stop_reason": "refusal",
+                },
+            )
+
+    with pytest.raises(ModelRefusalError) as exc_info:
+        await classify_task_with_model(
+            model=_Model(),
+            task="帮我做一个不允许的请求。",
+        )
+
+    assert exc_info.value.stage == "classifier"
+    assert exc_info.value.user_message == "The model refused to answer this request."
 
 
 def test_planner_creates_generic_graph_for_unknown_task() -> None:

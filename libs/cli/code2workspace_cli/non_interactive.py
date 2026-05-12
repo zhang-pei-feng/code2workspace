@@ -58,7 +58,11 @@ from code2workspace_cli.session_workspace import (
     resolve_default_session_invocation_cwd,
 )
 from code2workspace_cli.sessions import generate_thread_id
-from code2workspace_cli.textual_adapter import SessionStats, print_usage_table
+from code2workspace_cli.textual_adapter import (
+    SessionStats,
+    _render_supervisor_event,
+    print_usage_table,
+)
 from code2workspace_cli.tool_display import format_tool_display
 from code2workspace_cli.unicode_security import (
     check_url_safety,
@@ -504,6 +508,15 @@ def _process_stream_chunk(
 
     if stream_mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
         _process_interrupts(cast("dict[str, list[Interrupt]]", data), state, console)
+    elif stream_mode == "custom":
+        if (
+            not state.quiet
+            and isinstance(data, dict)
+            and isinstance(data.get("supervisor_event"), dict)
+        ):
+            console.print(
+                Text(_render_supervisor_event(data["supervisor_event"]), style="dim")
+            )
     elif stream_mode == "messages":
         _process_message_chunk(
             cast("tuple[AIMessage | ToolMessage, dict[str, str]]", data),
@@ -649,7 +662,7 @@ async def _stream_agent(
     try:
         async for chunk in agent.astream(
             stream_input,
-            stream_mode=["messages", "updates"],
+            stream_mode=["messages", "updates", "custom"],
             subgraphs=True,
             config=config,
             durability="exit",

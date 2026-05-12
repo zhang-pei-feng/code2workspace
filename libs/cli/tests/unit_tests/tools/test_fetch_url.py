@@ -2,6 +2,7 @@
 
 import requests
 import responses
+from unittest.mock import patch
 
 from code2workspace_cli.tools import fetch_url
 
@@ -70,3 +71,38 @@ def test_fetch_url_connection_error() -> None:
     assert "error" in result
     assert "Fetch URL error" in result["error"]
     assert result["url"] == "http://example.com/error"
+
+
+@responses.activate
+def test_fetch_url_decodes_gb18030_html_without_charset_header() -> None:
+    body = "<html><body><h1>交通运输部</h1><p>春运人员流动量预计达95亿人次</p></body></html>".encode(
+        "gb18030"
+    )
+    responses.add(
+        responses.GET,
+        "http://example.com/gbk",
+        body=body,
+        status=200,
+        content_type="text/html",
+    )
+
+    result = fetch_url("http://example.com/gbk")
+
+    assert "交通运输部" in result["markdown_content"]
+    assert "95亿人次" in result["markdown_content"]
+
+
+@responses.activate
+def test_fetch_url_falls_back_to_plain_text_on_markdownify_recursion() -> None:
+    responses.add(
+        responses.GET,
+        "http://example.com/recursive",
+        body="<html><body><h1>Title</h1><p>Body</p></body></html>",
+        status=200,
+    )
+
+    with patch("markdownify.markdownify", side_effect=RecursionError("boom")):
+        result = fetch_url("http://example.com/recursive")
+
+    assert "Title" in result["markdown_content"]
+    assert "Body" in result["markdown_content"]

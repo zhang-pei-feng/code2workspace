@@ -26,6 +26,16 @@ and evidence-backed completion judgment.
 
 ### 2026-05-12
 
+- Added worker/subagent tool-call observability for Supervisor Graph runs:
+  - worker `AIMessage.tool_calls` and corresponding `ToolMessage` results are
+    emitted as supervisor custom events and written into `tool_activity.jsonl`
+  - Textual renders compact per-node tool call/result previews, and
+    non-interactive verbose mode now requests the same custom stream
+  - this improves node-level evidence visibility without exposing full internal
+    subagent transcripts in the main chat output
+- Validation: focused supervisor, TUI rendering, non-interactive, agent
+  assembly, and subagent tests passed.
+
 - Unified Supervisor Graph worker execution behind an explicit runner boundary:
   - added `SupervisorWorkerRunner` and runnable-backed worker dispatch in
     `libs/cli/code2workspace_cli/supervisor_runtime.py`

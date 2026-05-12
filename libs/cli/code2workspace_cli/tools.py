@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
@@ -138,6 +139,7 @@ def fetch_url(url: str, timeout: int = 30) -> dict[str, Any]:
     """
     try:
         import requests
+        from bs4 import BeautifulSoup, UnicodeDammit
         from markdownify import markdownify
     except ImportError as exc:
         return {
@@ -154,8 +156,28 @@ def fetch_url(url: str, timeout: int = 30) -> dict[str, Any]:
         )
         response.raise_for_status()
 
-        # Convert HTML content to markdown
-        markdown_content = markdownify(response.text)
+        content_bytes = response.content
+        content_type = response.headers.get("content-type", "")
+
+        # Decode bytes conservatively so legacy/Chinese government pages do not
+        # collapse into mojibake when servers omit or misreport charset.
+        decoded_text: str
+        if _looks_like_textual_payload(content_type, content_bytes):
+            decoded_text = _decode_response_text(
+                content_bytes=content_bytes,
+                content_type=content_type,
+                fallback_encoding=getattr(response, "encoding", None),
+            )
+        else:
+            decoded_text = response.text
+
+        if _looks_like_html(content_type, decoded_text):
+            try:
+                markdown_content = markdownify(decoded_text)
+            except RecursionError:
+                markdown_content = _html_to_text_fallback(decoded_text, BeautifulSoup)
+        else:
+            markdown_content = decoded_text
 
         return {
             "url": str(response.url),
@@ -165,3 +187,116 @@ def fetch_url(url: str, timeout: int = 30) -> dict[str, Any]:
         }
     except requests.exceptions.RequestException as e:
         return {"error": f"Fetch URL error: {e!s}", "url": url}
+
+
+def _looks_like_textual_payload(content_type: str, content_bytes: bytes) -> bool:
+    lowered = content_type.casefold()
+    if any(
+        marker in lowered
+        for marker in (
+            "text/",
+            "html",
+            "xml",
+            "json",
+            "javascript",
+            "pdf",
+        )
+    ):
+        return True
+    return b"<html" in content_bytes[:512].casefold() or b"<!doctype html" in content_bytes[:512].casefold()
+
+
+def _looks_like_html(content_type: str, decoded_text: str) -> bool:
+    lowered = content_type.casefold()
+    if "html" in lowered or "xml" in lowered:
+        return True
+    prefix = decoded_text[:512].casefold()
+    return "<html" in prefix or "<body" in prefix or "<!doctype html" in prefix
+
+
+def _decode_response_text(
+    *,
+    content_bytes: bytes,
+    content_type: str,
+    fallback_encoding: str | None,
+) -> str:
+    from bs4 import UnicodeDammit
+
+    header_encoding = _charset_from_content_type(content_type)
+    encodings_to_try: list[str | None] = [header_encoding]
+    if header_encoding is not None:
+        encodings_to_try.append(fallback_encoding)
+    elif fallback_encoding and fallback_encoding.casefold() not in {"iso-8859-1", "latin-1"}:
+        encodings_to_try.append(fallback_encoding)
+
+    for encoding in encodings_to_try:
+        if not encoding:
+            continue
+        try:
+            return content_bytes.decode(encoding, errors="replace")
+        except LookupError:
+            continue
+
+    unicode_dammit = UnicodeDammit(content_bytes)
+    if unicode_dammit.unicode_markup and not _looks_like_mojibake(unicode_dammit.unicode_markup):
+        return unicode_dammit.unicode_markup
+
+    best_text = ""
+    best_score = -1
+    for encoding in ("utf-8", "gb18030", "big5", "latin-1"):
+        try:
+            candidate = content_bytes.decode(encoding, errors="replace")
+        except LookupError:
+            continue
+        score = _decoded_text_score(candidate)
+        if score > best_score:
+            best_text = candidate
+            best_score = score
+
+    try:
+        from charset_normalizer import from_bytes
+
+        best_match = from_bytes(content_bytes).best()
+        if best_match is not None:
+            candidate = str(best_match)
+            score = _decoded_text_score(candidate)
+            if score > best_score:
+                best_text = candidate
+                best_score = score
+    except Exception:
+        pass
+
+    if best_text:
+        return best_text
+    return content_bytes.decode("utf-8", errors="replace")
+
+
+def _charset_from_content_type(content_type: str) -> str | None:
+    match = re.search(r"charset=([A-Za-z0-9._-]+)", content_type, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return match.group(1).strip().strip("\"'")
+
+
+def _html_to_text_fallback(decoded_text: str, soup_cls) -> str:
+    soup = soup_cls(decoded_text, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    text = soup.get_text("\n")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return "\n".join(lines)
+
+
+def _looks_like_mojibake(text: str) -> bool:
+    if not text:
+        return False
+    bad_markers = sum(text.count(marker) for marker in ("Ã", "Â", "Ô", "Õ", "Ð", "Ê", "Î", "Ï", "æ", "è", "ã"))
+    cjk_chars = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    return bad_markers >= 3 and cjk_chars == 0
+
+
+def _decoded_text_score(text: str) -> int:
+    cjk_chars = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    replacement_chars = text.count("\ufffd")
+    mojibake_penalty = 20 if _looks_like_mojibake(text) else 0
+    return (cjk_chars * 4) - (replacement_chars * 3) - mojibake_penalty + len(text[:200])

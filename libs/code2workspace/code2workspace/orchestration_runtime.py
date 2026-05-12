@@ -228,6 +228,22 @@ class TaskClassification:
     guidance_ids: list[str]
 
 
+class ModelRefusalError(RuntimeError):
+    """Raised when an upstream model explicitly refuses to answer."""
+
+    def __init__(
+        self,
+        *,
+        message: str,
+        stage: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.user_message = message
+        self.stage = stage
+        self.details = details or {}
+
+
 _SPECIAL_TASK_TYPES = {"benchmark", "github2workspace", "report", "generic"}
 _TASK_CLASSIFIER_CONFIDENCE_THRESHOLD = 0.55
 _TASK_CLASSIFIER_SYSTEM_PROMPT = """You classify a user task for a supervisor runtime.
@@ -328,22 +344,48 @@ async def classify_task_with_model(
     if model is None or not task.strip():
         return rule_classification, rule_details
 
-    try:
-        response = await model.ainvoke(
-            [
-                SystemMessage(content=_TASK_CLASSIFIER_SYSTEM_PROMPT),
-                HumanMessage(content=f"Task:\n{task}\n\nReturn JSON only."),
-            ]
-        )
-    except Exception as exc:
-        rule_details["llm_error"] = f"{type(exc).__name__}: {exc}"
-        return rule_classification, rule_details
+    classifier_messages = [
+        SystemMessage(content=_TASK_CLASSIFIER_SYSTEM_PROMPT),
+        HumanMessage(content=f"Task:\n{task}\n\nReturn JSON only."),
+    ]
+    attempts: list[dict[str, Any]] = []
+    payload: dict[str, Any] | None = None
+    text = ""
+    max_attempts = 2
+    for attempt_index in range(max_attempts):
+        try:
+            response = await model.ainvoke(classifier_messages)
+        except Exception as exc:
+            rule_details["llm_error"] = f"{type(exc).__name__}: {exc}"
+            rule_details["llm_attempts"] = attempts
+            return rule_classification, rule_details
 
-    text = _message_text(response)
-    payload = _extract_task_classifier_payload(text)
+        text = _message_text(response)
+        attempt_details = _classifier_attempt_details(
+            response=response,
+            text=text,
+            attempt=attempt_index + 1,
+        )
+        refusal_message = _extract_model_refusal_message(response)
+        attempt_details["refusal_message"] = refusal_message
+        payload = _extract_task_classifier_payload(text)
+        attempt_details["parsed_payload_found"] = payload is not None
+        attempts.append(attempt_details)
+        if refusal_message is not None:
+            raise ModelRefusalError(
+                message=refusal_message,
+                stage="classifier",
+                details={"llm_attempts": attempts},
+            )
+        if payload is not None:
+            break
+        if text.strip() or attempt_index + 1 >= max_attempts:
+            break
+
     if payload is None:
         rule_details["llm_error"] = "invalid_classifier_output"
         rule_details["raw_output"] = text
+        rule_details["llm_attempts"] = attempts
         return rule_classification, rule_details
 
     task_type = payload.get("task_type")
@@ -363,6 +405,7 @@ async def classify_task_with_model(
             "matched_signals": matched_signals,
         }
         rule_details["llm_error"] = "low_confidence_or_invalid_task_type"
+        rule_details["llm_attempts"] = attempts
         return rule_classification, rule_details
 
     llm_classification = classification_for_task_type(task_type)
@@ -378,6 +421,7 @@ async def classify_task_with_model(
             if isinstance(matched_signals, list)
             for item in matched_signals
         ],
+        "llm_attempts": attempts,
         "rules_fallback_task_type": rule_classification.primary_type,
     }
 
@@ -407,6 +451,64 @@ def _message_text(response: object) -> str:
         if rendered.strip():
             return rendered
     return str(response)
+
+
+def _extract_model_refusal_message(response: object) -> str | None:
+    response_metadata = getattr(response, "response_metadata", None)
+    stop_reason = None
+    if isinstance(response_metadata, dict):
+        stop_reason = response_metadata.get("stop_reason")
+    if stop_reason != "refusal":
+        return None
+
+    content = getattr(response, "content", None)
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+    return "The model refused to answer this request."
+
+
+def _classifier_attempt_details(
+    *,
+    response: object,
+    text: str,
+    attempt: int,
+) -> dict[str, Any]:
+    content = getattr(response, "content", None)
+    response_metadata = getattr(response, "response_metadata", None)
+    usage_metadata = getattr(response, "usage_metadata", None)
+    return {
+        "attempt": attempt,
+        "response_type": type(response).__name__,
+        "content_type": type(content).__name__ if content is not None else "NoneType",
+        "content_is_empty": not text.strip(),
+        "content_preview": _preview_text(text),
+        "response_repr_preview": _preview_text(repr(response)),
+        "response_metadata": _normalize_classifier_debug_value(response_metadata),
+        "usage_metadata": _normalize_classifier_debug_value(usage_metadata),
+    }
+
+
+def _normalize_classifier_debug_value(value: object) -> object:
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, default=str)
+    except TypeError:
+        return _preview_text(str(value))
+    if len(encoded) <= 1200:
+        return json.loads(encoded)
+    return _preview_text(encoded, max_chars=1200)
+
+
+def _preview_text(text: str, *, max_chars: int = 600) -> str:
+    stripped = text.strip()
+    if len(stripped) <= max_chars:
+        return stripped
+    return stripped[: max_chars - 3].rstrip() + "..."
 
 
 def _extract_task_classifier_payload(text: str) -> dict[str, Any] | None:
@@ -1487,6 +1589,8 @@ async def execute_graph_round(
 async def _run_worker(node: TaskNode, worker_runner) -> WorkerResult:
     try:
         result = await worker_runner(node)
+    except ModelRefusalError:
+        raise
     except GraphBubbleUp:
         raise
     except Exception as exc:  # pragma: no cover - defensive conversion
