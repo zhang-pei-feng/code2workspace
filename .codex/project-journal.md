@@ -6,6 +6,17 @@
 
 ## Entries
 
+### 2026-05-12 08:32 CST
+- Session goal: Configure the supervisor-runtime worktree to use ClawdRouter Claude by default.
+- Major changes:
+  - Updated this worktree's ignored `.env` Anthropic/ClawdRouter variables to use the ClawdRouter endpoint and key.
+  - Updated the branch-local model config at `backend/config/agent_models.json` so `default` and `recent` are `anthropic:claude-sonnet-4-6`.
+- Validation:
+  - Direct `create_model()` resolved `backend/config/agent_models.json`, created `langchain_anthropic.ChatAnthropic`, and returned `OK`.
+  - `uv run --project libs/cli code2workspace --default-model` reports `anthropic:claude-sonnet-4-6`.
+  - `uv run --project libs/cli code2workspace -n "Reply with OK only." -q --no-mcp` completed through the supervisor generic path and returned `OK only.`
+- Next step: If this branch should preserve the model config in Git, add `backend/config/agent_models.json`; `.env` remains intentionally ignored.
+
 ### 2026-05-11 19:15 CST
 - Session goal: Make supervisor runtime return natural user-facing answers instead of the structured Supervisor Summary in chat.
 - Major changes:

@@ -40,8 +40,9 @@ lives under `docs/`.
 - Non-interactive QA execution is the primary path on this branch.
 - Main model/runtime configuration has one project-local entrypoint:
   `backend/config/agent_models.json`.
-- `.env` files and user-level `~/.code2workspace/config.toml` are not used for
-  the main agent model configuration in this build.
+- Runtime model values such as API keys, base URLs, and optional Tavily config
+  are loaded from the project `.env` file; `.env.example` is committed as the
+  user-facing template.
 - Supervisor Graph remains enabled, but `runtime.mode = "qa"` forces prompts
   through the generic question-answering graph instead of the old
   `github2workspace`, `benchmark`, or `report` task lanes.
@@ -79,8 +80,10 @@ creating additional root-level output folders.
 
 From the repository root:
 
-First edit `backend/config/agent_models.json` and fill
-`providers.main.api_key` if your OpenAI-compatible gateway requires a key.
+First copy `.env.example` to `.env` and fill the provider values you want to
+use, such as `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
+`ANTHROPIC_API_KEY`, or `ANTHROPIC_BASE_URL`. The available providers and
+default model selection remain defined in `backend/config/agent_models.json`.
 
 ```bash
 uv run --project libs/cli code2workspace

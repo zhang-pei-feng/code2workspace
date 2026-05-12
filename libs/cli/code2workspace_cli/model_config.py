@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+import json
 import logging
 import os
 import tempfile
@@ -189,8 +190,17 @@ class ProviderConfig(TypedDict, total=False):
     api_key_env: str
     """Environment variable name containing the API key."""
 
+    api_key: str
+    """Inline API key loaded from the project-local agent model config."""
+
+    requires_api_key: bool
+    """Whether this provider should fail fast when no inline key is configured."""
+
     base_url: str
     """Custom base URL."""
+
+    base_url_env: str
+    """Environment variable name containing the base URL override."""
 
     # Level 2: arbitrary BaseChatModel classes
 
@@ -219,11 +229,14 @@ class ProviderConfig(TypedDict, total=False):
     """
 
 
-DEFAULT_CONFIG_DIR = Path.home() / ".code2workspace"
-"""Directory for user-level Code2Workspace configuration (`~/.code2workspace`)."""
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+"""Repository root used for portable project-local configuration."""
 
-DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.toml"
-"""Path to the user's model configuration file (`~/.code2workspace/config.toml`)."""
+DEFAULT_CONFIG_DIR = PROJECT_ROOT / "backend" / "config"
+"""Directory for project-local Code2Workspace configuration."""
+
+DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "agent_models.json"
+"""Path to the main agent model configuration file."""
 
 PROVIDER_API_KEY_ENV: dict[str, str] = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -289,6 +302,41 @@ def clear_caches() -> None:
     _profiles_cache = None
     _profiles_override_cache = None
     invalidate_thread_config_cache()
+
+
+def _load_config_data(config_path: Path) -> dict[str, Any]:
+    """Load model config data from JSON or TOML.
+
+    The portable QA build uses `backend/config/agent_models.json` as the only
+    default entrypoint. Explicit TOML paths remain supported for old tests and
+    migration helpers.
+    """
+    if config_path.suffix.lower() == ".json":
+        with config_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+
+    with config_path.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _write_config_data(config_path: Path, data: dict[str, Any]) -> None:
+    """Write model config data using JSON for `.json` paths, TOML otherwise."""
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
+    try:
+        if config_path.suffix.lower() == ".json":
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+        else:
+            with os.fdopen(fd, "wb") as f:
+                tomli_w.dump(data, f)
+        Path(tmp_path).replace(config_path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            Path(tmp_path).unlink()
+        raise
 
 
 def _get_builtin_providers() -> dict[str, Any]:
@@ -795,9 +843,16 @@ def get_credential_env_var(provider: str) -> str | None:
     return PROVIDER_API_KEY_ENV.get(provider)
 
 
+def is_qa_only_runtime(config_path: Path | None = None) -> bool:
+    """Return whether the project config asks for QA-only supervisor routing."""
+    config = ModelConfig.load(config_path)
+    mode = config.runtime.get("mode")
+    return isinstance(mode, str) and mode.strip().lower() in {"qa", "qa_only", "question_answering"}
+
+
 @dataclass(frozen=True)
 class ModelConfig:
-    """Parsed model configuration from `config.toml`.
+    """Parsed model configuration.
 
     Instances are immutable once constructed. The `providers` mapping is
     wrapped in `MappingProxyType` to prevent accidental mutation of the
@@ -813,10 +868,15 @@ class ModelConfig:
     providers: Mapping[str, ProviderConfig] = field(default_factory=dict)
     """Read-only mapping of provider names to their configurations."""
 
+    runtime: Mapping[str, Any] = field(default_factory=dict)
+    """Runtime switches loaded from the same project-local config entry."""
+
     def __post_init__(self) -> None:
         """Freeze the providers dict into a read-only proxy."""
         if not isinstance(self.providers, MappingProxyType):
             object.__setattr__(self, "providers", MappingProxyType(self.providers))
+        if not isinstance(self.runtime, MappingProxyType):
+            object.__setattr__(self, "runtime", MappingProxyType(dict(self.runtime)))
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> ModelConfig:
@@ -826,7 +886,8 @@ class ModelConfig:
         lifetime of the process. Use `clear_caches()` to reset.
 
         Args:
-            config_path: Path to config file. Defaults to ~/.code2workspace/config.toml.
+            config_path: Path to config file. Defaults to
+                `backend/config/agent_models.json`.
 
         Returns:
             Parsed `ModelConfig` instance.
@@ -848,11 +909,21 @@ class ModelConfig:
             return fallback
 
         try:
-            with config_path.open("rb") as f:
-                data = tomllib.load(f)
+            data = _load_config_data(config_path)
         except tomllib.TOMLDecodeError as e:
             logger.warning(
                 "Config file %s has invalid TOML syntax: %s. "
+                "Ignoring config file. Fix the file or delete it to reset.",
+                config_path,
+                e,
+            )
+            fallback = cls()
+            if is_default:
+                _default_config_cache = fallback
+            return fallback
+        except json.JSONDecodeError as e:
+            logger.warning(
+                "Config file %s has invalid JSON syntax: %s. "
                 "Ignoring config file. Fix the file or delete it to reset.",
                 config_path,
                 e,
@@ -868,11 +939,12 @@ class ModelConfig:
                 _default_config_cache = fallback
             return fallback
 
-        models_section = data.get("models", {})
+        models_section = data.get("models", data)
         config = cls(
             default_model=models_section.get("default"),
             recent_model=models_section.get("recent"),
             providers=models_section.get("providers", {}),
+            runtime=data.get("runtime", models_section.get("runtime", {})),
         )
 
         # Validate config consistency
@@ -1007,8 +1079,15 @@ class ModelConfig:
         provider = self.providers.get(provider_name)
         if not provider:
             return False
+        if provider.get("requires_api_key") is False:
+            return True
+        api_key = provider.get("api_key")
+        if isinstance(api_key, str) and api_key.strip():
+            return True
         env_var = provider.get("api_key_env")
         if not env_var:
+            if provider.get("requires_api_key") is True:
+                return False
             return None  # No key configured — can't verify
         return bool(resolve_env_var(env_var))
 
@@ -1022,7 +1101,15 @@ class ModelConfig:
             Base URL if configured, None otherwise.
         """
         provider = self.providers.get(provider_name)
-        return provider.get("base_url") if provider else None
+        if not provider:
+            return None
+        base_url_env = provider.get("base_url_env")
+        if isinstance(base_url_env, str) and base_url_env.strip():
+            resolved = resolve_env_var(base_url_env.strip())
+            if resolved:
+                return resolved
+        base_url = provider.get("base_url")
+        return base_url if isinstance(base_url, str) and base_url.strip() else None
 
     def get_api_key_env(self, provider_name: str) -> str | None:
         """Get the environment variable name for a provider's API key.
@@ -1035,6 +1122,21 @@ class ModelConfig:
         """
         provider = self.providers.get(provider_name)
         return provider.get("api_key_env") if provider else None
+
+    def get_api_key(self, provider_name: str) -> str | None:
+        """Get an inline API key from the project-local config.
+
+        Args:
+            provider_name: The provider to get an API key for.
+
+        Returns:
+            API key if configured, None otherwise.
+        """
+        provider = self.providers.get(provider_name)
+        api_key = provider.get("api_key") if provider else None
+        if isinstance(api_key, str) and api_key.strip():
+            return api_key.strip()
+        return None
 
     def get_class_path(self, provider_name: str) -> str | None:
         """Get the custom class path for a provider.
@@ -1122,31 +1224,21 @@ def _save_model_field(
         config_path = DEFAULT_CONFIG_PATH
 
     try:
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-
         # Read existing config or start fresh
         if config_path.exists():
-            with config_path.open("rb") as f:
-                data = tomllib.load(f)
+            data = _load_config_data(config_path)
         else:
             data = {}
 
-        if "models" not in data:
-            data["models"] = {}
-        data["models"][field] = model_spec
+        if config_path.suffix.lower() == ".json":
+            data[field] = model_spec
+        else:
+            if "models" not in data:
+                data["models"] = {}
+            data["models"][field] = model_spec
 
-        # Write to temp file then rename to prevent corruption if write is interrupted
-        fd, tmp_path = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as f:
-                tomli_w.dump(data, f)
-            Path(tmp_path).replace(config_path)
-        except BaseException:
-            # Clean up temp file on any failure
-            with contextlib.suppress(OSError):
-                Path(tmp_path).unlink()
-            raise
-    except (OSError, tomllib.TOMLDecodeError):
+        _write_config_data(config_path, data)
+    except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError):
         logger.exception("Could not save %s model preference", field)
         return False
     else:
@@ -1198,25 +1290,21 @@ def clear_default_model(config_path: Path | None = None) -> bool:
         return True  # Nothing to clear
 
     try:
-        with config_path.open("rb") as f:
-            data = tomllib.load(f)
+        data = _load_config_data(config_path)
 
-        models_section = data.get("models")
-        if not isinstance(models_section, dict) or "default" not in models_section:
-            return True  # Already absent
+        if config_path.suffix.lower() == ".json":
+            if "default" not in data:
+                return True
+            del data["default"]
+        else:
+            models_section = data.get("models")
+            if not isinstance(models_section, dict) or "default" not in models_section:
+                return True  # Already absent
 
-        del models_section["default"]
+            del models_section["default"]
 
-        fd, tmp_path = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as f:
-                tomli_w.dump(data, f)
-            Path(tmp_path).replace(config_path)
-        except BaseException:
-            with contextlib.suppress(OSError):
-                Path(tmp_path).unlink()
-            raise
-    except (OSError, tomllib.TOMLDecodeError):
+        _write_config_data(config_path, data)
+    except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError):
         logger.exception("Could not clear default model preference")
         return False
     else:
@@ -1248,9 +1336,8 @@ def is_warning_suppressed(key: str, config_path: Path | None = None) -> bool:
     try:
         if not config_path.exists():
             return False
-        with config_path.open("rb") as f:
-            data = tomllib.load(f)
-    except (OSError, tomllib.TOMLDecodeError):
+        data = _load_config_data(config_path)
+    except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError):
         logger.debug(
             "Could not read config file %s for warning suppression check",
             config_path,
@@ -1288,11 +1375,8 @@ def suppress_warning(key: str, config_path: Path | None = None) -> bool:
         config_path = DEFAULT_CONFIG_PATH
 
     try:
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-
         if config_path.exists():
-            with config_path.open("rb") as f:
-                data = tomllib.load(f)
+            data = _load_config_data(config_path)
         else:
             data = {}
 
@@ -1310,16 +1394,8 @@ def suppress_warning(key: str, config_path: Path | None = None) -> bool:
             suppress_list.append(key)
         data["warnings"]["suppress"] = suppress_list
 
-        fd, tmp_path = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as f:
-                tomli_w.dump(data, f)
-            Path(tmp_path).replace(config_path)
-        except BaseException:
-            with contextlib.suppress(OSError):
-                Path(tmp_path).unlink()
-            raise
-    except (OSError, tomllib.TOMLDecodeError):
+        _write_config_data(config_path, data)
+    except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError):
         logger.exception("Could not save warning suppression for '%s'", key)
         return False
     return True
@@ -1348,8 +1424,7 @@ def unsuppress_warning(key: str, config_path: Path | None = None) -> bool:
         if not config_path.exists():
             return True  # nothing to remove
 
-        with config_path.open("rb") as f:
-            data = tomllib.load(f)
+        data = _load_config_data(config_path)
 
         suppress_list = data.get("warnings", {}).get("suppress", [])
         if not isinstance(suppress_list, list):
@@ -1365,16 +1440,8 @@ def unsuppress_warning(key: str, config_path: Path | None = None) -> bool:
         suppress_list.remove(key)
         data.setdefault("warnings", {})["suppress"] = suppress_list
 
-        fd, tmp_path = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as f:
-                tomli_w.dump(data, f)
-            Path(tmp_path).replace(config_path)
-        except BaseException:
-            with contextlib.suppress(OSError):
-                Path(tmp_path).unlink()
-            raise
-    except (OSError, tomllib.TOMLDecodeError):
+        _write_config_data(config_path, data)
+    except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError):
         logger.exception("Could not remove warning suppression for '%s'", key)
         return False
     return True
@@ -1440,8 +1507,7 @@ def load_thread_config(config_path: Path | None = None) -> ThreadConfig:
             if use_default:
                 _thread_config_cache = result
             return result
-        with config_path.open("rb") as f:
-            data = tomllib.load(f)
+        data = _load_config_data(config_path)
         threads_section = data.get("threads", {})
 
         # columns
@@ -1460,7 +1526,7 @@ def load_thread_config(config_path: Path | None = None) -> ThreadConfig:
         so_value = threads_section.get("sort_order")
         if so_value in {"updated_at", "created_at"}:
             sort_order = so_value
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError):
         logger.warning("Could not read thread config; using defaults", exc_info=True)
         # Do not cache on error — allow retry on next call in case the
         # file is fixed or permissions are restored.
@@ -1494,14 +1560,13 @@ def load_thread_columns(config_path: Path | None = None) -> dict[str, bool]:
     try:
         if not config_path.exists():
             return result
-        with config_path.open("rb") as f:
-            data = tomllib.load(f)
+        data = _load_config_data(config_path)
         columns = data.get("threads", {}).get("columns", {})
         if isinstance(columns, dict):
             for key in result:
                 if key in columns and isinstance(columns[key], bool):
                     result[key] = columns[key]
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError):
         logger.debug("Could not read thread column config", exc_info=True)
     return result
 

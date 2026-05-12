@@ -371,15 +371,19 @@ class TestAgentsAliasDirectories:
     """Tests for .agents directory alias methods."""
 
     def test_user_agents_dir(self) -> None:
-        """Test user_agents_dir returns ~/.agents."""
+        """Test user_agents_dir returns the project-local agent alias dir."""
+        from code2workspace_cli.model_config import PROJECT_ROOT
+
         settings = Settings.from_environment()
-        expected = Path.home() / ".agents"
+        expected = PROJECT_ROOT / "backend" / "state" / ".agents"
         assert settings.user_agents_dir == expected
 
     def test_get_user_agent_skills_dir(self) -> None:
-        """Test get_user_agent_skills_dir returns ~/.agents/skills."""
+        """Test get_user_agent_skills_dir returns project-local skills."""
+        from code2workspace_cli.model_config import PROJECT_ROOT
+
         settings = Settings.from_environment()
-        expected = Path.home() / ".agents" / "skills"
+        expected = PROJECT_ROOT / "backend" / "state" / ".agents" / "skills"
         assert settings.get_user_agent_skills_dir() == expected
 
     def test_get_project_agent_skills_dir_with_project(self, tmp_path: Path) -> None:
@@ -407,8 +411,10 @@ class TestClaudeSkillsDirs:
     """Tests for .claude/skills/ directory methods."""
 
     def test_get_user_claude_skills_dir(self) -> None:
-        """Test get_user_claude_skills_dir returns ~/.claude/skills."""
-        expected = Path.home() / ".claude" / "skills"
+        """Test get_user_claude_skills_dir returns project-local path."""
+        from code2workspace_cli.model_config import PROJECT_ROOT
+
+        expected = PROJECT_ROOT / "backend" / "state" / ".claude" / "skills"
         assert Settings.get_user_claude_skills_dir() == expected
 
     def test_get_project_claude_skills_dir_with_project(self, tmp_path: Path) -> None:
@@ -458,55 +464,70 @@ class TestCreateModelProfileExtraction:
 
     @patch("langchain.chat_models.init_chat_model")
     def test_handles_missing_profile_gracefully(
-        self, mock_init_chat_model: Mock
+        self, mock_init_chat_model: Mock, tmp_path: Path
     ) -> None:
         """Test that missing profile attribute leaves context_limit as None."""
         mock_model = Mock(spec=["invoke"])  # No profile attribute
         mock_init_chat_model.return_value = mock_model
+        config_path = tmp_path / "agent_models.json"
+        config_path.write_text("{}", encoding="utf-8")
 
-        result = create_model("anthropic:claude-sonnet-4-5")
+        with patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path):
+            result = create_model("anthropic:claude-sonnet-4-5")
         assert result.context_limit is None
 
     @patch("langchain.chat_models.init_chat_model")
-    def test_handles_none_profile(self, mock_init_chat_model: Mock) -> None:
+    def test_handles_none_profile(self, mock_init_chat_model: Mock, tmp_path: Path) -> None:
         """Test that profile=None leaves context_limit as None."""
         mock_model = Mock()
         mock_model.profile = None
         mock_init_chat_model.return_value = mock_model
+        config_path = tmp_path / "agent_models.json"
+        config_path.write_text("{}", encoding="utf-8")
 
-        result = create_model("anthropic:claude-sonnet-4-5")
+        with patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path):
+            result = create_model("anthropic:claude-sonnet-4-5")
         assert result.context_limit is None
 
     @patch("langchain.chat_models.init_chat_model")
-    def test_handles_non_dict_profile(self, mock_init_chat_model: Mock) -> None:
+    def test_handles_non_dict_profile(self, mock_init_chat_model: Mock, tmp_path: Path) -> None:
         """Test that non-dict profile is handled safely."""
         mock_model = Mock()
         mock_model.profile = "not a dict"
         mock_init_chat_model.return_value = mock_model
+        config_path = tmp_path / "agent_models.json"
+        config_path.write_text("{}", encoding="utf-8")
 
-        result = create_model("anthropic:claude-sonnet-4-5")
+        with patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path):
+            result = create_model("anthropic:claude-sonnet-4-5")
         assert result.context_limit is None
 
     @patch("langchain.chat_models.init_chat_model")
-    def test_handles_non_int_max_input_tokens(self, mock_init_chat_model: Mock) -> None:
+    def test_handles_non_int_max_input_tokens(self, mock_init_chat_model: Mock, tmp_path: Path) -> None:
         """Test that string max_input_tokens is ignored."""
         mock_model = Mock()
         mock_model.profile = {"max_input_tokens": "200000"}  # String, not int
         mock_init_chat_model.return_value = mock_model
+        config_path = tmp_path / "agent_models.json"
+        config_path.write_text("{}", encoding="utf-8")
 
-        result = create_model("anthropic:claude-sonnet-4-5")
+        with patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path):
+            result = create_model("anthropic:claude-sonnet-4-5")
         assert result.context_limit is None
 
     @patch("langchain.chat_models.init_chat_model")
     def test_handles_missing_max_input_tokens_key(
-        self, mock_init_chat_model: Mock
+        self, mock_init_chat_model: Mock, tmp_path: Path
     ) -> None:
         """Test that profile without max_input_tokens key is handled."""
         mock_model = Mock()
         mock_model.profile = {"tool_calling": True}  # No max_input_tokens
         mock_init_chat_model.return_value = mock_model
+        config_path = tmp_path / "agent_models.json"
+        config_path.write_text("{}", encoding="utf-8")
 
-        result = create_model("anthropic:claude-sonnet-4-5")
+        with patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path):
+            result = create_model("anthropic:claude-sonnet-4-5")
         assert result.context_limit is None
 
     @patch("langchain.chat_models.init_chat_model")
@@ -547,14 +568,17 @@ class TestCreateModelProfileExtraction:
 
     @patch("langchain.chat_models.init_chat_model")
     def test_missing_modality_keys_not_flagged(
-        self, mock_init_chat_model: Mock
+        self, mock_init_chat_model: Mock, tmp_path: Path
     ) -> None:
         """Test that absent modality keys are not treated as unsupported."""
         mock_model = Mock()
         mock_model.profile = {"max_input_tokens": 128000, "tool_calling": True}
         mock_init_chat_model.return_value = mock_model
+        config_path = tmp_path / "agent_models.json"
+        config_path.write_text("{}", encoding="utf-8")
 
-        result = create_model("openai:gpt-4o")
+        with patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path):
+            result = create_model("openai:gpt-4o")
         assert result.unsupported_modalities == frozenset()
 
     @patch("langchain.chat_models.init_chat_model")
@@ -1365,9 +1389,14 @@ api_key_env = "FIREWORKS_API_KEY"
         kwargs = _get_provider_kwargs("nonexistent_provider_xyz")
         assert kwargs == {}
 
-    def test_unconfigured_providers_return_empty(self) -> None:
+    def test_unconfigured_providers_return_empty(self, tmp_path: Path) -> None:
         """Providers without config or env credentials return empty kwargs."""
-        with patch.dict("os.environ", {}, clear=True):
+        config_path = tmp_path / "agent_models.json"
+        config_path.write_text("{}", encoding="utf-8")
+        with (
+            patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
+            patch.dict("os.environ", {}, clear=True),
+        ):
             kwargs = _get_provider_kwargs("anthropic")
             assert kwargs == {}
 

@@ -155,17 +155,14 @@ def _load_theme_preference() -> str:
     Returns:
         A Textual theme name (e.g., `'langchain'`, `'langchain-light'`).
     """
-    import tomllib
-
     try:
-        from code2workspace_cli.model_config import DEFAULT_CONFIG_PATH
+        from code2workspace_cli.model_config import DEFAULT_CONFIG_PATH, _load_config_data
 
         if not DEFAULT_CONFIG_PATH.exists():
             return theme.DEFAULT_THEME
 
-        with DEFAULT_CONFIG_PATH.open("rb") as f:
-            data = tomllib.load(f)
-    except (tomllib.TOMLDecodeError, PermissionError, OSError) as exc:
+        data = _load_config_data(DEFAULT_CONFIG_PATH)
+    except (ValueError, PermissionError, OSError) as exc:
         logger.warning("Could not read config for theme preference: %s", exc)
         return theme.DEFAULT_THEME
 
@@ -181,7 +178,7 @@ def _load_theme_preference() -> str:
 
 
 def save_theme_preference(name: str) -> bool:
-    """Persist theme preference to `~/.code2workspace/config.toml`.
+    """Persist theme preference to the main config entry.
 
     Args:
         name: Textual theme name to save.
@@ -193,36 +190,23 @@ def save_theme_preference(name: str) -> bool:
         logger.warning("Refusing to save unknown theme '%s'", name)
         return False
 
-    import contextlib
-    import tempfile
-
     try:
-        import tomllib
-
-        import tomli_w
-
-        from code2workspace_cli.model_config import DEFAULT_CONFIG_PATH
+        from code2workspace_cli.model_config import (
+            DEFAULT_CONFIG_PATH,
+            _load_config_data,
+            _write_config_data,
+        )
 
         DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         if DEFAULT_CONFIG_PATH.exists():
-            with DEFAULT_CONFIG_PATH.open("rb") as f:
-                data = tomllib.load(f)
+            data = _load_config_data(DEFAULT_CONFIG_PATH)
         else:
             data = {}
 
         if "ui" not in data:
             data["ui"] = {}
         data["ui"]["theme"] = name
-
-        fd, tmp_path = tempfile.mkstemp(dir=DEFAULT_CONFIG_PATH.parent, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as f:
-                tomli_w.dump(data, f)
-            Path(tmp_path).replace(DEFAULT_CONFIG_PATH)
-        except BaseException:
-            with contextlib.suppress(OSError):
-                Path(tmp_path).unlink()
-            raise
+        _write_config_data(DEFAULT_CONFIG_PATH, data)
     except Exception:
         logger.exception("Could not save theme preference")
         return False

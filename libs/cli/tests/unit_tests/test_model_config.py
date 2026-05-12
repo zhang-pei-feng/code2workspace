@@ -2555,26 +2555,23 @@ recent = "openai:gpt-5.2"
 
         assert result == "openai:gpt-5.2"
 
-    def test_env_used_when_neither_set(self, tmp_path):
-        """Falls back to env var auto-detection when neither default nor recent set."""
-        from code2workspace_cli.config import _get_default_model_spec, settings
+    def test_missing_config_default_does_not_fall_back_to_env(self, tmp_path):
+        """Portable config requires one explicit default entrypoint."""
+        from code2workspace_cli.config import _get_default_model_spec
 
         config_path = tmp_path / "config.toml"
         config_path.write_text("")
 
         with (
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
-            patch.object(settings, "openai_api_key", None),
-            patch.object(settings, "anthropic_api_key", "test-key"),
             patch.dict(
                 "os.environ",
                 {"ANTHROPIC_API_KEY": "test-key"},
                 clear=False,
             ),
         ):
-            result = _get_default_model_spec()
-
-        assert result == "anthropic:claude-sonnet-4-6"
+            with pytest.raises(ModelConfigError, match="agent_models.json"):
+                _get_default_model_spec()
 
 
 class TestIsWarningSuppressed:
@@ -2772,9 +2769,12 @@ class TestGetModelProfiles:
             msg = "not installed"
             raise ImportError(msg)
 
-        with patch(
-            "code2workspace_cli.model_config._load_provider_profiles",
-            side_effect=mock_load,
+        with (
+            patch(
+                "code2workspace_cli.model_config._load_provider_profiles",
+                side_effect=mock_load,
+            ),
+            patch.object(model_config, "DEFAULT_CONFIG_PATH", Path("/tmp/nonexistent-agent-models.json")),
         ):
             profiles = get_model_profiles()
 

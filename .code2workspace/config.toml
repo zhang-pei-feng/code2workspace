@@ -1,18 +1,4 @@
-[models]
-default = "openai:gpt-5.4"
-recent = "openai:gpt-5.4"
-
-[models.providers.openai]
-models = ["gpt-5.4", "gpt-5.5"]
-api_key_env = "OPENAI_API_KEY"
-base_url = "http://8.221.123.105:8080/v1"
-
-[models.providers.openai.params]
-reasoning_effort = "medium"
-use_responses_api = false
-
-[models.providers.openai.profile]
-max_input_tokens = 1000000
-
-[warnings]
-suppress = ["tavily"]
+# Model configuration has moved to:
+#   backend/config/agent_models.json
+#
+# The main agent no longer loads model settings from this file or from .env.

@@ -22,8 +22,8 @@ from code2workspace_cli._version import __version__
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Lazy bootstrap: dotenv loading, LANGSMITH_PROJECT override, and start-path
-# detection are deferred until first access of `settings` (via module
+# Lazy bootstrap: LANGSMITH_PROJECT override and start-path detection are
+# deferred until first access of `settings` (via module
 # `__getattr__`).  This avoids disk I/O and path traversal during import for
 # callers that never touch `settings` (e.g. `code2workspace --help`).
 # ---------------------------------------------------------------------------
@@ -70,95 +70,47 @@ def _find_dotenv_from_start_path(start_path: Path) -> Path | None:
     return None
 
 
-# Global user-level .env (~/.code2workspace/.env); sentinel when Path.home() fails.
-try:
-    _GLOBAL_DOTENV_PATH = Path.home() / ".code2workspace" / ".env"
-except RuntimeError:
-    _GLOBAL_DOTENV_PATH = Path("/nonexistent/.code2workspace/.env")
+_GLOBAL_DOTENV_PATH = Path("/nonexistent/.code2workspace/.env")
+"""Compatibility sentinel kept for tests; global dotenv loading is disabled."""
 
 
 def _load_dotenv(*, start_path: Path | None = None) -> bool:
-    """Load environment variables from project and global `.env` files.
-
-    Loads in order (first write wins, `override=False`):
-
-    1. Project/CWD `.env` — project-specific values
-    2. `~/.code2workspace/.env` — global user defaults
-
-    Both layers use `override=False` (the python-dotenv default) so that
-    shell-exported variables always take precedence over dotenv files.
-    Because project loads first, the effective precedence is:
-
-    ```text
-    shell env (incl. inline `VAR=x`)  >  project `.env`  >  global `.env`
-    ```
-
-    !!! note
-
-        To scope credentials to the CLI without colliding with
-        identically-named shell exports, use the `CODE2WORKSPACE_CLI_` env-var
-        prefix (see `resolve_env_var` in `code2workspace_cli.model_config`).
+    """Load environment variables from the nearest project `.env`.
 
     Args:
         start_path: Directory to use for project `.env` discovery.
 
     Returns:
-        `True` when at least one dotenv file was loaded, `False` otherwise.
+        `True` when one project dotenv file was loaded, `False` otherwise.
     """
     import dotenv
 
-    loaded = False
-
-    # 1. Project/CWD .env — loads first so project values are set before the
-    # global file, which can only fill in vars not already present.
-    dotenv_path: Path | str | None = None
+    dotenv_path: Path | None = None
     try:
         if start_path is None:
-            loaded = dotenv.load_dotenv(override=False) or loaded
-        else:
-            dotenv_path = _find_dotenv_from_start_path(start_path)
-            if dotenv_path is not None:
-                loaded = (
-                    dotenv.load_dotenv(dotenv_path=dotenv_path, override=False)
-                    or loaded
-                )
+            return dotenv.load_dotenv(override=False)
+        dotenv_path = _find_dotenv_from_start_path(start_path)
+        if dotenv_path is None:
+            return False
+        return bool(dotenv.load_dotenv(dotenv_path=dotenv_path, override=False))
     except (OSError, ValueError):
         logger.warning(
             "Could not read project dotenv at %s; project env vars will not be loaded",
             dotenv_path or start_path or "cwd",
             exc_info=True,
         )
-
-    # 2. Global (~/.code2workspace/.env) — fills in any vars not already set by
-    # the shell or the project dotenv.
-    # try/except wraps both is_file() and load_dotenv() to cover the TOCTOU
-    # window where the file can vanish between stat and open.
-    try:
-        if _GLOBAL_DOTENV_PATH.is_file() and dotenv.load_dotenv(
-            dotenv_path=_GLOBAL_DOTENV_PATH, override=False
-        ):
-            loaded = True
-            logger.debug("Loaded global dotenv: %s", _GLOBAL_DOTENV_PATH)
-    except (OSError, ValueError):
-        logger.warning(
-            "Could not read global dotenv at %s; global defaults will not be applied",
-            _GLOBAL_DOTENV_PATH,
-            exc_info=True,
-        )
-
-    return loaded
+        return False
 
 
 def _ensure_bootstrap() -> None:
-    """Run one-time bootstrap: dotenv loading and `LANGSMITH_PROJECT` override.
+    """Run one-time bootstrap for project context and trace metadata.
 
     Idempotent and thread-safe — subsequent calls are no-ops. Called
     automatically by `_get_settings()` when `settings` is first accessed.
 
-    The flag is set in `finally` so that partial failures (e.g. a
-    malformed `.env`) still mark bootstrap as done — preventing infinite retry
-    loops. Exceptions are caught and logged at ERROR level; the CLI proceeds
-    with the environment as-is.
+    The flag is set in `finally` so that partial failures still mark bootstrap
+    as done and prevent infinite retry loops. Exceptions are caught and logged
+    at ERROR level; the CLI proceeds with the environment as-is.
     """
     global _bootstrap_done, _bootstrap_start_path, _original_langsmith_project  # noqa: PLW0603
 
@@ -224,8 +176,8 @@ def _ensure_bootstrap() -> None:
                     )
         except Exception:
             logger.exception(
-                "Bootstrap failed; .env values and LANGSMITH_PROJECT override "
-                "may be missing. The CLI will proceed with environment as-is.",
+                "Bootstrap failed; LANGSMITH_PROJECT override may be missing. "
+                "The CLI will proceed with environment as-is.",
             )
         finally:
             _bootstrap_done = True
@@ -770,22 +722,22 @@ def parse_shell_allow_list(allow_list_str: str | None) -> list[str] | None:
 
 
 def _read_config_toml_skills_dirs() -> list[str] | None:
-    """Read `[skills].extra_allowed_dirs` from `~/.code2workspace/config.toml`.
+    """Read `[skills].extra_allowed_dirs` from the project-local config.
 
     Returns:
         List of path strings, or `None` if the key is absent or the file
             cannot be read.
     """
+    import json
     import tomllib
 
-    from code2workspace_cli.model_config import DEFAULT_CONFIG_PATH
+    from code2workspace_cli.model_config import DEFAULT_CONFIG_PATH, _load_config_data
 
     try:
-        with DEFAULT_CONFIG_PATH.open("rb") as f:
-            data = tomllib.load(f)
+        data = _load_config_data(DEFAULT_CONFIG_PATH)
     except FileNotFoundError:
         return None
-    except (PermissionError, OSError, tomllib.TOMLDecodeError):
+    except (PermissionError, OSError, tomllib.TOMLDecodeError, json.JSONDecodeError):
         logger.warning(
             "Could not read skills config from %s",
             DEFAULT_CONFIG_PATH,
@@ -1151,12 +1103,14 @@ class Settings:
 
     @property
     def user_code2workspace_dir(self) -> Path:
-        """Get the base user-level .code2workspace directory.
+        """Get the project-local agent state directory.
 
         Returns:
-            Path to ~/.code2workspace
+            Path to backend/state/.code2workspace
         """
-        return Path.home() / ".code2workspace"
+        from code2workspace_cli.model_config import PROJECT_ROOT
+
+        return PROJECT_ROOT / "backend" / "state" / ".code2workspace"
 
     @staticmethod
     def get_user_agent_md_path(agent_name: str) -> Path:
@@ -1170,7 +1124,16 @@ class Settings:
         Returns:
             Path to ~/.code2workspace/{agent_name}/AGENTS.md
         """
-        return Path.home() / ".code2workspace" / agent_name / "AGENTS.md"
+        from code2workspace_cli.model_config import PROJECT_ROOT
+
+        return (
+            PROJECT_ROOT
+            / "backend"
+            / "state"
+            / ".code2workspace"
+            / agent_name
+            / "AGENTS.md"
+        )
 
     def get_project_agent_md_path(self) -> list[Path]:
         """Get project-level AGENTS.md paths.
@@ -1212,7 +1175,7 @@ class Settings:
             agent_name: Name of the agent
 
         Returns:
-            Path to ~/.code2workspace/{agent_name}
+            Path to backend/state/.code2workspace/{agent_name}
 
         Raises:
             ValueError: If the agent name contains invalid characters.
@@ -1223,7 +1186,7 @@ class Settings:
                 "contain letters, numbers, hyphens, underscores, and spaces."
             )
             raise ValueError(msg)
-        return Path.home() / ".code2workspace" / agent_name
+        return self.user_code2workspace_dir / agent_name
 
     def ensure_agent_dir(self, agent_name: str) -> Path:
         """Ensure the global agent directory exists and return its path.
@@ -1232,7 +1195,7 @@ class Settings:
             agent_name: Name of the agent
 
         Returns:
-            Path to ~/.code2workspace/{agent_name}
+            Path to backend/state/.code2workspace/{agent_name}
 
         Raises:
             ValueError: If the agent name contains invalid characters.
@@ -1254,7 +1217,7 @@ class Settings:
             agent_name: Name of the agent
 
         Returns:
-            Path to ~/.code2workspace/{agent_name}/skills/
+            Path to backend/state/.code2workspace/{agent_name}/skills/
         """
         return self.get_agent_dir(agent_name) / "skills"
 
@@ -1265,7 +1228,7 @@ class Settings:
             agent_name: Name of the agent
 
         Returns:
-            Path to ~/.code2workspace/{agent_name}/skills/
+            Path to backend/state/.code2workspace/{agent_name}/skills/
         """
         skills_dir = self.get_user_skills_dir(agent_name)
         skills_dir.mkdir(parents=True, exist_ok=True)
@@ -1302,7 +1265,7 @@ class Settings:
             agent_name: Name of the CLI agent (e.g., "code2workspace")
 
         Returns:
-            Path to ~/.code2workspace/{agent_name}/agents/
+            Path to backend/state/.code2workspace/{agent_name}/agents/
         """
         return self.get_agent_dir(agent_name) / "agents"
 
@@ -1318,20 +1281,22 @@ class Settings:
 
     @property
     def user_agents_dir(self) -> Path:
-        """Get the base user-level `.agents` directory (`~/.agents`).
+        """Get the project-local generic `.agents` directory.
 
         Returns:
-            Path to `~/.agents`
+            Path to `backend/state/.agents`
         """
-        return Path.home() / ".agents"
+        from code2workspace_cli.model_config import PROJECT_ROOT
+
+        return PROJECT_ROOT / "backend" / "state" / ".agents"
 
     def get_user_agent_skills_dir(self) -> Path:
-        """Get user-level `~/.agents/skills/` directory.
+        """Get project-local `backend/state/.agents/skills/` directory.
 
         This is a generic alias path for skills that is tool-agnostic.
 
         Returns:
-            Path to `~/.agents/skills/`
+            Path to `backend/state/.agents/skills/`
         """
         return self.user_agents_dir / "skills"
 
@@ -1349,15 +1314,17 @@ class Settings:
 
     @staticmethod
     def get_user_claude_skills_dir() -> Path:
-        """Get user-level `~/.claude/skills/` directory (experimental).
+        """Get project-local Claude-compatible skills directory (experimental).
 
         Convenience bridge for cross-tool skill sharing with Claude Code.
         This is experimental and may be removed.
 
         Returns:
-            Path to `~/.claude/skills/`
+            Path to `backend/state/.claude/skills/`
         """
-        return Path.home() / ".claude" / "skills"
+        from code2workspace_cli.model_config import PROJECT_ROOT
+
+        return PROJECT_ROOT / "backend" / "state" / ".claude" / "skills"
 
     def get_project_claude_skills_dir(self) -> Path | None:
         """Get project-level `.claude/skills/` directory (experimental).
@@ -1811,19 +1778,13 @@ def detect_provider(model_name: str) -> str | None:
 
 
 def _get_default_model_spec() -> str:
-    """Get default model specification based on available credentials.
-
-    Checks in order:
-
-    1. `[models].default` in config file (user's intentional preference).
-    2. `[models].recent` in config file (last `/model` switch).
-    3. Auto-detection based on available API credentials.
+    """Get default model specification from the project-local config.
 
     Returns:
         Model specification in provider:model format.
 
     Raises:
-        ModelConfigError: If no credentials are configured.
+        ModelConfigError: If no default model is configured.
     """
     from code2workspace_cli.model_config import ModelConfig, ModelConfigError
 
@@ -1834,22 +1795,9 @@ def _get_default_model_spec() -> str:
     if config.recent_model:
         return config.recent_model
 
-    s = _get_settings()
-    if s.has_openai:
-        return "openai:gpt-5.2"
-    if s.has_anthropic:
-        return "anthropic:claude-sonnet-4-6"
-    if s.has_google:
-        return "google_genai:gemini-3.1-pro-preview"
-    if s.has_vertex_ai:
-        return "google_vertexai:gemini-3.1-pro-preview"
-    if s.has_nvidia:
-        return "nvidia:nvidia/nemotron-3-super-120b-a12b"
-
     msg = (
-        "No credentials configured. Please set one of: "
-        "ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, "
-        "GOOGLE_CLOUD_PROJECT, or NVIDIA_API_KEY"
+        "No default model configured. Edit backend/config/agent_models.json "
+        "and set the `default` field, for example `openai:gpt-5.4`."
     )
     raise ModelConfigError(msg)
 
@@ -1925,19 +1873,23 @@ def _get_provider_kwargs(
         result["base_url"] = base_url
     from code2workspace_cli.model_config import PROVIDER_API_KEY_ENV, resolve_env_var
 
-    api_key_env = config.get_api_key_env(provider)
-    if not api_key_env:
-        api_key_env = PROVIDER_API_KEY_ENV.get(provider)
+    api_key = config.get_api_key(provider)
+    if api_key:
+        result["api_key"] = api_key
+    else:
+        api_key_env = config.get_api_key_env(provider)
+        if not api_key_env and provider not in config.providers:
+            api_key_env = PROVIDER_API_KEY_ENV.get(provider)
+            if api_key_env:
+                logger.debug(
+                    "No api_key_env in project config for '%s';"
+                    " using hardcoded provider env var",
+                    provider,
+                )
         if api_key_env:
-            logger.debug(
-                "No api_key_env in config.toml for '%s';"
-                " using hardcoded provider env var",
-                provider,
-            )
-    if api_key_env:
-        api_key = resolve_env_var(api_key_env)
-        if api_key:
-            result["api_key"] = api_key
+            api_key = resolve_env_var(api_key_env)
+            if api_key:
+                result["api_key"] = api_key
 
     if provider == "openrouter":
         from code2workspace.profiles._openrouter import (
@@ -2198,8 +2150,10 @@ def create_model(
         >>> model = create_model("anthropic:claude-sonnet-4-5")
         >>> model = create_model("openai:gpt-4o")
         >>> model = create_model("gpt-4o")  # Auto-detects openai
-        >>> model = create_model()  # Uses environment defaults
+        >>> model = create_model()  # Uses backend/config/agent_models.json
     """
+    _ensure_bootstrap()
+
     from code2workspace_cli.model_config import (
         IMPLICIT_AUTH_PROVIDERS,
         ModelConfig,
@@ -2245,10 +2199,17 @@ def create_model(
         cred_status = has_provider_credentials(provider)
         if cred_status is False:
             env_var = get_credential_env_var(provider) or f"<{provider} API key>"
-            msg = (
-                f"No credentials found for provider '{provider}'. "
-                f"Please set the {env_var} environment variable."
-            )
+            if provider in ModelConfig.load().providers:
+                msg = (
+                    f"No credentials found for provider '{provider}'. "
+                    "Edit backend/config/agent_models.json and set "
+                    f"`providers.{provider}.api_key`."
+                )
+            else:
+                msg = (
+                    f"No credentials found for provider '{provider}'. "
+                    f"Please set the {env_var} environment variable."
+                )
             raise ModelConfigError(msg)
 
     # Provider-specific kwargs (with per-model overrides)

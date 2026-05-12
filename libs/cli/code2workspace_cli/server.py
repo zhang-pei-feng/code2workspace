@@ -276,6 +276,9 @@ def _build_server_env() -> dict[str, str]:
         "LANGSMITH_TENANT_ID",
     ):
         env.pop(key, None)
+    for key in ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2"):
+        if env.get(key) == "":
+            env.pop(key, None)
     return env
 
 

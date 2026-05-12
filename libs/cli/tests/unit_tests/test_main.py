@@ -361,8 +361,8 @@ class TestCheckOptionalTools:
 
         assert missing == ["ripgrep"]
 
-    def test_returns_tavily_when_key_missing(self) -> None:
-        """Returns `'tavily'` when TAVILY_API_KEY is not set."""
+    def test_omits_tavily_when_key_missing_in_project_config_build(self) -> None:
+        """Project-config build does not warn about optional Tavily config."""
         with (
             patch("code2workspace_cli.main.shutil.which", return_value="/usr/bin/rg"),
             patch(
@@ -372,7 +372,7 @@ class TestCheckOptionalTools:
         ):
             missing = check_optional_tools()
 
-        assert missing == ["tavily"]
+        assert missing == []
 
     def test_omits_tavily_when_key_present(self) -> None:
         """Does not include `'tavily'` when TAVILY_API_KEY is set."""
@@ -652,10 +652,10 @@ class TestFormatToolWarnings:
         assert "/notifications" in msg
 
     def test_cli_format_contains_config_hint(self) -> None:
-        """CLI format references config.toml for suppression."""
+        """CLI format references project-local JSON config for suppression."""
         msg = format_tool_warning_cli("ripgrep")
-        assert "config.toml" in msg
-        assert 'suppress = \\["ripgrep"]' in msg
+        assert "backend/config/agent_models.json" in msg
+        assert '"warnings": {"suppress": ["ripgrep"]}' in msg
 
     def test_unknown_tool_fallback(self) -> None:
         """Unknown tools get a generic message."""
@@ -681,10 +681,10 @@ class TestFormatToolWarnings:
         assert "/notifications" in msg
 
     def test_cli_format_tavily_contains_config_hint(self) -> None:
-        """CLI tavily format references config.toml for suppression."""
+        """CLI tavily format references project-local JSON config."""
         msg = format_tool_warning_cli("tavily")
-        assert "config.toml" in msg
-        assert 'suppress = \\["tavily"]' in msg
+        assert "backend/config/agent_models.json" in msg
+        assert '"warnings": {"suppress": ["tavily"]}' in msg
 
 
 class TestRunTextualCliAsyncModelConfigError:

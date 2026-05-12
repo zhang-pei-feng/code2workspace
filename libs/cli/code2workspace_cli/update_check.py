@@ -359,23 +359,18 @@ def is_auto_update_enabled() -> bool:
 
 
 def set_auto_update(enabled: bool) -> None:
-    """Persist the auto-update preference to `config.toml`.
+    """Persist the auto-update preference to the main config entry.
 
     Writes `[update].auto_update` so the setting survives across sessions.
 
     Args:
         enabled: Whether auto-update should be enabled.
     """
-    import contextlib
-    import tempfile
-    from pathlib import Path
-
-    import tomli_w
+    from code2workspace_cli.model_config import _load_config_data, _write_config_data
 
     DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     if DEFAULT_CONFIG_PATH.exists():
-        with DEFAULT_CONFIG_PATH.open("rb") as f:
-            data = tomllib.load(f)
+        data = _load_config_data(DEFAULT_CONFIG_PATH)
     else:
         data = {}
 
@@ -383,31 +378,24 @@ def set_auto_update(enabled: bool) -> None:
         data["update"] = {}
     data["update"]["auto_update"] = enabled
 
-    fd, tmp_path = tempfile.mkstemp(dir=DEFAULT_CONFIG_PATH.parent, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            tomli_w.dump(data, f)
-        Path(tmp_path).replace(DEFAULT_CONFIG_PATH)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            Path(tmp_path).unlink()
-        raise
+    _write_config_data(DEFAULT_CONFIG_PATH, data)
 
 
 def _read_update_config() -> dict[str, bool]:
-    """Read `[update]` section from `config.toml`.
+    """Read `[update]` section from the main config entry.
 
     Returns:
         A dict of boolean config values, empty on missing/unreadable file.
     """
     try:
+        from code2workspace_cli.model_config import _load_config_data
+
         if not DEFAULT_CONFIG_PATH.exists():
             return {}
-        with DEFAULT_CONFIG_PATH.open("rb") as f:
-            data = tomllib.load(f)
+        data = _load_config_data(DEFAULT_CONFIG_PATH)
         section = data.get("update", {})
         return {k: v for k, v in section.items() if isinstance(v, bool)}
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError):
         logger.warning("Could not read [update] config — using defaults", exc_info=True)
         return {}
 

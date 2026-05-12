@@ -78,7 +78,8 @@ _SUPPRESS_HINT_TUI = "Use /notifications to manage warnings."
 """Suppression hint for TUI toasts, referencing the in-app settings screen."""
 
 _SUPPRESS_HINT_CLI = (
-    'To suppress, edit ~/.code2workspace/config.toml:\n\\[warnings]\nsuppress = \\["<key>"]'
+    'To suppress, edit backend/config/agent_models.json:\n'
+    '"warnings": {"suppress": ["<key>"]}'
 )
 """Suppression hint for non-interactive CLI output.
 
@@ -145,11 +146,6 @@ def check_optional_tools(*, config_path: Path | None = None) -> list[str]:
     missing: list[str] = []
     if shutil.which("rg") is None and not is_warning_suppressed("ripgrep", config_path):
         missing.append("ripgrep")
-
-    from code2workspace_cli.config import settings
-
-    if not settings.has_tavily and not is_warning_suppressed("tavily", config_path):
-        missing.append("tavily")
 
     return missing
 
@@ -1291,7 +1287,7 @@ def cli_main() -> None:
             else:
                 console.print(
                     "[bold red]Error:[/bold red] Could not clear default model. "
-                    "Check permissions for ~/.code2workspace/"
+                    "Check permissions for backend/config/agent_models.json"
                 )
                 sys.exit(1)
             sys.exit(0)
@@ -1326,7 +1322,7 @@ def cli_main() -> None:
             else:
                 console.print(
                     "[bold red]Error:[/bold red] Could not save default model. "
-                    "Check permissions for ~/.code2workspace/"
+                    "Check permissions for backend/config/agent_models.json"
                 )
                 sys.exit(1)
             sys.exit(0)

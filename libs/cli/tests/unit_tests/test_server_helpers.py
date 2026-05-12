@@ -63,6 +63,34 @@ class TestBuildServerEnv:
         env = _build_server_env()
         assert env["PYTHONDONTWRITEBYTECODE"] == "1"
 
+    def test_strips_empty_langsmith_tracing_flags(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "LANGSMITH_TRACING": "",
+                "LANGCHAIN_TRACING_V2": "",
+                "LANGSMITH_API_KEY": "",
+            },
+        ):
+            env = _build_server_env()
+
+        assert "LANGSMITH_TRACING" not in env
+        assert "LANGCHAIN_TRACING_V2" not in env
+        assert env["LANGSMITH_API_KEY"] == ""
+
+    def test_preserves_nonempty_langsmith_tracing_flags(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "LANGSMITH_TRACING": "false",
+                "LANGCHAIN_TRACING_V2": "true",
+            },
+        ):
+            env = _build_server_env()
+
+        assert env["LANGSMITH_TRACING"] == "false"
+        assert env["LANGCHAIN_TRACING_V2"] == "true"
+
 
 class TestScopedEnvOverrides:
     def test_overrides_applied_inside_context(self) -> None:

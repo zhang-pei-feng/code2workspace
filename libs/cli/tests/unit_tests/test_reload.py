@@ -156,44 +156,27 @@ class TestReloadFromEnvironment:
     def test_calls_dotenv_load(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Reload should anchor dotenv loading to the explicit start path."""
+        """Reload no longer loads dotenv files for main model config."""
         settings = Settings.from_environment(start_path=tmp_path)
         mock_load = MagicMock(return_value=False)
-        env_file = tmp_path / ".env"
-        env_file.write_text("OPENAI_API_KEY=sk-test\n")
         monkeypatch.setattr("dotenv.load_dotenv", mock_load)
 
         settings.reload_from_environment(start_path=tmp_path)
 
-        # Project .env loads first (before global) with override=False.
-        mock_load.assert_any_call(dotenv_path=env_file, override=False)
+        mock_load.assert_not_called()
 
     def test_loads_global_dotenv(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Reload should load project dotenv first, then global."""
+        """Reload no longer loads project/global dotenv files."""
         settings = Settings.from_environment(start_path=tmp_path)
-
-        global_env = tmp_path / "global" / ".env"
-        global_env.parent.mkdir()
-        global_env.write_text("OPENAI_API_KEY=sk-global\n")
-        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", global_env)
-
-        project_env = tmp_path / ".env"
-        project_env.write_text("ANTHROPIC_API_KEY=sk-project\n")
 
         mock_load = MagicMock(return_value=True)
         monkeypatch.setattr("dotenv.load_dotenv", mock_load)
 
         settings.reload_from_environment(start_path=tmp_path)
 
-        assert mock_load.call_count == 2
-        mock_load.assert_has_calls(
-            [
-                call(dotenv_path=project_env, override=False),
-                call(dotenv_path=global_env, override=False),
-            ]
-        )
+        assert mock_load.call_count == 0
 
     def test_global_dotenv_oserror_does_not_crash(
         self,
@@ -201,17 +184,8 @@ class TestReloadFromEnvironment:
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """OSError reading global `.env` should log a warning and continue."""
+        """Global dotenv errors are irrelevant because dotenv loading is disabled."""
         settings = Settings.from_environment(start_path=tmp_path)
-
-        broken = MagicMock()
-        msg = "permission denied"
-        broken.is_file.side_effect = OSError(msg)
-        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", broken)
-
-        # Should not raise — project .env still loads
-        project_env = tmp_path / ".env"
-        project_env.write_text("OPENAI_API_KEY=sk-fallback\n")
 
         mock_load = MagicMock(return_value=True)
         monkeypatch.setattr("dotenv.load_dotenv", mock_load)
@@ -219,36 +193,16 @@ class TestReloadFromEnvironment:
         with caplog.at_level(logging.WARNING, logger="code2workspace_cli.config"):
             settings.reload_from_environment(start_path=tmp_path)
 
-        assert any("Could not read global dotenv" in r.message for r in caplog.records)
-        # Project .env loads first; global failed via is_file OSError
-        mock_load.assert_called_once_with(dotenv_path=project_env, override=False)
+        assert not any("Could not read global dotenv" in r.message for r in caplog.records)
+        mock_load.assert_not_called()
 
     def test_project_dotenv_beats_global(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Project `.env` should always beat global `.env`."""
+        """Dotenv loading is disabled for the project-config build."""
         from code2workspace_cli.config import _load_dotenv
 
-        global_dir = tmp_path / "global"
-        global_dir.mkdir()
-        global_env = global_dir / ".env"
-        global_env.write_text("TEST_PRECEDENCE_KEY=global-value\n")
-        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", global_env)
-
-        project_env = tmp_path / ".env"
-        project_env.write_text("TEST_PRECEDENCE_KEY=project-value\n")
-
-        # Use real dotenv (not the stub) to test actual precedence
-        monkeypatch.setattr(
-            "dotenv.load_dotenv",
-            _real_load_dotenv,
-        )
-        monkeypatch.delenv("TEST_PRECEDENCE_KEY", raising=False)
-
-        _load_dotenv(start_path=tmp_path)
-
-        assert os.environ.get("TEST_PRECEDENCE_KEY") == "project-value"
-        monkeypatch.delenv("TEST_PRECEDENCE_KEY", raising=False)
+        assert _load_dotenv(start_path=tmp_path) is False
 
     def test_shell_env_beats_project_dotenv(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -310,33 +264,12 @@ class TestReloadFromEnvironment:
     def test_global_only_no_project_dotenv(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Global `.env` values should apply when no project `.env` exists."""
+        """Global dotenv is ignored when dotenv loading is disabled."""
         from code2workspace_cli.config import _load_dotenv
-
-        global_dir = tmp_path / "global"
-        global_dir.mkdir()
-        global_env = global_dir / ".env"
-        global_env.write_text("TEST_GLOBAL_ONLY=global-value\n")
-        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", global_env)
-
-        monkeypatch.setattr(
-            "dotenv.load_dotenv",
-            _real_load_dotenv,
-        )
-        monkeypatch.delenv("TEST_GLOBAL_ONLY", raising=False)
-
-        # No .env in isolated dir; global is the only source
-        monkeypatch.setattr(
-            "code2workspace_cli.config._find_dotenv_from_start_path",
-            lambda _: None,
-        )
         isolated = tmp_path / "no_project_env"
         isolated.mkdir()
-        result = _load_dotenv(start_path=isolated)
 
-        assert result is True
-        assert os.environ.get("TEST_GLOBAL_ONLY") == "global-value"
-        monkeypatch.delenv("TEST_GLOBAL_ONLY", raising=False)
+        assert _load_dotenv(start_path=isolated) is False
 
     def test_global_load_dotenv_raises_oserror(
         self,
@@ -344,35 +277,16 @@ class TestReloadFromEnvironment:
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """OSError from `dotenv.load_dotenv` itself (not `is_file`) is caught."""
+        """Reload should not call dotenv at all in the project-config build."""
         settings = Settings.from_environment(start_path=tmp_path)
-
-        global_env = tmp_path / "global" / ".env"
-        global_env.parent.mkdir()
-        global_env.write_text("KEY=val\n")
-        monkeypatch.setattr("code2workspace_cli.config._GLOBAL_DOTENV_PATH", global_env)
-
-        project_env = tmp_path / ".env"
-        project_env.write_text("OPENAI_API_KEY=sk-ok\n")
-
-        call_count = 0
-
-        def _fail_on_global(*_args: object, **_kwargs: object) -> bool:
-            nonlocal call_count
-            call_count += 1
-            # Project loads first; global is the second call
-            if call_count == 2:
-                msg = "read error"
-                raise OSError(msg)
-            return True
-
-        monkeypatch.setattr("dotenv.load_dotenv", _fail_on_global)
+        mock_load = MagicMock(side_effect=OSError("read error"))
+        monkeypatch.setattr("dotenv.load_dotenv", mock_load)
 
         with caplog.at_level(logging.WARNING, logger="code2workspace_cli.config"):
             settings.reload_from_environment(start_path=tmp_path)
 
-        assert call_count == 2
-        assert any("Could not read global dotenv" in r.message for r in caplog.records)
+        assert mock_load.call_count == 0
+        assert not any("Could not read global dotenv" in r.message for r in caplog.records)
 
     def test_multiple_simultaneous_changes(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
