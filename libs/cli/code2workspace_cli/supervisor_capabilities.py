@@ -125,6 +125,7 @@ _NODE_GUIDANCE_DEFAULTS: dict[str, tuple[str, ...]] = {
     ),
     "compose_report": (
         "Compose only from lane evidence already gathered or explicitly note which lanes remain incomplete.",
+        "For report and assessment deliverables, include a compact evidence-source note that names the main source categories and distinguishes direct evidence from inferred or proxy evidence.",
     ),
     "init_generic": (
         "Keep this node narrow: define the generic delivery contract, pick 2-3 bounded worker units, and record a one-layer parallel batch plan only.",
@@ -132,9 +133,11 @@ _NODE_GUIDANCE_DEFAULTS: dict[str, tuple[str, ...]] = {
     ),
     "compose_generic": (
         "Compose a normal long-form user-facing answer from worker outputs; avoid turning the result into a formal report artifact unless the user explicitly asked for one.",
+        "For judgment or assessment-style answers, briefly state where the evidence came from and which parts are direct evidence, inferred evidence, or unresolved gaps.",
     ),
     "worker_context": (
         "Focus on constraints, evidence, repository facts, or source-backed context needed for the generic task.",
+        "When gathering evidence for a judgment task, record source categories, source dates when relevant, and whether each source directly supports the claim or only provides proxy context.",
     ),
     "worker_solution": (
         "Focus on implementation, execution, repair, or solution design needed for the generic task.",

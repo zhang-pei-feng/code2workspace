@@ -60,7 +60,10 @@ from code2workspace_cli.local_context import (
 from code2workspace_cli.project_utils import ProjectContext, get_server_project_context
 from code2workspace_cli.project_utils import find_reference_project_root
 from code2workspace_cli.subagents import list_subagents
-from code2workspace_cli.supervisor_runtime import build_supervisor_enabled_agent
+from code2workspace_cli.supervisor_runtime import (
+    SupervisorWorkerSubagent,
+    build_supervisor_enabled_agent,
+)
 from code2workspace_cli.unicode_security import (
     check_url_safety,
     detect_dangerous_unicode,
@@ -74,6 +77,27 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_AGENT_NAME = "agent"
 """The default agent name used when no `-a` flag is provided."""
+
+DEFAULT_SUPERVISOR_REPORT_MODEL = "openai_paid:gpt-5.4"
+"""Default model used for report-specific supervisor workers."""
+
+SUPERVISOR_REPORT_MODEL_ENV = "CODE2WORKSPACE_SUPERVISOR_REPORT_MODEL"
+SUPERVISOR_REPORT_NODE_MODEL_ENVS: dict[str, str] = {
+    "init_report": "CODE2WORKSPACE_SUPERVISOR_REPORT_INIT_MODEL",
+    "monitoring_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_MONITORING_MODEL",
+    "local_data_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_LOCAL_DATA_MODEL",
+    "literature_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_LITERATURE_MODEL",
+    "compose_report": "CODE2WORKSPACE_SUPERVISOR_REPORT_COMPOSE_MODEL",
+    "summarize": "CODE2WORKSPACE_SUPERVISOR_REPORT_SUMMARIZE_MODEL",
+    "final_response": "CODE2WORKSPACE_SUPERVISOR_REPORT_FINAL_RESPONSE_MODEL",
+}
+SUPERVISOR_REPORT_RETRY_NODE_IDS: dict[str, tuple[str, ...]] = {
+    "init_report": ("retry_init_report",),
+    "monitoring_lane": ("retry_monitoring_lane",),
+    "local_data_lane": ("retry_local_data_lane",),
+    "literature_lane": ("retry_literature_lane",),
+    "compose_report": ("retry_compose_report",),
+}
 
 REQUIRE_COMPACT_TOOL_APPROVAL: bool = True
 """When `True`, `compact_conversation` requires HITL approval like other gated tools."""
@@ -903,6 +927,26 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
     return interrupt_map
 
 
+def _read_report_worker_model_specs(
+    environ: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Read report worker model overrides from environment variables."""
+
+    env = os.environ if environ is None else environ
+    default_model = (
+        env.get(SUPERVISOR_REPORT_MODEL_ENV, "").strip()
+        or DEFAULT_SUPERVISOR_REPORT_MODEL
+    )
+    model_specs: dict[str, str] = {}
+    for node_id, env_name in SUPERVISOR_REPORT_NODE_MODEL_ENVS.items():
+        model_specs[node_id] = env.get(env_name, "").strip() or default_model
+    return model_specs
+
+
+def _report_worker_node_ids(node_id: str) -> frozenset[str]:
+    return frozenset((node_id, *SUPERVISOR_REPORT_RETRY_NODE_IDS.get(node_id, ())))
+
+
 def create_cli_agent(
     model: str | BaseChatModel,
     assistant_id: str,
@@ -1300,9 +1344,10 @@ def create_cli_agent(
     def _build_workspace_agent(
         *,
         middleware_stack: Sequence[AgentMiddleware],
+        model_override: str | BaseChatModel | None = None,
     ):
         return create_workspace_agent(
-            model=model,
+            model=model_override or model,
             system_prompt=system_prompt,
             tools=tools,
             backend=composite_backend,
@@ -1314,6 +1359,24 @@ def create_cli_agent(
 
     base_agent = _build_workspace_agent(middleware_stack=agent_middleware)
     supervisor_worker_agent = _build_workspace_agent(middleware_stack=agent_middleware)
+    report_worker_model_specs = _read_report_worker_model_specs()
+    report_worker_agents_by_model: dict[str, Any] = {}
+    report_worker_subagents: list[SupervisorWorkerSubagent] = []
+    for node_id, model_spec in report_worker_model_specs.items():
+        report_worker_agent = report_worker_agents_by_model.get(model_spec)
+        if report_worker_agent is None:
+            report_worker_agent = _build_workspace_agent(
+                middleware_stack=agent_middleware,
+                model_override=model_spec,
+            )
+            report_worker_agents_by_model[model_spec] = report_worker_agent
+        report_worker_subagents.append(
+            SupervisorWorkerSubagent(
+                name=f"report:{node_id}",
+                runnable=report_worker_agent,
+                node_ids=_report_worker_node_ids(node_id),
+            )
+        )
 
     # Plain chat mode keeps specialized skills and only omits orchestration
     # skill directories when the source tree is categorized.
@@ -1339,6 +1402,7 @@ def create_cli_agent(
         fallback_agent=fallback_agent,
         workspace_root=root_dir,
         worker_agent=supervisor_worker_agent,
+        worker_subagents=report_worker_subagents,
         classifier_model=classifier_model,
         enable_generic_ask_user=enable_ask_user,
         checkpointer=checkpointer,

@@ -124,6 +124,24 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
   - classification fallback and LLM prompt rules now explicitly keep prompts
     such as `先给我一个口头判断` / `不要正式写作` on the generic path rather
     than drifting into the report family
+- Report and generic judgment answers now carry a stronger evidence-source
+  contract:
+  - report composition guidance asks for compact source-category notes,
+    freshness/date notes where relevant, and direct-vs-inferred evidence
+    distinctions
+  - generic judgment composition and the final chat-facing finalizer preserve
+    source provenance instead of smoothing evidence boundaries away
+- Report supervisor workers can now be routed to model-specific worker
+  runnables through environment variables. The default report worker model is
+  `openai_paid:gpt-5.4`, overridable globally with
+  `CODE2WORKSPACE_SUPERVISOR_REPORT_MODEL` or per report node with
+  `CODE2WORKSPACE_SUPERVISOR_REPORT_INIT_MODEL`,
+  `CODE2WORKSPACE_SUPERVISOR_REPORT_MONITORING_MODEL`,
+  `CODE2WORKSPACE_SUPERVISOR_REPORT_LOCAL_DATA_MODEL`,
+  `CODE2WORKSPACE_SUPERVISOR_REPORT_LITERATURE_MODEL`,
+  `CODE2WORKSPACE_SUPERVISOR_REPORT_COMPOSE_MODEL`,
+  `CODE2WORKSPACE_SUPERVISOR_REPORT_SUMMARIZE_MODEL`, and
+  `CODE2WORKSPACE_SUPERVISOR_REPORT_FINAL_RESPONSE_MODEL`.
 - Fresh focused evidence from
   `experiments/harness/runs/supervisor-routing-trigger-eval/20260507T143455346391Z/`
   shows the generic family now reaches `5/5` correct under rules fallback, with

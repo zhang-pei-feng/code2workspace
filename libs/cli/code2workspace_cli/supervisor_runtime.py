@@ -1719,6 +1719,9 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
         guidance_lines.append(
             "For report-oriented nodes, prefer writing concrete report artifacts into the workspace such as request notes, lane notes, evidence summaries, or final_report.md when relevant."
         )
+        guidance_lines.append(
+            "For report-oriented nodes, record the main evidence sources used, their dates or freshness when relevant, and whether they directly support the claim or only provide proxy context."
+        )
     if node.node_id == "init_generic":
         guidance_lines.extend(
             [
@@ -1748,6 +1751,7 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
                 "You are the final chat-facing answer editor. Write the answer the user should see, not an execution log.",
                 "Use only the source material already gathered by supervisor and workers. Do not invent files, commands, evidence, test results, or completion status.",
                 "Lead with useful information that was successfully obtained. Mention unfinished, failed, or blocked work only when it materially changes what the user can rely on.",
+                "For report, risk assessment, monitoring, or judgment-style answers, include a brief evidence-source explanation unless the user's requested format forbids it. Name the source categories and preserve direct-vs-inferred evidence distinctions.",
                 "When something is partial, phrase it calmly and briefly; do not over-emphasize internal node names, rounds, worker contributions, or supervisor diagnostics.",
                 "Respect strict output constraints from the original user request. If the user asked for an exact short answer, put only that answer in summary.",
                 "Return JSON only; the summary field must contain the final natural-language response itself.",

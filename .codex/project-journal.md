@@ -960,3 +960,19 @@
   - Added focused tests for persisted worker tool activity and event rendering; updated overview/thesis traceability notes.
 - Validation: `test_supervisor_runtime.py`, `test_textual_adapter.py`, and `test_non_interactive.py` passed together (`140 passed`); `test_agent.py` passed (`89 passed`); subagent tests passed (`28 passed, 1 xfailed`).
 - Next step: if live streaming latency matters, consider switching worker execution from post-run message scanning to real-time `astream` event forwarding.
+
+### 2026-05-13 00:13 CST
+- Session goal: Make report and generic judgment answers explain evidence sources.
+- Major changes:
+  - Updated report graph/guidance and generic/finalizer prompts so report, risk assessment, monitoring, and judgment-style answers include compact source-category notes, freshness where relevant, and direct-vs-inferred evidence distinctions.
+  - Added regression assertions for the report compose objective, generic compose prompt, and final response prompt; synchronized overview/thesis traceability notes.
+- Validation: `uv run --project libs/cli --group test pytest libs/code2workspace/tests/unit_tests/test_orchestration_runtime.py libs/cli/tests/unit_tests/test_supervisor_runtime.py -q` passed (`49 passed`, warnings only).
+- Next step: run a live generic/report replay to verify the final answers expose source provenance without becoming too verbose.
+
+### 2026-05-13 00:30 CST
+- Session goal: Add configurable models for report supervisor workers.
+- Major changes:
+  - Added environment-variable model routing for report worker nodes in `create_cli_agent()`, defaulting report workers to `openai_paid:gpt-5.4` and allowing global/per-node overrides.
+  - Wired report node selectors into `SupervisorWorkerSubagent` entries for init, monitoring, local data, literature, compose, summarize, final_response, and retry nodes; updated focused tests and overview/thesis notes.
+- Validation: `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_agent.py libs/cli/tests/unit_tests/test_supervisor_runtime.py -q` passed (`122 passed`, warnings only).
+- Next step: optionally run one live report prompt with verbose supervisor events to confirm the configured report worker model routes are visible in traces.

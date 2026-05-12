@@ -457,6 +457,7 @@ def test_create_cli_agent_wraps_default_agent_with_supervisor_runtime(
         return agent
 
     with (
+        patch.dict("os.environ", {}, clear=True),
         patch("code2workspace_cli.agent.settings", _make_settings(tmp_path)),
         patch("code2workspace_cli.agent.create_workspace_agent", side_effect=_fake_workspace_agent),
         patch("code2workspace._models.init_chat_model", return_value=fake_model),
@@ -476,10 +477,71 @@ def test_create_cli_agent_wraps_default_agent_with_supervisor_runtime(
 
     assert agent is mock_wrapped_agent
     assert mock_build.call_count == 1
-    assert len(built_agents) == 3
+    assert len(built_agents) == 4
     assert mock_build.call_args.kwargs["base_agent"] is built_agents[0]
     assert mock_build.call_args.kwargs["worker_agent"] is built_agents[1]
-    assert mock_build.call_args.kwargs["fallback_agent"] is built_agents[2]
+    assert mock_build.call_args.kwargs["fallback_agent"] is built_agents[3]
+    worker_subagents = mock_build.call_args.kwargs["worker_subagents"]
+    assert len(worker_subagents) == 7
+    assert {item.runnable for item in worker_subagents} == {built_agents[2]}
+    assert any(
+        item.name == "report:monitoring_lane"
+        and item.node_ids == frozenset({"monitoring_lane", "retry_monitoring_lane"})
+        for item in worker_subagents
+    )
+
+
+def test_create_cli_agent_allows_report_worker_model_env_overrides(
+    tmp_path: Path,
+) -> None:
+    mock_wrapped_agent = Mock()
+    mock_wrapped_agent.with_config.return_value = mock_wrapped_agent
+    fake_model = Mock()
+    fake_model.profile = {"max_input_tokens": 200000}
+    created_models: list[object] = []
+    built_agents: list[Mock] = []
+
+    def _fake_workspace_agent(**kwargs: object) -> Mock:
+        agent = Mock()
+        agent.with_config.return_value = agent
+        built_agents.append(agent)
+        created_models.append(kwargs["model"])
+        return agent
+
+    with (
+        patch.dict(
+            "os.environ",
+            {
+                "CODE2WORKSPACE_SUPERVISOR_REPORT_MODEL": "openai_paid:gpt-5.4",
+                "CODE2WORKSPACE_SUPERVISOR_REPORT_COMPOSE_MODEL": "openai_paid:gpt-5.4-compose",
+                "CODE2WORKSPACE_SUPERVISOR_REPORT_FINAL_RESPONSE_MODEL": "openai_paid:gpt-5.4-final",
+            },
+            clear=True,
+        ),
+        patch("code2workspace_cli.agent.settings", _make_settings(tmp_path)),
+        patch("code2workspace_cli.agent.create_workspace_agent", side_effect=_fake_workspace_agent),
+        patch("code2workspace._models.init_chat_model", return_value=fake_model),
+        patch("code2workspace.middleware.summarization.create_summarization_tool_middleware"),
+        patch(
+            "code2workspace_cli.agent.build_supervisor_enabled_agent",
+            return_value=mock_wrapped_agent,
+        ) as mock_build,
+    ):
+        create_cli_agent(
+            model="fake-model",
+            assistant_id="test",
+            enable_memory=False,
+            enable_skills=False,
+            enable_shell=False,
+        )
+
+    assert created_models.count("openai_paid:gpt-5.4") == 1
+    assert "openai_paid:gpt-5.4-compose" in created_models
+    assert "openai_paid:gpt-5.4-final" in created_models
+    worker_subagents = mock_build.call_args.kwargs["worker_subagents"]
+    by_name = {item.name: item for item in worker_subagents}
+    assert by_name["report:compose_report"].runnable is built_agents[3]
+    assert by_name["report:final_response"].runnable is built_agents[4]
 
 
 def test_build_worker_prompt_uses_capability_registry_and_guidance() -> None:
@@ -558,8 +620,37 @@ def test_build_worker_prompt_compacts_large_prior_worker_payloads() -> None:
     assert "retrieved_case_types" in prompt
     assert '"status": "completed"' in prompt
     assert '"summary": "context ok"' in prompt
+    assert "where the evidence came from" in prompt
+    assert "direct evidence, inferred evidence, or unresolved gaps" in prompt
     assert "aaaa" not in prompt
     assert "bbbb" not in prompt
+
+
+def test_build_worker_prompt_final_response_preserves_evidence_sources() -> None:
+    node = TaskNode(
+        node_id="final_response",
+        title="Write final user response",
+        objective="Turn the supervisor run result into the final answer shown to the user.",
+        capability_bundles=["summarize", "validate"],
+        metadata={
+            "task": "写一份风险研判",
+            "task_type": "report",
+            "final_summary": "summary",
+            "final_decision": "stop",
+            "final_decision_reason": "done",
+            "failed_nodes": [],
+            "fallback_candidate": "candidate",
+        },
+    )
+
+    prompt = _build_worker_prompt(
+        node=node,
+        workspace_root=Path("/tmp/supervisor-workspace"),
+    )
+
+    assert "brief evidence-source explanation" in prompt
+    assert "source categories" in prompt
+    assert "direct-vs-inferred evidence distinctions" in prompt
 
 
 def test_build_worker_prompt_includes_wdl_node_guidance() -> None:

@@ -1002,7 +1002,11 @@ class HeuristicSupervisorPlanner:
                 TaskNode(
                     node_id="compose_report",
                     title="Compose report",
-                    objective="Compose a full-length report from the completed lanes. Prefer a substantial report body with clear sections, explicit evidence-to-claim linkage, and preserved uncertainty rather than a short brief.",
+                    objective=(
+                        "Compose a full-length report from the completed lanes. Prefer a substantial report body "
+                        "with clear sections, explicit evidence-to-claim linkage, evidence source notes, and "
+                        "preserved uncertainty rather than a short brief."
+                    ),
                     capability_bundles=["summarize", "validate"],
                 ),
                 TaskNode(

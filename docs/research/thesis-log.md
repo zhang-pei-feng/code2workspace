@@ -24,6 +24,28 @@ and evidence-backed completion judgment.
 
 ## Chronology
 
+### 2026-05-13
+
+- Added model-routing configuration for report supervisor workers:
+  - report nodes can now be assigned model-specific worker runnables through
+    environment variables, with `openai_paid:gpt-5.4` as the current default
+  - users can override all report workers via
+    `CODE2WORKSPACE_SUPERVISOR_REPORT_MODEL` or override individual
+    init/monitoring/local-data/literature/compose/summarize/final-response
+    workers with node-specific variables
+- Validation: focused agent/supervisor tests passed
+  (`test_agent.py` and `test_supervisor_runtime.py`, `122 passed`).
+
+- Tightened report and generic judgment answer contracts so final deliverables
+  explain evidence sources instead of only giving polished conclusions:
+  - report graph composition and guidance now require compact source-category
+    notes, freshness/date notes when relevant, and direct-vs-inferred evidence
+    distinctions
+  - generic judgment composition and the final response editor now preserve
+    source provenance unless the user's requested output format forbids it
+- Validation: focused supervisor/runtime tests passed
+  (`test_orchestration_runtime.py` and `test_supervisor_runtime.py`, `49 passed`).
+
 ### 2026-05-12
 
 - Added worker/subagent tool-call observability for Supervisor Graph runs:

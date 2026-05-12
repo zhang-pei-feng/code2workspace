@@ -352,6 +352,7 @@ def test_planner_creates_report_graph() -> None:
     assert graph.nodes[2].capability_bundles == ["db_access", "api_call", "validate"]
     assert graph.nodes[3].capability_bundles == ["web_search", "web_fetch", "api_call"]
     assert graph.nodes[4].capability_bundles == ["summarize", "validate"]
+    assert "evidence source notes" in graph.nodes[4].objective
 
 
 def test_planner_selects_benchmark_tools_from_catalog_dataset() -> None:
