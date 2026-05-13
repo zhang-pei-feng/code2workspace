@@ -26,6 +26,19 @@ and evidence-backed completion judgment.
 
 ### 2026-05-13
 
+- Added a current Supervisor Graph flow and status audit document:
+  - `docs/overview/supervisor-flow-experiment-status.md` records the overall
+    supervisor-first runtime flow plus separate Mermaid diagrams for `generic`,
+    `github2workspace`, `benchmark`, and `report`
+  - summarized recent routing, generic capability, live generic, report, and
+    COVID variant CLI experiment outcomes
+  - audited the current runtime against portability/configuration requirements:
+    project-local model config exists, but `.env`, provider credential/base-url
+    environment variables, report-worker model override variables, and some
+    external skill credentials mean the system does not yet satisfy strict
+    "all dependencies inside project", "no outside env/file dependency", or
+    "single configuration entrypoint" requirements
+
 - Added model-routing configuration for report supervisor workers:
   - report nodes can now be assigned model-specific worker runnables through
     environment variables, with `openai_paid:gpt-5.4` as the current default
@@ -1134,6 +1147,43 @@ and evidence-backed completion judgment.
     repository as a planning failure by the agent
 
 ## Writing Reminders
+
+### 2026-05-13
+
+- The benchmark supervisor path no longer depends on a checked-in
+  `experiments/benchmark/datasets/benchmark_catalog.json`:
+  - the catalog file was removed from the worktree
+  - planner-side tool selection now discovers benchmark case directories, WDL
+    files, and input JSON files from the user-provided root, then groups tools
+    by repeated input file sets
+  - helper-side registration/catalog commands use the same catalog-free
+    discovery through a persisted `benchmark_root` and can still merge an
+    optional catalog if one is supplied later
+- This fixes the earlier hard-constraint failure mode in a more general way:
+  - the natural virus-assembly prompt that excludes `spades` and `megahit` now
+    selects the inferred long-read shared dataset and chooses `Flye` + `canu`
+  - register no longer needs a stale central catalog to fan out runnable cases
+- Validation:
+  - `test_orchestration_runtime.py` plus `test_project_skill_helpers.py` passed
+    together after deleting the catalog and adding arbitrary-root coverage
+    (`30 passed`)
+  - `test_supervisor_runtime.py` plus `test_orchestration_runtime.py` passed
+    together (`55 passed`)
+
+- A live retest exposed and then fixed two benchmark outcome-reporting gaps:
+  - the natural virus-assembly prompt excluding `spades`/`megahit` selected
+    `Flye` + `canu` and launched them in parallel; `Flye` produced assembly
+    metrics, while `canu` returned code 0 but did not produce the expected final
+    assembly outputs
+  - deterministic case execution now reports that latter shape as `partial`
+    with `expected_outputs_missing`, so summaries can still aggregate available
+    evidence instead of being blocked by a false hard failure
+  - URL-only benchmark prompts for undeployed repositories now fail with the
+    explicit reason `missing_benchmark_assets` and a preparation hint, instead
+    of the misleading internal-looking `missing_selected_tools`
+  - validation after the fix: `test_supervisor_runtime.py` plus
+    `test_orchestration_runtime.py` passed (`57 passed`), and a rerun of the
+    URL-only prompt produced the clearer final summary
 
 - Record why a design was chosen, not only what changed.
 - Keep evidence of failed compatibility paths, because it strengthens the

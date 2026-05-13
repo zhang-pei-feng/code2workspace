@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import ast
 from dataclasses import asdict, dataclass, field
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -858,7 +859,11 @@ class HeuristicSupervisorPlanner:
                     title="Register benchmark cases",
                     objective="Confirm benchmark inputs, register each tool/case pair, and verify staged constraints before execution.",
                     capability_bundles=["plan", "task_manage", "validate"],
-                    metadata={"selected_tools": _select_benchmark_tools(task)},
+                    metadata={
+                        "selected_tools": _select_benchmark_tools(task),
+                        "excluded_tools": _extract_benchmark_excluded_tools(task),
+                        "benchmark_root": _select_benchmark_root(task),
+                    },
                 )
             ]
             edges: list[TaskEdge] = []
@@ -1350,25 +1355,89 @@ def _select_benchmark_tools(task: str) -> list[str]:
     catalog = _load_benchmark_catalog(task)
     if catalog is None:
         return []
+    excluded_tools = set(_extract_benchmark_excluded_tools(task))
     explicit_tools = _extract_benchmark_tools(task)
+    explicit_tools = [tool for tool in explicit_tools if tool not in excluded_tools]
     if explicit_tools:
         return explicit_tools
 
     dataset_key = _select_benchmark_dataset_key(task, catalog)
     if dataset_key:
-        tools = _tools_for_dataset(catalog, dataset_key)
+        tools = [
+            tool
+            for tool in _tools_for_dataset(catalog, dataset_key)
+            if tool not in excluded_tools
+        ]
         if tools:
             return tools
 
-    for key in catalog.get("datasets", {}):
-        tools = _tools_for_dataset(catalog, str(key))
+    dataset_keys = _ordered_candidate_benchmark_dataset_keys(task, catalog)
+    for key in dataset_keys:
+        tools = [
+            tool
+            for tool in _tools_for_dataset(catalog, str(key))
+            if tool not in excluded_tools
+        ]
         if len(tools) >= 2:
             return tools
-    for key in catalog.get("datasets", {}):
-        tools = _tools_for_dataset(catalog, str(key))
+    for key in dataset_keys:
+        tools = [
+            tool
+            for tool in _tools_for_dataset(catalog, str(key))
+            if tool not in excluded_tools
+        ]
         if tools:
             return tools
     return []
+
+
+def _select_benchmark_root(task: str) -> str | None:
+    roots = _candidate_benchmark_roots(task)
+    if not roots:
+        return None
+    return str(roots[0].resolve())
+
+
+def _ordered_candidate_benchmark_dataset_keys(task: str, catalog: dict[str, object]) -> list[str]:
+    datasets = catalog.get("datasets", {})
+    if not isinstance(datasets, dict):
+        return []
+    case_dir_hint = _benchmark_case_dir_hint(task)
+    keys = [str(key) for key in datasets]
+    if case_dir_hint is None:
+        return keys
+    hinted: list[str] = []
+    other: list[str] = []
+    for key in keys:
+        tools = _tools_for_dataset(catalog, key)
+        if _dataset_has_case_dir_hint(catalog, tools, case_dir_hint):
+            hinted.append(key)
+        else:
+            other.append(key)
+    return hinted + other
+
+
+def _benchmark_case_dir_hint(task: str) -> str | None:
+    lowered = task.casefold()
+    if "新冠病毒组装" in lowered or "病毒组装" in lowered:
+        return "新冠病毒组装"
+    if "circrna" in lowered or "cirrna" in lowered:
+        return "cirrna"
+    if "免疫逃逸" in lowered:
+        return "免疫逃逸"
+    return None
+
+
+def _dataset_has_case_dir_hint(catalog: dict[str, object], tools: list[str], hint: str) -> bool:
+    cases = catalog.get("repo_cases", {})
+    if not isinstance(cases, dict):
+        return False
+    hint_lower = hint.casefold()
+    for tool in tools:
+        payload = cases.get(tool)
+        if isinstance(payload, dict) and hint_lower in str(payload.get("case_dir", "")).casefold():
+            return True
+    return False
 
 
 def _select_benchmark_dataset_key(task: str, catalog: dict[str, object]) -> str | None:
@@ -1412,7 +1481,46 @@ def _tools_for_dataset(catalog: dict[str, object], dataset_key: str) -> list[str
     ]
 
 
+def _extract_benchmark_excluded_tools(task: str) -> list[str]:
+    lowered = task.casefold()
+    cases = _benchmark_catalog_repo_cases(task)
+    excluded: list[str] = []
+    negative_markers = (
+        "不要选",
+        "不要用",
+        "排除",
+        "除外",
+        "不包括",
+        "别选",
+        "except",
+        "exclude",
+        "without",
+    )
+    if not any(marker in lowered for marker in negative_markers):
+        return excluded
+    for repo in sorted(cases):
+        repo_name = str(repo)
+        if repo_name.casefold() in lowered:
+            excluded.append(repo_name)
+    return excluded
+
+
+def _benchmark_catalog_repo_cases(task: str) -> set[str]:
+    catalog = _load_benchmark_catalog(task)
+    if not isinstance(catalog, dict):
+        return set()
+    repo_cases = catalog.get("repo_cases", {})
+    if not isinstance(repo_cases, dict):
+        return set()
+    return {str(repo) for repo in repo_cases if isinstance(repo, str)}
+
+
 def _load_benchmark_catalog(task: str) -> dict[str, object] | None:
+    for root in _candidate_benchmark_roots(task):
+        catalog = _read_benchmark_catalog(root)
+        augmented = _augment_benchmark_catalog_from_files(root, catalog)
+        if isinstance(augmented.get("repo_cases"), dict) and augmented["repo_cases"]:
+            return augmented
     for path in _candidate_benchmark_catalog_paths(task):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1421,6 +1529,264 @@ def _load_benchmark_catalog(task: str) -> dict[str, object] | None:
         if isinstance(payload, dict) and isinstance(payload.get("repo_cases"), dict):
             return payload
     return None
+
+
+def _read_benchmark_catalog(root: Path) -> dict[str, object]:
+    for path in (root / "datasets" / "benchmark_catalog.json", root / "benchmark_catalog.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            payload.setdefault("datasets", {})
+            payload.setdefault("repo_cases", {})
+            payload.setdefault("dataset_root", str(root / "datasets"))
+            payload.setdefault("downloads_root", str(root / "datasets" / "downloads"))
+            return payload
+    return {
+        "dataset_root": str(root / "datasets"),
+        "downloads_root": str(root / "datasets" / "downloads"),
+        "datasets": {},
+        "repo_cases": {},
+    }
+
+
+def _candidate_benchmark_roots(task: str) -> list[Path]:
+    roots: list[Path] = []
+    for raw_path in _extract_task_paths(task):
+        path = Path(raw_path)
+        if not path.exists():
+            continue
+        if path.is_file():
+            path = path.parent
+        if (path / "experiments" / "benchmark").exists():
+            roots.append(path / "experiments" / "benchmark")
+        if (path / "datasets").exists() or any(path.rglob("*.wdl")):
+            roots.append(path)
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for root in roots:
+        resolved = root.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        ordered.append(root)
+    return ordered
+
+
+def _augment_benchmark_catalog_from_files(root: Path, catalog: dict[str, object]) -> dict[str, object]:
+    datasets = catalog.setdefault("datasets", {})
+    repo_cases = catalog.setdefault("repo_cases", {})
+    if not isinstance(datasets, dict) or not isinstance(repo_cases, dict):
+        return catalog
+
+    discovered: dict[str, dict[str, object]] = {}
+    for case_dir in _discover_benchmark_case_dirs(root):
+        case = _benchmark_case_from_dir(root, case_dir)
+        if case is None:
+            continue
+        discovered[str(case["repo_name"])] = case
+
+    for repo_name, case in discovered.items():
+        repo_cases.setdefault(repo_name, case)
+
+    for case in discovered.values():
+        dataset_key = str(case["dataset_key"])
+        shared_between = sorted(
+            name
+            for name, payload in repo_cases.items()
+            if isinstance(payload, dict) and str(payload.get("dataset_key")) == dataset_key
+        )
+        existing = datasets.get(dataset_key)
+        if isinstance(existing, dict):
+            existing_shared = [str(item) for item in existing.get("shared_between", []) if isinstance(item, str)]
+            existing["shared_between"] = sorted(set(existing_shared + shared_between))
+            continue
+        datasets[dataset_key] = {
+            "dataset_id": dataset_key,
+            "description": "Shared benchmark inputs inferred from case input JSON files.",
+            "family": case.get("family", "unknown"),
+            "files": case.get("dataset_files", []),
+            "local_candidates": case.get("local_candidates", []),
+            "fallback_urls": [],
+            "shared_between": shared_between,
+            "source": "local benchmark inputs",
+            "source_urls": [],
+        }
+    return catalog
+
+
+def _discover_benchmark_case_dirs(root: Path) -> list[Path]:
+    case_dirs: list[Path] = []
+    for input_path in sorted([*root.rglob("inputs.json"), *root.rglob("input.json")]):
+        if "datasets" in input_path.parts:
+            continue
+        case_dir = input_path.parent
+        if any(case_dir.glob("*.wdl")):
+            case_dirs.append(case_dir)
+    return case_dirs
+
+
+def _benchmark_case_from_dir(root: Path, case_dir: Path) -> dict[str, object] | None:
+    input_path = next((path for path in (case_dir / "inputs.json", case_dir / "input.json") if path.exists()), None)
+    wdl_path = next(iter(sorted(case_dir.glob("*.wdl"))), None)
+    if input_path is None or wdl_path is None:
+        return None
+    try:
+        inputs = json.loads(input_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(inputs, dict):
+        return None
+    repo_name = _repo_name_from_benchmark_case_dir(case_dir)
+    workflow_name = _workflow_name_from_wdl(wdl_path) or repo_name
+    input_files = _benchmark_file_inputs(inputs)
+    if not input_files:
+        return None
+    dataset_key = _dataset_key_for_input_files(input_files)
+    family = _benchmark_family_for_case(repo_name, workflow_name, input_files)
+    rel_case_dir = str(case_dir.relative_to(root.parent.parent if root.parent.name == "experiments" else root))
+    rel_wdl = str(wdl_path.relative_to(root.parent.parent if root.parent.name == "experiments" else root))
+    rel_inputs = str(input_path.relative_to(root.parent.parent if root.parent.name == "experiments" else root))
+    dockerfile_candidates = _known_benchmark_dockerfile_candidates(repo_name)
+    return {
+        "repo_name": repo_name,
+        "repo_url": _known_benchmark_repo_url(repo_name),
+        "family": family,
+        "dataset_key": dataset_key,
+        "image_tag": _runtime_image_from_wdl_text(wdl_path.read_text(encoding="utf-8", errors="replace")) or f"benchmark/{repo_name.casefold()}:latest",
+        "repo_native_entry": _default_repo_entry(repo_name),
+        "wdl_workflow_name": workflow_name,
+        "expected_outputs": _expected_outputs_for_family(family),
+        "constraints": ["Use benchmark inputs discovered from the local case directory."],
+        "case_dir": rel_case_dir,
+        "wdl_path": rel_wdl,
+        "inputs_path": rel_inputs,
+        "dockerfile_path": dockerfile_candidates[0] if dockerfile_candidates else None,
+        "dockerfile_candidates": dockerfile_candidates,
+        "wdl_candidates": [rel_wdl],
+        "input_json_candidates": [rel_inputs],
+        "repo_native_command_candidates": [],
+        "local_result_candidates": [],
+        "dataset_files": _dataset_files_for_inputs(input_files),
+        "local_candidates": sorted(input_files),
+    }
+
+
+def _repo_name_from_benchmark_case_dir(case_dir: Path) -> str:
+    return re.sub(r"^\d+[_-]*", "", case_dir.name)
+
+
+def _workflow_name_from_wdl(wdl_path: Path) -> str | None:
+    match = re.search(r"\bworkflow\s+([A-Za-z_][A-Za-z0-9_]*)", wdl_path.read_text(encoding="utf-8", errors="replace"))
+    return match.group(1) if match else None
+
+
+def _benchmark_file_inputs(inputs: dict[str, object]) -> list[str]:
+    values: list[str] = []
+    for value in inputs.values():
+        if not isinstance(value, str):
+            continue
+        lowered = value.casefold()
+        if "/" not in value and not lowered.endswith((".fq", ".fastq", ".fa", ".fasta", ".gz", ".bam", ".bed", ".pt", ".vcf")):
+            continue
+        if any(lowered.endswith(suffix) for suffix in (".fq", ".fastq", ".fa", ".fasta", ".gz", ".bam", ".bed", ".pt", ".vcf")):
+            values.append(value)
+    return sorted(dict.fromkeys(values))
+
+
+def _dataset_key_for_input_files(input_files: list[str]) -> str:
+    joined = "\n".join(input_files).casefold()
+    if "srr001666" in joined:
+        return "short-read-ecoli-srr001666"
+    if "pacbio.fastq" in joined:
+        return "long-read-canu-pacbio"
+    digest = hashlib.sha1("\n".join(input_files).encode("utf-8")).hexdigest()[:10]
+    return f"shared-inputs-{digest}"
+
+
+def _benchmark_family_for_case(repo_name: str, workflow_name: str, input_files: list[str]) -> str:
+    lowered = f"{repo_name} {workflow_name} {' '.join(input_files)}".casefold()
+    if "spades" in lowered or "megahit" in lowered:
+        return "short-read-assembly"
+    if "canu" in lowered or "flye" in lowered or "pacbio" in lowered:
+        return "long-read-assembly"
+    if "trinity" in lowered:
+        return "rna-seq-transcriptome"
+    if "fieldbio" in lowered or "artic" in lowered:
+        return "viral-ont-amplicon"
+    if "covid" in lowered or "signal" in lowered:
+        return "viral-short-read-pipeline"
+    return "unknown"
+
+
+def _dataset_files_for_inputs(input_files: list[str]) -> list[dict[str, str]]:
+    files: list[dict[str, str]] = []
+    for index, value in enumerate(input_files, start=1):
+        name = Path(value).name or f"input_{index}"
+        files.append({"logical_name": _logical_input_name(value, index), "uri": value, "filename": name})
+    return files
+
+
+def _logical_input_name(value: str, index: int) -> str:
+    lowered = value.casefold()
+    if "_1" in lowered or "r1" in lowered or "read1" in lowered:
+        return "reads_1"
+    if "_2" in lowered or "r2" in lowered or "read2" in lowered:
+        return "reads_2"
+    if "pacbio" in lowered or lowered.endswith((".fq", ".fastq", ".fq.gz", ".fastq.gz")):
+        return "reads" if index == 1 else f"reads_{index}"
+    return f"input_{index}"
+
+
+def _known_benchmark_repo_url(repo_name: str) -> str:
+    known = {
+        "spades": "https://github.com/ablab/spades",
+        "megahit": "https://github.com/voutcn/megahit",
+        "canu": "https://github.com/marbl/canu",
+        "Flye": "https://github.com/fenderglass/Flye",
+        "trinityrnaseq": "https://github.com/trinityrnaseq/trinityrnaseq",
+        "covid-19-signal": "https://github.com/jaleezyy/covid-19-signal",
+        "fieldbioinformatics": "https://github.com/artic-network/fieldbioinformatics",
+    }
+    return known.get(repo_name, "")
+
+
+def _known_benchmark_dockerfile_candidates(repo_name: str) -> list[str]:
+    known = {
+        "spades": [".workspaces/oneshot/spades/spades_Dockerfile"],
+        "megahit": [
+            ".workspaces/oneshot/megahit/megahit_Dockerfile",
+            ".workspaces/oneshot/megahit/Dockerfile",
+        ],
+    }
+    return known.get(repo_name, [])
+
+
+def _runtime_image_from_wdl_text(text: str) -> str | None:
+    match = re.search(r'docker:\s*"([^"]+)"', text)
+    return match.group(1) if match else None
+
+
+def _default_repo_entry(repo_name: str) -> str:
+    defaults = {
+        "spades": "spades.py -1 <reads_1> -2 <reads_2>",
+        "megahit": "megahit -1 <reads_1> -2 <reads_2> -o out",
+        "canu": "canu -p ecoli -d out genomeSize=4.8m -pacbio <reads>",
+        "Flye": "flye --pacbio-raw <reads> --out-dir out",
+        "trinityrnaseq": "Trinity --left <reads_1> --right <reads_2> --seqType fq --output out",
+    }
+    return defaults.get(repo_name, "")
+
+
+def _expected_outputs_for_family(family: str) -> list[str]:
+    if family in {"short-read-assembly", "long-read-assembly"}:
+        return ["assembly.fasta", "contigs.fasta", "final.contigs.fa"]
+    if family == "rna-seq-transcriptome":
+        return ["Trinity.fasta"]
+    if family in {"viral-short-read-pipeline", "viral-ont-amplicon"}:
+        return ["consensus.fasta", "variants.vcf", "coverage.tsv"]
+    return []
 
 
 def _candidate_benchmark_catalog_paths(task: str) -> list[Path]:
@@ -1477,7 +1843,7 @@ def _graph_metadata(
     }
 
 
-_ABS_PATH_RE = re.compile(r"(/[^ \n\t,;:]+)")
+_ABS_PATH_RE = re.compile(r"(/[^ \n\t,;:，。]+)")
 
 
 def _extract_task_paths(task: str) -> list[str]:
@@ -1554,7 +1920,7 @@ async def execute_graph_round(
         ready = [
             node
             for node in pending.values()
-            if all(final_status.get(dep) == "completed" for dep in by_target.get(node.node_id, set()))
+            if all(final_status.get(dep) in {"completed", "partial"} for dep in by_target.get(node.node_id, set()))
         ]
         if not ready:
             for node in list(pending.values()):

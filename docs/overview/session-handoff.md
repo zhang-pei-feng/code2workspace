@@ -8,9 +8,10 @@ resume path.
 1. `docs/overview/current-status.md`
 2. `docs/overview/roadmap.md`
 3. `docs/research/thesis-log.md`
-4. `apps/webapp/README.md`
-5. `experiments/oneshot/README.md`
-6. `experiments/harness/README.md`
+4. `docs/overview/supervisor-flow-experiment-status.md`
+5. `apps/webapp/README.md`
+6. `experiments/oneshot/README.md`
+7. `experiments/harness/README.md`
 
 ## Current Priority
 
@@ -28,9 +29,16 @@ planner middleware.
   they mostly burn time on first-build dependency setup.
 - repository-preparation failures are now treated as explicit experiment
   outcomes instead of queue-killing crashes.
-- model configuration remains the normal user-level
-  `~/.code2workspace/config.toml` path; project and global `.env` loading are
-  enabled as before.
+- model configuration on this branch is intended to use the project-local
+  `backend/config/agent_models.json` entry, while legacy/test TOML support and
+  normal `.env` / environment-variable loading still exist in code.
+- Current portability audit is stricter than the historical runtime baseline:
+  `backend/config/agent_models.json` is the intended project-local model config
+  entry, but normal runtime still reads `.env`, provider credential/base-url
+  environment variables, report-worker model override variables, and some
+  skill-specific external credentials. See
+  `docs/overview/supervisor-flow-experiment-status.md` before claiming strict
+  portability or single-entry configuration.
 - Supervisor Graph routing should keep the special `github2workspace`,
   `benchmark`, and `report` lanes available; generic tasks use the generic graph
   instead of a QA-only forced mode.

@@ -104,12 +104,48 @@ def test_benchmark_orchestrator_init_supports_repo_subset(tmp_path: Path) -> Non
     assert not (run_dir / "cases" / "canu").exists()
 
 
+def test_benchmark_orchestrator_init_supports_arbitrary_benchmark_root(tmp_path: Path) -> None:
+    benchmark_root = tmp_path / "assets"
+    alpha_dir = benchmark_root / "group" / "001_alpha"
+    beta_dir = benchmark_root / "group" / "002_beta"
+    alpha_dir.mkdir(parents=True)
+    beta_dir.mkdir(parents=True)
+    (alpha_dir / "inputs.json").write_text(json.dumps({"Alpha.reads": "shared/sample.fastq"}), encoding="utf-8")
+    (beta_dir / "inputs.json").write_text(json.dumps({"Beta.reads": "shared/sample.fastq"}), encoding="utf-8")
+    (alpha_dir / "alpha.wdl").write_text('workflow Alpha {}\nruntime { docker: "benchmark/alpha:test" }\n', encoding="utf-8")
+    (beta_dir / "beta.wdl").write_text('workflow Beta {}\nruntime { docker: "benchmark/beta:test" }\n', encoding="utf-8")
+    run_dir = tmp_path / "benchmark-run"
+
+    payload = run_json_command(
+        str(BENCHMARK_SCRIPT),
+        "init",
+        "--task",
+        "arbitrary root smoke",
+        "--benchmark-root",
+        str(benchmark_root),
+        "--output-dir",
+        str(run_dir),
+        "--repos",
+        "alpha",
+        "beta",
+    )
+
+    assert payload["case_order"] == ["alpha", "beta"]
+    manifest = json.loads(run_dir.joinpath("manifest.json").read_text(encoding="utf-8"))
+    assert manifest["benchmark_root"] == str(benchmark_root.resolve())
+    assert manifest["cases"]["alpha"]["wdl_path"] == str((alpha_dir / "alpha.wdl").resolve())
+    assert manifest["datasets"][manifest["cases"]["alpha"]["dataset_key"]]["shared_between"] == ["alpha", "beta"]
+
+
 def test_benchmark_orchestrator_catalog_reports_unified_dataset_root() -> None:
     payload = run_json_command(str(BENCHMARK_SCRIPT), "catalog-datasets")
     assert payload["dataset_root"].endswith("experiments/benchmark/datasets")
     assert payload["downloads_root"].endswith("experiments/benchmark/datasets/downloads")
     assert "short-read-ecoli-srr001666" in payload["datasets"]
+    assert "long-read-canu-pacbio" in payload["datasets"]
     assert "dockerfile_path" in payload["repo_cases"]["spades"]
+    assert payload["repo_cases"]["canu"]["dataset_key"] == "long-read-canu-pacbio"
+    assert payload["repo_cases"]["Flye"]["dataset_key"] == "long-read-canu-pacbio"
     assert "v-pipe" not in payload["repo_cases"]
     assert payload["repo_cases"]["spades"]["case_dir"].endswith("001_spades")
 

@@ -5,6 +5,10 @@ This is the fastest engineering snapshot for the repository.
 ## Snapshot
 
 - Last consolidated update: 2026-05-08
+- Latest local audit: 2026-05-13, see
+  `docs/overview/supervisor-flow-experiment-status.md` for the current
+  Supervisor Graph flow diagrams, recent experiment-result summary, and
+  portability/single-configuration requirement audit.
 - Repository scope: focused on `libs/code2workspace`, `libs/cli`, the Web
   Workbench, one-shot repo experiments, and harness work
 - Current verified baseline: non-interactive CLI works, interactive TUI startup
@@ -40,14 +44,15 @@ This is the fastest engineering snapshot for the repository.
   - rebuilds and queries a lightweight SQLite case index from workspace
     artifacts before planning each run
 - Branch note: `feature/supervisor-graph-runtime` is the supervisor-first
-  runtime branch before the QA-only packaging pass. It keeps the normal
-  user-level model config / `.env` behavior, isolated project-root session
-  workspaces, and all Supervisor Graph task families (`generic`,
-  `github2workspace`, `benchmark`, and `report`).
-- Current user-level default model now points at the custom alias
-  `openai_paid:gpt-5.4`:
-  - `openai` remains available as `OpenAI（自己的中转）`
-  - `openai_paid` is the current default as `OpenAI（付费中转）`
+  runtime branch before the QA-only packaging pass. It now intends to use the
+  project-local `backend/config/agent_models.json` model entry, but still keeps
+  normal `.env` / environment-variable behavior in code; isolated project-root
+  session workspaces and all Supervisor Graph task families (`generic`,
+  `github2workspace`, `benchmark`, and `report`) remain available.
+- Current project-local default model is `openai:gpt-5.4` in
+  `backend/config/agent_models.json`; report workers still default to the
+  compatibility alias `openai_paid:gpt-5.4` in code and fall back to
+  `openai:gpt-5.4` when that alias is unavailable.
 - Additional checked-in evidence: historical one-shot completions still exist
   for `v-pipe`, `covid-19-signal`, and `fieldbioinformatics`, while the latest
   reduced evaluation adds fresh completed samples on `spades` and `megahit`
@@ -237,18 +242,15 @@ Focused validation currently recorded:
     selected `spades` and `megahit` itself, then the summary path was tightened
     to emit an explicit metric comparison / overall judgment
   - the benchmark runtime/guidance coupling to specific tool names was removed:
-    tool selection now comes from `experiments/benchmark/datasets/benchmark_catalog.json`,
-    case expected outputs come from each case manifest, and generic
-    `benchmark_case` guidance replaces tool-specific node guidance; a fresh
-    natural-prompt CLI run under
-    `workspace/20260505212743/orchestration_runs/20260505T132747Z` still
-    completed with the same fan-out order and final comparison
-  - after deleting the benchmark catalog/readmes, a long-read natural prompt
-    under `workspace/20260506092525/orchestration_runs/20260506T012529193142Z`
-    no longer selected tools and failed at `register` with
-    `missing_selected_tools`; this confirms the current deterministic benchmark
-    path still depends on an explicit tool-selection source rather than model or
-    asset inspection
+    tool selection now discovers benchmark case directories, WDL files, and
+    input JSON files from the user-provided benchmark root rather than a fixed
+    repository path; case expected outputs come from each case manifest, and
+    generic `benchmark_case` guidance replaces tool-specific node guidance.
+  - the former checked-in `experiments/benchmark/datasets/benchmark_catalog.json`
+    has been removed; catalog files are now treated only as optional structured
+    hints. The planner/helper infer shared datasets directly from repeated input
+    file sets, so the natural virus-assembly prompt with `不要选 spades 和
+    megahit` now selects `Flye` + `canu` on the shared PacBio input group.
 
 Remaining gaps:
 
@@ -263,9 +265,15 @@ Remaining gaps:
 - the main benchmark supervisor path now has full two-tool end-to-end evidence;
   the remaining adjacent issue is CLI/client behavior when a user interrupts a
   long blocking helper run mid-stream
-- catalog-free benchmark operation is not yet implemented: without
-  `benchmark_catalog.json`, the supervisor currently does not let the model
-  inspect benchmark assets and create the per-tool fan-out graph itself
+- the current portability/single-entry configuration audit is not yet clean:
+  `backend/config/agent_models.json` is the intended project-local model config
+  entry, but normal runtime still reads `.env`, provider credential/base-url
+  environment variables, and report-worker model override environment variables;
+  optional skills also reference external credentials or data roots
+- catalog-free benchmark discovery is implemented for arbitrary local WDL/input
+  JSON case roots, but the inferred metadata remains heuristic; richer
+  family/output descriptions should move into per-case manifests if the
+  benchmark surface grows.
 
 ### 1. Web Workbench
 
@@ -390,19 +398,16 @@ local case directories with one reused `v-pipe` benchmark result
 
 - The benchmark datasets and the `新冠病毒组装` workflow assets now live under
   `experiments/benchmark/`.
-- The local benchmark helper now reads
-  `experiments/benchmark/datasets/benchmark_catalog.json` instead of the old
-  `experiments/oneshot` path; the checked-in workspace keeps seven local case
-  directories, while the thesis-facing snapshot re-attaches the earlier real
-  `v-pipe` benchmark result as the eighth tool.
+- The local benchmark helper now discovers benchmark cases from
+  `experiments/benchmark/**/{inputs,input}.json` plus sibling WDL files. A
+  `benchmark_catalog.json` file is no longer checked in or required, though the
+  helper can still merge one if a future run supplies it.
 - The benchmark dataset layer has now been widened beyond virus assembly:
-  - restored a checked-in `experiments/benchmark/datasets/benchmark_catalog.json`
-    after the worktree-local copy had gone missing
-  - kept the currently wired virus-assembly dataset entries intact
-  - added shared-dataset candidate entries for `cirrna` and `免疫逃逸`
-    so those task families now have one unified dataset registry even though
-    their tool-local `input.json` files still contain historical example paths
-- New non-assembly dataset groups currently staged in the catalog:
+  - kept the currently wired virus-assembly case directories intact
+  - infers shared-dataset candidate entries for `cirrna` and `免疫逃逸` from
+    their tool-local `input.json` files, even though some still contain
+    historical example paths
+- Non-assembly dataset groups documented by the local benchmark assets:
   - `circrna-hela-rnaser-paired`
   - `circrna-blood-prjna722046`
   - `immune-escape-rbd-functional-dms`
@@ -625,16 +630,21 @@ Remaining gaps:
 
 ### 5. Runtime And Local Environment
 
-Status: supervisor-runtime branch uses the normal user-level CLI configuration
+Status: supervisor-runtime branch is in transition toward project-local
+configuration, but strict single-entry configuration is not yet achieved
 
 - Main configuration entry:
 
 ```txt
-~/.code2workspace/config.toml
+backend/config/agent_models.json
 ```
 
-- Project and global `.env` loading remain enabled. For the local relay, keep
-  the relevant provider key in the shell or dotenv layer used by the CLI.
+- Legacy/test TOML support remains in code, and normal `.env` /
+  environment-variable loading is still active for provider credentials,
+  base URLs, LangSmith/tracing settings, shell settings, and some optional
+  skills.
+- The local relay still requires a configured model provider, usually through
+  the project-local model entry plus environment-provided secrets.
 - Smoke command:
 
 ```bash

@@ -947,6 +947,44 @@ def _report_worker_node_ids(node_id: str) -> frozenset[str]:
     return frozenset((node_id, *SUPERVISOR_REPORT_RETRY_NODE_IDS.get(node_id, ())))
 
 
+def _resolve_report_worker_model(model_spec: str) -> str | BaseChatModel:
+    """Resolve report worker models through the CLI model config path."""
+
+    fallback_spec: str | None = None
+    if model_spec.startswith("openai_paid:"):
+        _, _, model_name = model_spec.partition(":")
+        if model_name:
+            fallback_spec = f"openai:{model_name}"
+
+    try:
+        from code2workspace_cli.config import create_model
+        from code2workspace_cli.model_config import ModelConfigError
+
+        return create_model(model_spec).model
+    except ModelConfigError:
+        if fallback_spec is not None:
+            logger.warning(
+                "Report worker model %r is not available in this branch's CLI "
+                "model registry; retrying with compatibility fallback %r.",
+                model_spec,
+                fallback_spec,
+            )
+            try:
+                return create_model(fallback_spec).model
+            except ModelConfigError:
+                logger.exception(
+                    "Compatibility fallback %r also failed for report worker model %r.",
+                    fallback_spec,
+                    model_spec,
+                )
+        logger.exception(
+            "Failed to resolve report worker model %r via CLI model config; "
+            "falling back to the raw model spec.",
+            model_spec,
+        )
+        return model_spec
+
+
 def create_cli_agent(
     model: str | BaseChatModel,
     assistant_id: str,
@@ -1365,9 +1403,10 @@ def create_cli_agent(
     for node_id, model_spec in report_worker_model_specs.items():
         report_worker_agent = report_worker_agents_by_model.get(model_spec)
         if report_worker_agent is None:
+            report_worker_model = _resolve_report_worker_model(model_spec)
             report_worker_agent = _build_workspace_agent(
                 middleware_stack=agent_middleware,
-                model_override=model_spec,
+                model_override=report_worker_model,
             )
             report_worker_agents_by_model[model_spec] = report_worker_agent
         report_worker_subagents.append(

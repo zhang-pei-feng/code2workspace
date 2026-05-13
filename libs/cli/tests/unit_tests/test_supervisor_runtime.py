@@ -448,6 +448,8 @@ def test_create_cli_agent_wraps_default_agent_with_supervisor_runtime(
     mock_wrapped_agent.with_config.return_value = mock_wrapped_agent
     fake_model = Mock()
     fake_model.profile = {"max_input_tokens": 200000}
+    resolved_report_model = Mock()
+    resolved_report_model.profile = {"max_input_tokens": 1000000}
     built_agents: list[Mock] = []
 
     def _fake_workspace_agent(**_: object) -> Mock:
@@ -460,6 +462,10 @@ def test_create_cli_agent_wraps_default_agent_with_supervisor_runtime(
         patch.dict("os.environ", {}, clear=True),
         patch("code2workspace_cli.agent.settings", _make_settings(tmp_path)),
         patch("code2workspace_cli.agent.create_workspace_agent", side_effect=_fake_workspace_agent),
+        patch(
+            "code2workspace_cli.agent._resolve_report_worker_model",
+            return_value=resolved_report_model,
+        ),
         patch("code2workspace._models.init_chat_model", return_value=fake_model),
         patch("code2workspace.middleware.summarization.create_summarization_tool_middleware"),
         patch(
@@ -500,6 +506,13 @@ def test_create_cli_agent_allows_report_worker_model_env_overrides(
     fake_model.profile = {"max_input_tokens": 200000}
     created_models: list[object] = []
     built_agents: list[Mock] = []
+    resolved_models = {
+        "openai_paid:gpt-5.4": Mock(name="resolved-default-report-model"),
+        "openai_paid:gpt-5.4-compose": Mock(name="resolved-compose-report-model"),
+        "openai_paid:gpt-5.4-final": Mock(name="resolved-final-report-model"),
+    }
+    for model in resolved_models.values():
+        model.profile = {"max_input_tokens": 1000000}
 
     def _fake_workspace_agent(**kwargs: object) -> Mock:
         agent = Mock()
@@ -520,6 +533,10 @@ def test_create_cli_agent_allows_report_worker_model_env_overrides(
         ),
         patch("code2workspace_cli.agent.settings", _make_settings(tmp_path)),
         patch("code2workspace_cli.agent.create_workspace_agent", side_effect=_fake_workspace_agent),
+        patch(
+            "code2workspace_cli.agent._resolve_report_worker_model",
+            side_effect=lambda spec: resolved_models[spec],
+        ) as mock_resolve_report_model,
         patch("code2workspace._models.init_chat_model", return_value=fake_model),
         patch("code2workspace.middleware.summarization.create_summarization_tool_middleware"),
         patch(
@@ -535,13 +552,40 @@ def test_create_cli_agent_allows_report_worker_model_env_overrides(
             enable_shell=False,
         )
 
-    assert created_models.count("openai_paid:gpt-5.4") == 1
-    assert "openai_paid:gpt-5.4-compose" in created_models
-    assert "openai_paid:gpt-5.4-final" in created_models
+    assert created_models.count(resolved_models["openai_paid:gpt-5.4"]) == 1
+    assert resolved_models["openai_paid:gpt-5.4-compose"] in created_models
+    assert resolved_models["openai_paid:gpt-5.4-final"] in created_models
+    assert [item.args[0] for item in mock_resolve_report_model.call_args_list] == [
+        "openai_paid:gpt-5.4",
+        "openai_paid:gpt-5.4-compose",
+        "openai_paid:gpt-5.4-final",
+    ]
     worker_subagents = mock_build.call_args.kwargs["worker_subagents"]
     by_name = {item.name: item for item in worker_subagents}
     assert by_name["report:compose_report"].runnable is built_agents[3]
     assert by_name["report:final_response"].runnable is built_agents[4]
+
+
+def test_resolve_report_worker_model_falls_back_from_openai_paid_alias() -> None:
+    primary_error = Exception("unsupported provider")
+    resolved_fallback = Mock()
+    resolved_fallback.profile = {"max_input_tokens": 1000000}
+
+    with patch("code2workspace_cli.config.create_model") as mock_create_model:
+        mock_create_model.side_effect = [
+            __import__("code2workspace_cli.model_config", fromlist=["ModelConfigError"]).ModelConfigError(primary_error),
+            Mock(model=resolved_fallback),
+        ]
+
+        model = __import__("code2workspace_cli.agent", fromlist=["_resolve_report_worker_model"])._resolve_report_worker_model(
+            "openai_paid:gpt-5.4"
+        )
+
+    assert model is resolved_fallback
+    assert [call.args[0] for call in mock_create_model.call_args_list] == [
+        "openai_paid:gpt-5.4",
+        "openai:gpt-5.4",
+    ]
 
 
 def test_build_worker_prompt_uses_capability_registry_and_guidance() -> None:
@@ -1029,6 +1073,110 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
 
 
 @pytest.mark.asyncio
+async def test_benchmark_register_rejects_tools_that_violate_exclusions(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-exclude"
+    run_dir.mkdir(parents=True)
+    node = TaskNode(
+        node_id="register",
+        title="Register benchmark cases",
+        objective="Confirm benchmark inputs, register each tool/case pair, and verify staged constraints before execution.",
+        capability_bundles=["plan", "task_manage", "validate"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "并行跑多个算子，但不要选 spades 和 megahit。",
+            "run_dir": str(run_dir),
+            "selected_tools": ["spades", "megahit"],
+            "excluded_tools": ["spades", "megahit"],
+        },
+    )
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = AssertionError("register helper path should bypass the model")
+
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
+
+    assert result.status == "failed"
+    assert result.failure_reason == "selected_tools_violate_exclusion_constraint"
+    assert "spades" in result.summary
+    assert "megahit" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_benchmark_register_fails_fast_when_no_tools_remain_after_exclusion(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-empty"
+    run_dir.mkdir(parents=True)
+    node = TaskNode(
+        node_id="register",
+        title="Register benchmark cases",
+        objective="Confirm benchmark inputs, register each tool/case pair, and verify staged constraints before execution.",
+        capability_bundles=["plan", "task_manage", "validate"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "不要选 spades 和 megahit。",
+            "run_dir": str(run_dir),
+            "selected_tools": [],
+            "excluded_tools": ["spades", "megahit"],
+        },
+    )
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = AssertionError("empty register case should still bypass the model")
+
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
+
+    assert result.status == "failed"
+    assert result.failure_reason == "missing_selected_tools"
+
+
+@pytest.mark.asyncio
+async def test_benchmark_register_reports_url_only_assets_missing(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-url-only"
+    run_dir.mkdir(parents=True)
+    node = TaskNode(
+        node_id="register",
+        title="Register benchmark cases",
+        objective="Confirm benchmark inputs, register each tool/case pair, and verify staged constraints before execution.",
+        capability_bundles=["plan", "task_manage", "validate"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "https://github.com/example/tool-a\nhttps://github.com/example/tool-b\n请选择共享数据集做 benchmark。",
+            "run_dir": str(run_dir),
+            "selected_tools": [],
+            "excluded_tools": [],
+            "benchmark_root": None,
+        },
+    )
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = AssertionError("URL-only register should still bypass the model")
+
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
+
+    assert result.status == "failed"
+    assert result.failure_reason == "missing_benchmark_assets"
+    assert result.next_action_hint == "prepare_benchmark_assets_from_urls"
+    assert "URL-only benchmark requests" in result.summary
+
+
+@pytest.mark.asyncio
 async def test_run_supervisor_orchestration_expands_benchmark_after_register_round(
     tmp_path: Path,
 ) -> None:
@@ -1206,6 +1354,90 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_repo_helper(
     assert result.status == "completed"
     assert "megahit" in result.summary
     assert (run_dir / "cases" / "megahit" / "run" / "result_manifest.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_deterministic_benchmark_repo_helper_marks_missing_expected_outputs_partial(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-partial"
+    case_dir = run_dir / "cases" / "canu"
+    (case_dir / "run" / "repo_native_output").mkdir(parents=True)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (case_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "dataset_key": "long-read-canu-pacbio",
+                "family": "long-read-assembly",
+                "metric_keys": ["contig_count", "assembly_size", "n50"],
+                "expected_outputs": ["assembly.fasta"],
+                "phase_status": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (case_dir / "execution_ready.json").write_text("{}", encoding="utf-8")
+    (case_dir / "dataset_manifest.json").write_text("{}", encoding="utf-8")
+    (case_dir / "run" / "repo_native.log").write_text("stopped after intermediate stage\n", encoding="utf-8")
+
+    node = TaskNode(
+        node_id="canu",
+        title="Run canu",
+        objective="Execute the staged benchmark workload for canu and record outputs, logs, and failure reasons.",
+        capability_bundles=["docker_build_run", "wdl_run", "metric_compute"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "运行 canu benchmark。",
+            "run_dir": str(run_dir),
+        },
+    )
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = AssertionError("benchmark repo helper path should bypass the model")
+
+    def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
+        if phase == "run-repo-native:canu":
+            (case_dir / "run" / "status.json").write_text(
+                json.dumps(
+                    {
+                        "success": True,
+                        "returncode": 0,
+                        "elapsed_seconds": 1.5,
+                        "command": command,
+                        "log_path": str(case_dir / "run" / "repo_native.log"),
+                        "output_dir": str(case_dir / "run" / "repo_native_output"),
+                        "output_artifacts": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {"phase": phase, "command": command, "stdout": {"repo": "canu"}}
+        if phase == "analyze-case:canu":
+            (case_dir / "analysis.json").write_text(
+                json.dumps(
+                    {
+                        "family": "long-read-assembly",
+                        "artifact_paths": [],
+                        "artifact_checksums": {},
+                        "metrics": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
+            return {"phase": phase, "command": command, "stdout": {"repo": "canu"}}
+        raise AssertionError(f"unexpected phase: {phase}")
+
+    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_helper):
+        result = await _invoke_worker_agent(
+            agent=agent,
+            node=node,
+            workspace_root=workspace_root,
+        )
+
+    assert result.status == "partial"
+    assert result.failure_reason == "expected_outputs_missing"
+    assert "Expected benchmark output files were not found" in result.summary
 
 
 @pytest.mark.asyncio

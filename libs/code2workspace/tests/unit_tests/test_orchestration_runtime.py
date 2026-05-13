@@ -355,6 +355,46 @@ def test_planner_creates_report_graph() -> None:
     assert "evidence source notes" in graph.nodes[4].objective
 
 
+def test_planner_excludes_explicitly_forbidden_benchmark_tools() -> None:
+    planner = HeuristicSupervisorPlanner()
+    benchmark_root = Path.cwd() / "workspace" / "test-benchmark-catalog-exclude"
+    catalog_path = benchmark_root / "datasets" / "benchmark_catalog.json"
+    catalog_path.parent.mkdir(parents=True, exist_ok=True)
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "datasets": {
+                    "shared-dataset": {
+                        "dataset_id": "shared-dataset",
+                        "description": "shared benchmark fixture",
+                        "shared_between": ["spades", "megahit", "canu", "Flye"],
+                    }
+                },
+                "repo_cases": {
+                    "spades": {"dataset_key": "shared-dataset"},
+                    "megahit": {"dataset_key": "shared-dataset"},
+                    "canu": {"dataset_key": "shared-dataset"},
+                    "Flye": {"dataset_key": "shared-dataset"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    graph = planner.plan_round(
+        task=(
+            f"请在 {benchmark_root} 里挑选共享数据集并选择多个算子并行跑。"
+            "不要选 spades 和 megahit。"
+        ),
+        retrieved_cases=[],
+        prior_rounds=[],
+    )
+
+    assert graph.task_type == "benchmark"
+    assert graph.nodes[0].metadata["selected_tools"] == ["canu", "Flye"]
+    assert sorted(graph.nodes[0].metadata["excluded_tools"]) == ["megahit", "spades"]
+
+
 def test_planner_selects_benchmark_tools_from_catalog_dataset() -> None:
     planner = HeuristicSupervisorPlanner()
     benchmark_root = Path.cwd() / "workspace" / "test-benchmark-catalog"
@@ -393,6 +433,38 @@ def test_planner_selects_benchmark_tools_from_catalog_dataset() -> None:
     assert graph.task_type == "benchmark"
     assert [node.node_id for node in graph.nodes] == ["register"]
     assert graph.nodes[0].metadata["selected_tools"] == expected_tools
+
+
+def test_planner_discovers_shared_benchmark_tools_without_catalog(tmp_path: Path) -> None:
+    planner = HeuristicSupervisorPlanner()
+    benchmark_root = tmp_path / "arbitrary-benchmark-assets"
+    canu_dir = benchmark_root / "新冠病毒组装" / "002_canu"
+    flye_dir = benchmark_root / "新冠病毒组装" / "004_Flye"
+    canu_dir.mkdir(parents=True)
+    flye_dir.mkdir(parents=True)
+    (canu_dir / "inputs.json").write_text(
+        json.dumps({"CanuWorkflow.reads_fastq": "results/real-tests/canu/pacbio.fastq"}),
+        encoding="utf-8",
+    )
+    (flye_dir / "inputs.json").write_text(
+        json.dumps({"FlyeAssembly.reads": "results/real-tests/canu/pacbio.fastq"}),
+        encoding="utf-8",
+    )
+    (canu_dir / "canu.wdl").write_text('workflow CanuWorkflow {}\nruntime { docker: "benchmark/canu:test" }\n', encoding="utf-8")
+    (flye_dir / "flye.wdl").write_text('workflow FlyeAssembly {}\nruntime { docker: "benchmark/flye:test" }\n', encoding="utf-8")
+
+    graph = planner.plan_round(
+        task=(
+            f"下面这个路径中有几个病毒组装算子的数据集和wdl文件：{benchmark_root}。"
+            "挑选共享数据集并挑选多个算子并行跑，然后分析总结。不要选spades和megahit。"
+        ),
+        retrieved_cases=[],
+        prior_rounds=[],
+    )
+
+    assert graph.task_type == "benchmark"
+    assert graph.nodes[0].metadata["selected_tools"] == ["Flye", "canu"]
+    assert graph.nodes[0].metadata["excluded_tools"] == []
 
 
 def test_planner_expands_benchmark_workers_after_register_selects_tools() -> None:
@@ -498,6 +570,51 @@ async def test_execute_graph_round_runs_parallel_ready_nodes() -> None:
 
     assert set(seen) == {"spades", "megahit"}
     assert result.completed_count == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_graph_round_allows_partial_dependencies_to_continue() -> None:
+    graph = TaskGraph(
+        graph_id="graph-partial",
+        task_type="benchmark",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="canu",
+                title="Run canu",
+                objective="execute canu",
+                capability_bundles=["docker_build_run"],
+            ),
+            TaskNode(
+                node_id="Flye",
+                title="Run Flye",
+                objective="execute flye",
+                capability_bundles=["docker_build_run"],
+            ),
+            TaskNode(
+                node_id="summarize",
+                title="Summarize",
+                objective="summarize partial results",
+                capability_bundles=["summarize"],
+            ),
+        ],
+        edges=[
+            TaskEdge(source="canu", target="summarize"),
+            TaskEdge(source="Flye", target="summarize"),
+        ],
+    )
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "canu":
+            return WorkerResult(status="partial", summary="canu partial")
+        return WorkerResult(status="completed", summary=f"{node.node_id} ok")
+
+    result = await execute_graph_round(graph, worker_runner)
+
+    by_node = {item.node_id: item for item in result.node_results}
+    assert by_node["canu"].status == "partial"
+    assert by_node["Flye"].status == "completed"
+    assert by_node["summarize"].status == "completed"
 
 
 @pytest.mark.asyncio

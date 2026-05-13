@@ -41,6 +41,7 @@ FAMILY_METRICS = {
     "rna-seq-transcriptome": ["transcript_count", "trinity_fasta_size"],
     "viral-short-read-pipeline": ["consensus_fasta", "variant_outputs", "coverage_summary"],
     "viral-ont-amplicon": ["consensus_fasta", "variant_outputs", "coverage_summary"],
+    "unknown": [],
 }
 
 
@@ -93,7 +94,7 @@ class RepoCase:
 
     @property
     def metric_keys(self) -> list[str]:
-        return FAMILY_METRICS[self.family]
+        return FAMILY_METRICS.get(self.family, [])
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -105,12 +106,17 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
 
-def _catalog_path() -> Path:
-    return _repo_root() / "experiments" / "benchmark" / "datasets" / "benchmark_catalog.json"
+def _default_benchmark_root() -> Path:
+    return _repo_root() / "experiments" / "benchmark"
 
 
-def _load_catalog() -> tuple[dict[str, Any], dict[str, DatasetSpec], dict[str, RepoCase]]:
-    raw = json.loads(_catalog_path().read_text(encoding="utf-8"))
+def _catalog_path(root: Path | None = None) -> Path:
+    benchmark_root = root or _default_benchmark_root()
+    return benchmark_root / "datasets" / "benchmark_catalog.json"
+
+
+def _load_catalog(root: Path | None = None) -> tuple[dict[str, Any], dict[str, DatasetSpec], dict[str, RepoCase]]:
+    raw = _load_or_discover_catalog(root)
     datasets = {
         key: DatasetSpec(
             key=key,
@@ -136,12 +142,12 @@ def _load_catalog() -> tuple[dict[str, Any], dict[str, DatasetSpec], dict[str, R
     cases = {
         name: RepoCase(
             repo_name=name,
-            repo_url=str(payload["repo_url"]),
-            family=str(payload["family"]),
+            repo_url=str(payload.get("repo_url", "")),
+            family=str(payload.get("family", "unknown")),
             dataset_key=str(payload["dataset_key"]),
-            image_tag=str(payload["image_tag"]),
-            repo_native_entry=str(payload["repo_native_entry"]),
-            wdl_workflow_name=str(payload["wdl_workflow_name"]),
+            image_tag=str(payload.get("image_tag", f"benchmark/{name.casefold()}:latest")),
+            repo_native_entry=str(payload.get("repo_native_entry", "")),
+            wdl_workflow_name=str(payload.get("wdl_workflow_name", name)),
             expected_outputs=tuple(str(item) for item in payload.get("expected_outputs", [])),
             constraints=tuple(str(item) for item in payload.get("constraints", [])),
             case_dir=str(payload["case_dir"]) if payload.get("case_dir") else None,
@@ -159,15 +165,277 @@ def _load_catalog() -> tuple[dict[str, Any], dict[str, DatasetSpec], dict[str, R
     return raw, datasets, cases
 
 
+def _load_or_discover_catalog(root: Path | None = None) -> dict[str, Any]:
+    benchmark_root = (root or _default_benchmark_root()).resolve()
+    try:
+        raw = json.loads(_catalog_path(benchmark_root).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raw = {
+            "benchmark_root": str(benchmark_root),
+            "catalog_file": str(_catalog_path(benchmark_root)),
+            "dataset_root": str(benchmark_root / "datasets"),
+            "downloads_root": str(benchmark_root / "datasets" / "downloads"),
+            "datasets": {},
+            "repo_cases": {},
+        }
+    raw.setdefault("benchmark_root", str(benchmark_root))
+    raw.setdefault("catalog_file", str(_catalog_path(benchmark_root)))
+    raw.setdefault("dataset_root", str(benchmark_root / "datasets"))
+    raw.setdefault("downloads_root", str(benchmark_root / "datasets" / "downloads"))
+    raw.setdefault("datasets", {})
+    raw.setdefault("repo_cases", {})
+    return _augment_catalog_from_case_dirs(raw, benchmark_root=benchmark_root)
+
+
+def _augment_catalog_from_case_dirs(raw: dict[str, Any], *, benchmark_root: Path) -> dict[str, Any]:
+    datasets = raw.get("datasets")
+    repo_cases = raw.get("repo_cases")
+    if not isinstance(datasets, dict) or not isinstance(repo_cases, dict):
+        return raw
+
+    discovered: dict[str, dict[str, Any]] = {}
+    for case_dir in _discover_case_dirs(benchmark_root):
+        case = _case_payload_from_dir(benchmark_root, case_dir)
+        if case is not None:
+            discovered[str(case["repo_name"])] = case
+
+    for repo_name, case in discovered.items():
+        repo_cases.setdefault(repo_name, case)
+
+    for case in discovered.values():
+        dataset_key = str(case["dataset_key"])
+        shared_between = sorted(
+            repo
+            for repo, payload in repo_cases.items()
+            if isinstance(payload, dict) and str(payload.get("dataset_key")) == dataset_key
+        )
+        existing = datasets.get(dataset_key)
+        if isinstance(existing, dict):
+            existing_shared = [str(item) for item in existing.get("shared_between", []) if isinstance(item, str)]
+            existing["shared_between"] = sorted(set(existing_shared + shared_between))
+            continue
+        datasets[dataset_key] = {
+            "dataset_id": dataset_key,
+            "description": "Shared benchmark inputs inferred from local WDL input JSON files.",
+            "fallback_urls": [],
+            "family": case.get("family", "unknown"),
+            "files": case.get("dataset_files", []),
+            "local_candidates": case.get("local_candidates", []),
+            "shared_between": shared_between,
+            "source": "local benchmark inputs",
+            "source_urls": [],
+        }
+    return raw
+
+
+def _discover_case_dirs(root: Path) -> list[Path]:
+    case_dirs: list[Path] = []
+    for input_path in sorted([*root.rglob("inputs.json"), *root.rglob("input.json")]):
+        if "datasets" in input_path.parts:
+            continue
+        case_dir = input_path.parent
+        if any(case_dir.glob("*.wdl")):
+            case_dirs.append(case_dir)
+    return case_dirs
+
+
+def _case_payload_from_dir(benchmark_root: Path, case_dir: Path) -> dict[str, Any] | None:
+    input_path = next((path for path in (case_dir / "inputs.json", case_dir / "input.json") if path.exists()), None)
+    wdl_path = next(iter(sorted(case_dir.glob("*.wdl"))), None)
+    if input_path is None or wdl_path is None:
+        return None
+    try:
+        inputs = json.loads(input_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(inputs, dict):
+        return None
+    repo_name = re.sub(r"^\d+[_-]*", "", case_dir.name)
+    input_files = _file_input_values(inputs)
+    if not input_files:
+        return None
+    workflow_name = _workflow_name_from_wdl(wdl_path) or repo_name
+    family = _family_for_case(repo_name, workflow_name, input_files)
+    runtime_image = _runtime_image_from_wdl_text(wdl_path.read_text(encoding="utf-8", errors="replace")) or f"benchmark/{repo_name.casefold()}:latest"
+    dockerfile_candidates = _known_dockerfile_candidates(repo_name)
+    return {
+        "case_dir": _manifest_path_for(case_dir, benchmark_root=benchmark_root),
+        "constraints": ["Use benchmark inputs discovered from the local case directory."],
+        "dataset_key": _dataset_key_for_input_files(input_files),
+        "dockerfile_candidates": dockerfile_candidates,
+        "dockerfile_path": dockerfile_candidates[0] if dockerfile_candidates else None,
+        "expected_outputs": _expected_outputs_for_family(family),
+        "family": family,
+        "image_tag": runtime_image,
+        "input_json_candidates": [_manifest_path_for(input_path, benchmark_root=benchmark_root)],
+        "inputs_path": _manifest_path_for(input_path, benchmark_root=benchmark_root),
+        "local_result_candidates": [],
+        "repo_native_command_candidates": [],
+        "repo_native_entry": _default_repo_native_entry(repo_name),
+        "repo_url": _known_repo_url(repo_name),
+        "wdl_candidates": [_manifest_path_for(wdl_path, benchmark_root=benchmark_root)],
+        "wdl_path": _manifest_path_for(wdl_path, benchmark_root=benchmark_root),
+        "wdl_workflow_name": workflow_name,
+        "dataset_files": _dataset_files_for_inputs(input_files),
+        "local_candidates": input_files,
+        "repo_name": repo_name,
+    }
+
+
+def _manifest_path_for(path: Path, *, benchmark_root: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(_repo_root()))
+    except ValueError:
+        pass
+    return str(resolved)
+
+
+def _file_input_values(inputs: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for value in inputs.values():
+        if not isinstance(value, str):
+            continue
+        lowered = value.casefold()
+        if any(lowered.endswith(suffix) for suffix in (".fq", ".fastq", ".fa", ".fasta", ".gz", ".bam", ".bed", ".pt", ".vcf")):
+            values.append(value)
+    return sorted(dict.fromkeys(values))
+
+
+def _workflow_name_from_wdl(wdl_path: Path) -> str | None:
+    match = re.search(r"\bworkflow\s+([A-Za-z_][A-Za-z0-9_]*)", wdl_path.read_text(encoding="utf-8", errors="replace"))
+    return match.group(1) if match else None
+
+
+def _runtime_image_from_wdl_text(text: str) -> str | None:
+    match = re.search(r'docker:\s*"([^"]+)"', text)
+    return match.group(1) if match else None
+
+
+def _dataset_key_for_input_files(input_files: list[str]) -> str:
+    joined = "\n".join(input_files).casefold()
+    if "srr001666" in joined:
+        return "short-read-ecoli-srr001666"
+    if "pacbio.fastq" in joined:
+        return "long-read-canu-pacbio"
+    digest = hashlib.sha1("\n".join(input_files).encode("utf-8")).hexdigest()[:10]
+    return f"shared-inputs-{digest}"
+
+
+def _dataset_files_for_inputs(input_files: list[str]) -> list[dict[str, str]]:
+    return [
+        {"logical_name": _logical_input_name(value, index), "uri": value, "filename": Path(value).name or f"input_{index}"}
+        for index, value in enumerate(input_files, start=1)
+    ]
+
+
+def _logical_input_name(value: str, index: int) -> str:
+    lowered = value.casefold()
+    if "_1" in lowered or "r1" in lowered or "read1" in lowered:
+        return "reads_1"
+    if "_2" in lowered or "r2" in lowered or "read2" in lowered:
+        return "reads_2"
+    if "pacbio" in lowered or lowered.endswith((".fq", ".fastq", ".fq.gz", ".fastq.gz")):
+        return "reads" if index == 1 else f"reads_{index}"
+    return f"input_{index}"
+
+
+def _family_for_case(repo_name: str, workflow_name: str, input_files: list[str]) -> str:
+    lowered = f"{repo_name} {workflow_name} {' '.join(input_files)}".casefold()
+    if "spades" in lowered or "megahit" in lowered:
+        return "short-read-assembly"
+    if "canu" in lowered or "flye" in lowered or "pacbio" in lowered:
+        return "long-read-assembly"
+    if "trinity" in lowered:
+        return "rna-seq-transcriptome"
+    if "fieldbio" in lowered or "artic" in lowered:
+        return "viral-ont-amplicon"
+    if "covid" in lowered or "signal" in lowered:
+        return "viral-short-read-pipeline"
+    return "unknown"
+
+
+def _known_repo_url(repo_name: str) -> str:
+    known = {
+        "spades": "https://github.com/ablab/spades",
+        "megahit": "https://github.com/voutcn/megahit",
+        "canu": "https://github.com/marbl/canu",
+        "Flye": "https://github.com/fenderglass/Flye",
+        "trinityrnaseq": "https://github.com/trinityrnaseq/trinityrnaseq",
+        "covid-19-signal": "https://github.com/jaleezyy/covid-19-signal",
+        "fieldbioinformatics": "https://github.com/artic-network/fieldbioinformatics",
+    }
+    return known.get(repo_name, "")
+
+
+def _known_dockerfile_candidates(repo_name: str) -> list[str]:
+    known = {
+        "spades": [".workspaces/oneshot/spades/spades_Dockerfile"],
+        "megahit": [
+            ".workspaces/oneshot/megahit/megahit_Dockerfile",
+            ".workspaces/oneshot/megahit/Dockerfile",
+        ],
+    }
+    return known.get(repo_name, [])
+
+
+def _default_repo_native_entry(repo_name: str) -> str:
+    defaults = {
+        "spades": "spades.py -1 <reads_1> -2 <reads_2>",
+        "megahit": "megahit -1 <reads_1> -2 <reads_2> -o out",
+        "canu": "canu -p ecoli -d out genomeSize=4.8m -pacbio <reads>",
+        "Flye": "flye --pacbio-raw <reads> --out-dir out",
+        "trinityrnaseq": "Trinity --left <reads_1> --right <reads_2> --seqType fq --output out",
+    }
+    return defaults.get(repo_name, "")
+
+
+def _expected_outputs_for_family(family: str) -> list[str]:
+    if family in {"short-read-assembly", "long-read-assembly"}:
+        return ["assembly.fasta", "contigs.fasta", "final.contigs.fa"]
+    if family == "rna-seq-transcriptome":
+        return ["Trinity.fasta"]
+    if family in {"viral-short-read-pipeline", "viral-ont-amplicon"}:
+        return ["consensus.fasta", "variants.vcf", "coverage.tsv"]
+    return []
+
+
 RAW_CATALOG, DATASETS, CASES = _load_catalog()
 
 
+def _activate_benchmark_root(root: str | Path | None) -> None:
+    global RAW_CATALOG, DATASETS, CASES
+    if root is None or not str(root).strip():
+        RAW_CATALOG, DATASETS, CASES = _load_catalog()
+        return
+    RAW_CATALOG, DATASETS, CASES = _load_catalog(Path(root).expanduser().resolve())
+
+
+def _activate_benchmark_root_from_run_dir(run_dir: Path) -> None:
+    manifest_path = _root_manifest_path(run_dir)
+    if not manifest_path.exists():
+        return
+    manifest = read_json(manifest_path)
+    _activate_benchmark_root(manifest.get("benchmark_root"))
+
+
+def _resolve_catalog_path(raw: str) -> Path:
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        return candidate
+    return _repo_root() / candidate
+
+
 def _dataset_root() -> Path:
-    return _repo_root() / RAW_CATALOG["dataset_root"]
+    return _resolve_catalog_path(str(RAW_CATALOG["dataset_root"]))
 
 
 def _downloads_root() -> Path:
-    return _repo_root() / RAW_CATALOG["downloads_root"]
+    return _resolve_catalog_path(str(RAW_CATALOG["downloads_root"]))
+
+
+def _active_catalog_file() -> str:
+    return str(RAW_CATALOG.get("catalog_file") or _catalog_path())
 
 
 def _root_manifest_path(run_dir: Path) -> Path:
@@ -287,7 +555,8 @@ def _root_plan_payload(task: str, run_dir: Path, case_order: list[str]) -> dict[
         "task": task,
         "run_dir": str(run_dir),
         "phase_order": PHASE_ORDER,
-        "catalog_file": str(_catalog_path()),
+        "benchmark_root": str(RAW_CATALOG.get("benchmark_root", _default_benchmark_root())),
+        "catalog_file": _active_catalog_file(),
         "dataset_root": str(_dataset_root()),
         "downloads_root": str(_downloads_root()),
         "case_order": case_order,
@@ -669,8 +938,10 @@ def _preferred_image_ref(case_dir: Path, case_manifest: dict[str, Any]) -> str:
 
 
 def cmd_catalog_datasets(args: argparse.Namespace) -> int:
+    _activate_benchmark_root(args.benchmark_root)
     payload = {
-        "catalog_file": str(_catalog_path()),
+        "benchmark_root": str(RAW_CATALOG.get("benchmark_root", _default_benchmark_root())),
+        "catalog_file": _active_catalog_file(),
         "dataset_root": str(_dataset_root()),
         "downloads_root": str(_downloads_root()),
         "dataset_count": len(DATASETS),
@@ -682,6 +953,7 @@ def cmd_catalog_datasets(args: argparse.Namespace) -> int:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
+    _activate_benchmark_root(args.benchmark_root)
     run_dir = Path(args.output_dir) if args.output_dir else create_skill_run_dir("benchmark-workflow-orchestrator", "runs")
     ensure_dir(run_dir)
     ensure_dir(_cases_root(run_dir))
@@ -689,6 +961,9 @@ def cmd_init(args: argparse.Namespace) -> int:
     ensure_dir(_downloads_root())
     ensure_dir(run_dir / "logs")
     case_order = list(args.repos) if args.repos else list(CASES)
+    unknown = [repo for repo in case_order if repo not in CASES]
+    if unknown:
+        raise SystemExit(f"Unknown benchmark repo case(s) for {RAW_CATALOG.get('benchmark_root')}: {', '.join(unknown)}")
     root_payload = _root_plan_payload(args.task, run_dir, case_order)
     write_json(_root_manifest_path(run_dir), root_payload)
     write_json(run_dir / "benchmark_plan.json", root_payload)
@@ -719,10 +994,12 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_resolve_datasets(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
+    _activate_benchmark_root_from_run_dir(run_dir)
     manifest = _load_root_manifest(run_dir)
     payload = {
         "run_dir": str(run_dir),
-        "catalog_file": str(_catalog_path()),
+        "benchmark_root": str(RAW_CATALOG.get("benchmark_root", _default_benchmark_root())),
+        "catalog_file": _active_catalog_file(),
         "dataset_root": str(_dataset_root()),
         "downloads_root": str(_downloads_root()),
         "dataset_count": len(DATASETS),
@@ -748,6 +1025,7 @@ def cmd_resolve_datasets(args: argparse.Namespace) -> int:
 
 def cmd_prepare_case(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
+    _activate_benchmark_root_from_run_dir(run_dir)
     repo = args.repo
     case_manifest = _load_case_manifest(run_dir, repo)
     case = CASES[repo]
@@ -759,7 +1037,7 @@ def cmd_prepare_case(args: argparse.Namespace) -> int:
     dataset_manifest = {
         **dataset.to_dict(),
         "repo_name": repo,
-        "catalog_file": str(_catalog_path()),
+        "catalog_file": _active_catalog_file(),
         "dataset_root": str(_dataset_root()),
         "downloads_root": str(_downloads_root()),
         "local_cache_dir": str(dataset_dir),
@@ -820,6 +1098,7 @@ def cmd_prepare_case(args: argparse.Namespace) -> int:
 
 def cmd_execution_ready(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
+    _activate_benchmark_root_from_run_dir(run_dir)
     repo = args.repo
     case_manifest = _load_case_manifest(run_dir, repo)
     case = CASES[repo]
@@ -859,6 +1138,7 @@ def cmd_execution_ready(args: argparse.Namespace) -> int:
 
 def cmd_prebuild_image(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
+    _activate_benchmark_root_from_run_dir(run_dir)
     repo = args.repo
     case_manifest = _load_case_manifest(run_dir, repo)
     docker_dir = _case_dir(run_dir, repo) / "docker"
@@ -902,6 +1182,7 @@ def cmd_prebuild_image(args: argparse.Namespace) -> int:
 
 def cmd_run_repo_native(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
+    _activate_benchmark_root_from_run_dir(run_dir)
     repo = args.repo
     case_manifest = _load_case_manifest(run_dir, repo)
     case_dir = _case_dir(run_dir, repo)
@@ -952,6 +1233,7 @@ def cmd_run_repo_native(args: argparse.Namespace) -> int:
 
 def cmd_analyze_case(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
+    _activate_benchmark_root_from_run_dir(run_dir)
     repo = args.repo
     case_dir = _case_dir(run_dir, repo)
     case_manifest = _load_case_manifest(run_dir, repo)
@@ -979,6 +1261,7 @@ def cmd_analyze_case(args: argparse.Namespace) -> int:
 
 def cmd_summarize(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
+    _activate_benchmark_root_from_run_dir(run_dir)
     manifest = _load_root_manifest(run_dir)
     rows = []
     for repo in manifest["case_order"]:
@@ -1036,7 +1319,8 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     )
     payload = {
         "run_dir": str(run_dir),
-        "catalog_file": str(_catalog_path()),
+        "benchmark_root": str(RAW_CATALOG.get("benchmark_root", _default_benchmark_root())),
+        "catalog_file": _active_catalog_file(),
         "dataset_root": str(_dataset_root()),
         "case_count": len(rows),
         "completed_cases": completed_cases,
@@ -1070,13 +1354,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Local benchmark workflow orchestrator helper.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    init = subparsers.add_parser("init", help="Create a benchmark run directory from the benchmark catalog.")
+    init = subparsers.add_parser("init", help="Create a benchmark run directory from discovered benchmark cases.")
     init.add_argument("--task", required=True)
     init.add_argument("--output-dir")
-    init.add_argument("--repos", nargs="+", choices=sorted(CASES))
+    init.add_argument("--benchmark-root", help="Directory to scan for benchmark WDL and input JSON assets.")
+    init.add_argument("--repos", nargs="+")
     init.set_defaults(func=cmd_init)
 
     catalog = subparsers.add_parser("catalog-datasets", help="Print the dataset catalog used by the benchmark skill.")
+    catalog.add_argument("--benchmark-root", help="Directory to scan for benchmark WDL and input JSON assets.")
     catalog.set_defaults(func=cmd_catalog_datasets)
 
     resolve = subparsers.add_parser("resolve-datasets", help="Resolve the fixed dataset mapping for the benchmark run.")
@@ -1084,17 +1370,17 @@ def build_parser() -> argparse.ArgumentParser:
     resolve.set_defaults(func=cmd_resolve_datasets)
 
     prepare = subparsers.add_parser("prepare-case", help="Materialize one repo case manifest, inputs, and agent task.")
-    prepare.add_argument("--repo", required=True, choices=sorted(CASES))
+    prepare.add_argument("--repo", required=True)
     prepare.add_argument("--run-dir", required=True)
     prepare.set_defaults(func=cmd_prepare_case)
 
     execution_ready = subparsers.add_parser("execution-ready", help="Resolve dockerfile/WDL/input/runtime candidates for one repo case.")
-    execution_ready.add_argument("--repo", required=True, choices=sorted(CASES))
+    execution_ready.add_argument("--repo", required=True)
     execution_ready.add_argument("--run-dir", required=True)
     execution_ready.set_defaults(func=cmd_execution_ready)
 
     prebuild = subparsers.add_parser("prebuild-image", help="Run or record one repo image prebuild.")
-    prebuild.add_argument("--repo", required=True, choices=sorted(CASES))
+    prebuild.add_argument("--repo", required=True)
     prebuild.add_argument("--run-dir", required=True)
     prebuild.add_argument("--dockerfile-path")
     prebuild.add_argument("--context-dir")
@@ -1104,7 +1390,7 @@ def build_parser() -> argparse.ArgumentParser:
     prebuild.set_defaults(func=cmd_prebuild_image)
 
     run_repo_native = subparsers.add_parser("run-repo-native", help="Execute one repo-native benchmark run in Docker and write run/status.json.")
-    run_repo_native.add_argument("--repo", required=True, choices=sorted(CASES))
+    run_repo_native.add_argument("--repo", required=True)
     run_repo_native.add_argument("--run-dir", required=True)
     run_repo_native.add_argument("--image")
     run_repo_native.add_argument("--shell-command")
@@ -1114,7 +1400,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_repo_native.set_defaults(func=cmd_run_repo_native)
 
     analyze = subparsers.add_parser("analyze-case", help="Analyze one case from local WDL and benchmark artifacts.")
-    analyze.add_argument("--repo", required=True, choices=sorted(CASES))
+    analyze.add_argument("--repo", required=True)
     analyze.add_argument("--run-dir", required=True)
     analyze.set_defaults(func=cmd_analyze_case)
 

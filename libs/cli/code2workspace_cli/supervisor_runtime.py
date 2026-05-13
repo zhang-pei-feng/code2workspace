@@ -861,7 +861,7 @@ def _maybe_run_deterministic_worker(*, node: TaskNode, workspace_root: Path) -> 
     metadata = node.metadata if isinstance(node.metadata, dict) else {}
     if metadata.get("task_type") != "benchmark":
         return None
-    if node.node_id in {"register", "retry_register"} and metadata.get("selected_tools"):
+    if node.node_id in {"register", "retry_register"}:
         return _run_deterministic_benchmark_register(node=node, workspace_root=workspace_root)
     if node.node_id == "summarize":
         return _run_deterministic_benchmark_summary(node=node, workspace_root=workspace_root)
@@ -891,11 +891,44 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
         for item in metadata.get("selected_tools", [])
         if isinstance(item, str) and item.strip()
     ]
+    excluded_tools = {
+        str(item)
+        for item in metadata.get("excluded_tools", [])
+        if isinstance(item, str) and item.strip()
+    }
+    benchmark_root_raw = metadata.get("benchmark_root")
+    benchmark_root = (
+        benchmark_root_raw.strip()
+        if isinstance(benchmark_root_raw, str)
+        else ""
+    )
     if not selected_tools:
+        task = str(metadata.get("task", "")).strip()
+        if not excluded_tools and not benchmark_root and _task_contains_url(task):
+            return WorkerResult(
+                status="failed",
+                summary=(
+                    "Benchmark register could not find local benchmark assets for the provided URLs. "
+                    "URL-only benchmark requests need a preparation step that clones/builds tools and "
+                    "materializes WDL/input assets before tool selection can run."
+                ),
+                failure_reason="missing_benchmark_assets",
+                next_action_hint="prepare_benchmark_assets_from_urls",
+            )
         return WorkerResult(
             status="failed",
             summary="Benchmark register helper is missing selected_tools metadata.",
             failure_reason="missing_selected_tools",
+        )
+    violating_tools = [tool for tool in selected_tools if tool in excluded_tools]
+    if violating_tools:
+        return WorkerResult(
+            status="failed",
+            summary=(
+                "Benchmark register selected tools that violate the user's explicit "
+                f"exclusion constraint: {', '.join(violating_tools)}."
+            ),
+            failure_reason="selected_tools_violate_exclusion_constraint",
         )
     repo_root = _locate_repo_root_for_benchmark(node=node, workspace_root=workspace_root)
     if repo_root is None:
@@ -914,20 +947,22 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
     run_dir = Path(run_dir_raw)
     task = str(metadata.get("task", "")).strip() or "benchmark register"
     command_results: list[dict[str, object]] = []
+    init_command = [
+        sys.executable,
+        str(helper_script),
+        "init",
+        "--task",
+        task,
+        "--output-dir",
+        str(run_dir),
+    ]
+    if benchmark_root:
+        init_command.extend(["--benchmark-root", benchmark_root])
+    init_command.extend(["--repos", *selected_tools])
     try:
         command_results.append(
             _run_helper_json_command(
-                [
-                    sys.executable,
-                    str(helper_script),
-                    "init",
-                    "--task",
-                    task,
-                    "--output-dir",
-                    str(run_dir),
-                    "--repos",
-                    *selected_tools,
-                ],
+                init_command,
                 cwd=repo_root,
                 phase="init",
             )
@@ -1164,17 +1199,28 @@ def _run_deterministic_benchmark_case(
         str(status_path),
         str(case_dir / "run" / "result_manifest.json"),
     ]
-    success = bool(status_payload.get("success")) and any(
+    run_succeeded = bool(status_payload.get("success"))
+    expected_output_found = any(
         item["exists"] for item in result_manifest["expected_outputs"].values()
     )
+    success = run_succeeded and expected_output_found
     summary = (
         f"Executed the staged {repo} benchmark via the prepared helper path; "
-        f"repo-native run {'succeeded' if success else 'did not complete successfully'}"
+        f"repo-native run {'succeeded' if run_succeeded else 'did not complete successfully'}"
     )
     if status_payload.get("returncode") is not None:
         summary += f" with exit code {status_payload['returncode']}."
     else:
         summary += "."
+    if run_succeeded and not expected_output_found:
+        return WorkerResult(
+            status="partial",
+            summary=summary + " Expected benchmark output files were not found, so this case is partial.",
+            artifacts=artifacts,
+            evidence=evidence,
+            next_action_hint="summary",
+            failure_reason="expected_outputs_missing",
+        )
     if success:
         return WorkerResult(
             status="completed",
@@ -1423,6 +1469,10 @@ def _status_payload_is_success(status_path: Path) -> bool:
     except json.JSONDecodeError:
         return False
     return bool(payload.get("success"))
+
+
+def _task_contains_url(task: str) -> bool:
+    return bool(re.search(r"https?://\S+", task))
 
 
 def _ensure_benchmark_analysis(
