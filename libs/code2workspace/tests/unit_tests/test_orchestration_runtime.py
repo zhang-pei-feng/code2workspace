@@ -467,6 +467,46 @@ def test_planner_discovers_shared_benchmark_tools_without_catalog(tmp_path: Path
     assert graph.nodes[0].metadata["excluded_tools"] == []
 
 
+def test_planner_selects_multiple_tools_from_family_hint_when_datasets_are_not_shared(
+    tmp_path: Path,
+) -> None:
+    planner = HeuristicSupervisorPlanner()
+    benchmark_root = tmp_path / "benchmark"
+    acvalidator_dir = benchmark_root / "circrna" / "ACValidator"
+    autocirc_dir = benchmark_root / "circrna" / "AutoCirc"
+    acvalidator_dir.mkdir(parents=True)
+    autocirc_dir.mkdir(parents=True)
+    (acvalidator_dir / "input.json").write_text(
+        json.dumps({"ACValidatorWorkflow.reference_fasta": "/old/acvalidator/ref.fa"}),
+        encoding="utf-8",
+    )
+    (autocirc_dir / "input.json").write_text(
+        json.dumps({"AutoCircWorkflow.reference_genome": "/old/autocirc/chr22.fa"}),
+        encoding="utf-8",
+    )
+    (acvalidator_dir / "workflow.wdl").write_text(
+        'workflow ACValidatorWorkflow {}\nruntime { docker: "benchmark/acvalidator:test" }\n',
+        encoding="utf-8",
+    )
+    (autocirc_dir / "workflow.wdl").write_text(
+        'workflow AutoCircWorkflow {}\nruntime { docker: "benchmark/autocirc:test" }\n',
+        encoding="utf-8",
+    )
+
+    graph = planner.plan_round(
+        task=(
+            f"下面这个路径中有几个circRNA算子的数据集和wdl文件：{benchmark_root / 'circrna'}\n"
+            f"{benchmark_root / 'datasets'}\n"
+            "你需要挑选共享数据集并挑选多个算子，并行跑算子，然后对结果进行分析，总结"
+        ),
+        retrieved_cases=[],
+        prior_rounds=[],
+    )
+
+    assert graph.task_type == "benchmark"
+    assert graph.nodes[0].metadata["selected_tools"] == ["ACValidator", "AutoCirc"]
+
+
 def test_planner_expands_benchmark_workers_after_register_selects_tools() -> None:
     planner = HeuristicSupervisorPlanner()
     prior_round_graph = TaskGraph(
@@ -495,7 +535,155 @@ def test_planner_expands_benchmark_workers_after_register_selects_tools() -> Non
         prior_rounds=[prior_round],
     )
 
-    assert [node.node_id for node in graph.nodes] == ["canu", "Flye", "summarize"]
+    assert [node.node_id for node in graph.nodes] == ["prebuild_canu", "prebuild_Flye"]
+
+
+def test_planner_expands_benchmark_workers_after_partial_register_with_ready_tools() -> None:
+    planner = HeuristicSupervisorPlanner()
+    prior_round_graph = TaskGraph(
+        graph_id="benchmark-r1",
+        task_type="benchmark",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="register",
+                title="Register",
+                objective="register",
+                capability_bundles=["plan", "task_manage", "validate"],
+            )
+        ],
+        edges=[],
+    )
+    prior_round = awaitable_round(
+        graph=prior_round_graph,
+        statuses={"register": "partial"},
+        spawned_subgraphs={
+            "register": {
+                "selected_tools": ["ACValidator", "AutoCirc"],
+                "blocked_tools": ["AQUARIUM-HB"],
+            }
+        },
+    )
+
+    graph = planner.plan_round(
+        task="我想评估 circRNA benchmark 数据集在不同工具上的表现。",
+        retrieved_cases=[],
+        prior_rounds=[prior_round],
+    )
+
+    assert [node.node_id for node in graph.nodes] == [
+        "prebuild_ACValidator",
+        "prebuild_AutoCirc",
+    ]
+
+
+def test_planner_expands_benchmark_runs_after_prebuild_ready_tools() -> None:
+    planner = HeuristicSupervisorPlanner()
+    prior_round_graph = TaskGraph(
+        graph_id="benchmark-r2",
+        task_type="benchmark",
+        round_index=2,
+        nodes=[
+            TaskNode(
+                node_id="prebuild_ACValidator",
+                title="Prebuild ACValidator",
+                objective="prebuild",
+                capability_bundles=["docker_build_run", "validate"],
+            ),
+            TaskNode(
+                node_id="prebuild_AutoCirc",
+                title="Prebuild AutoCirc",
+                objective="prebuild",
+                capability_bundles=["docker_build_run", "validate"],
+            ),
+        ],
+        edges=[],
+    )
+    prior_round = awaitable_round(
+        graph=prior_round_graph,
+        statuses={
+            "prebuild_ACValidator": "completed",
+            "prebuild_AutoCirc": "blocked",
+        },
+    )
+
+    graph = planner.plan_round(
+        task="我想评估 circRNA benchmark 数据集在不同工具上的表现。",
+        retrieved_cases=[],
+        prior_rounds=[prior_round],
+    )
+
+    assert [node.node_id for node in graph.nodes] == [
+        "ACValidator",
+        "summarize",
+    ]
+
+
+def test_planner_summarizes_when_partial_register_has_only_blocked_tools() -> None:
+    planner = HeuristicSupervisorPlanner()
+    prior_round_graph = TaskGraph(
+        graph_id="benchmark-r1",
+        task_type="benchmark",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="register",
+                title="Register",
+                objective="register",
+                capability_bundles=["plan", "task_manage", "validate"],
+            )
+        ],
+        edges=[],
+    )
+    prior_round = awaitable_round(
+        graph=prior_round_graph,
+        statuses={"register": "partial"},
+        spawned_subgraphs={
+            "register": {
+                "selected_tools": [],
+                "registered_tools": ["ACValidator", "AutoCirc"],
+                "blocked_tools": ["ACValidator", "AutoCirc"],
+            }
+        },
+    )
+
+    graph = planner.plan_round(
+        task="我想评估 circRNA benchmark 数据集在不同工具上的表现。",
+        retrieved_cases=[],
+        prior_rounds=[prior_round],
+    )
+
+    assert [node.node_id for node in graph.nodes] == ["summarize"]
+
+
+def test_planner_summarizes_when_prebuild_has_only_blocked_tools() -> None:
+    planner = HeuristicSupervisorPlanner()
+    prior_round_graph = TaskGraph(
+        graph_id="benchmark-r2",
+        task_type="benchmark",
+        round_index=2,
+        nodes=[
+            TaskNode(
+                node_id="prebuild_ACValidator",
+                title="Prebuild ACValidator",
+                objective="prebuild",
+                capability_bundles=["docker_build_run", "validate"],
+            )
+        ],
+        edges=[],
+    )
+    prior_round = awaitable_round(
+        graph=prior_round_graph,
+        statuses={"prebuild_ACValidator": "blocked"},
+    )
+
+    graph = planner.plan_round(
+        task="我想评估 circRNA benchmark 数据集在不同工具上的表现。",
+        retrieved_cases=[],
+        prior_rounds=[prior_round],
+    )
+
+    assert [node.node_id for node in graph.nodes] == ["summarize"]
 
 
 @pytest.mark.asyncio

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Literal
 
@@ -118,6 +118,15 @@ _NODE_GUIDANCE_DEFAULTS: dict[str, tuple[str, ...]] = {
     "inspect": (
         "If the task names a repository URL and the source tree is absent, materialize the repository into the current workspace before deeper inspection.",
         "Prefer concrete build/test entrypoints and bundled datasets over speculative assumptions.",
+        "If the task requires real data validation and the repository does not bundle a suitable real dataset, explicitly record that gap for downstream nodes and prefer a small public real dataset with clear provenance over any synthetic substitute.",
+    ),
+    "build": (
+        "If the task requires a container validation on real data, do not satisfy that requirement with synthetic or generated reads.",
+        "When the repository lacks bundled real data, you may fetch a small public real dataset with source provenance, save it into the workspace, and reuse the same dataset for both Docker and WDL validation.",
+    ),
+    "retry_build": (
+        "Keep retry_build narrow: repair the concrete Docker/runtime blocker first, then complete the smallest missing real-data validation step if it is still required.",
+        "Do not generate synthetic reads to satisfy a real-data task requirement; use a real external dataset with recorded provenance or return partial.",
     ),
     "init_report": (
         "Keep this node narrow: create request notes, report contract, and lane scaffolding only.",
@@ -146,6 +155,20 @@ _NODE_GUIDANCE_DEFAULTS: dict[str, tuple[str, ...]] = {
         "If the registered benchmark artifacts already define the exact docker/WDL launch command and inputs, execute that concrete path first instead of re-planning.",
         "After the command exits, inspect the expected output directory and return JSON immediately once the primary assembly outputs and logs are present.",
     ),
+    "wdl": (
+        "For WDL validation, first distinguish WDL syntax, runner/container compatibility, tool command validity, and output collection failures; repair the smallest failing layer before retrying.",
+        "If a repository-native smoke command has a special test mode, do not assume it accepts the same output flags as normal execution. Verify documented flags before adding -o/--output.",
+        "For SPAdes specifically, never run `spades.py --test -o ...`: SPAdes rejects --test together with -o. Use either `spades.py --test` without -o and then copy the default `spades_test` directory to declared WDL output paths, or use a normal explicit-read command with -o on a dataset known to work.",
+        "If the user requires real data and the repository lacks bundled real inputs, fetch a small public real dataset and record its provenance. Do not fabricate or synthesize reads/FASTA/FASTQ to satisfy that requirement.",
+        "When using miniwdl, make the runtime image shell-compatible if needed, but do not keep retrying the same command after a tool-level error is proven.",
+        "Stop as completed only after the exact requested wrapper command writes a non-empty outputs JSON and declared output files exist.",
+    ),
+    "retry_wdl": (
+        "Use prior WDL error evidence directly; do not repeat a command already proven invalid.",
+        "For SPAdes, repair away from `--test -o ...`: either run `spades.py --test` without -o and copy its default output directory to stable WDL output paths, or run a normal reads-based command with -o on data already validated to assemble successfully.",
+        "If the task requires real data, do not switch to synthetic or generated reads during retry. Prefer a small public real dataset with recorded source provenance, or return partial if none is available in scope.",
+        "After each retry, inspect the wrapper output JSON plus the miniwdl run directory, and return partial with concrete blockers if successful outputs still do not exist.",
+    ),
 }
 
 
@@ -153,7 +176,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-@lru_cache(maxsize=None)
+@cache
 def _guidance_asset_lines(kind: str, name: str) -> tuple[str, ...]:
     path = (
         _repo_root()
@@ -179,7 +202,6 @@ def describe_capabilities(
     bundles: list[CapabilityBundle],
 ) -> tuple[list[str], list[str], list[str]]:
     """Return summaries, allowed tools, and implementation kinds for bundles."""
-
     summaries: list[str] = []
     tool_names: list[str] = []
     kinds: list[str] = []
@@ -198,7 +220,6 @@ def describe_capabilities(
 
 def node_guidance_lines(node_id: str) -> list[str]:
     """Return any node-specific execution guidance lines."""
-
     lines: list[str] = []
     for key, guidance in _NODE_GUIDANCE_DEFAULTS.items():
         if key in node_id:
@@ -209,7 +230,6 @@ def node_guidance_lines(node_id: str) -> list[str]:
 
 def family_guidance_lines(guidance_ids: list[str]) -> list[str]:
     """Return any family-level guidance lines for matched guidance ids."""
-
     lines: list[str] = []
     for guidance_id in guidance_ids:
         lines.extend(_guidance_asset_lines("families", guidance_id))

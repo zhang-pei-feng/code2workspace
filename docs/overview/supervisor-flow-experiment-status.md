@@ -61,6 +61,11 @@ Canonical supervised-run artifacts are written under
 - `final_response.md`
 - `final_decision.json`
 
+For benchmark-family runs, reusable operator products are additionally written
+under `<workspace>/operator_store/`: per-operator manifests live at
+`objects/benchmark/<tool>/<run_id>/operator_product.json`, and `index.sqlite`
+is a rebuildable lookup cache rather than the canonical store.
+
 ## Task Family Flows
 
 ### generic

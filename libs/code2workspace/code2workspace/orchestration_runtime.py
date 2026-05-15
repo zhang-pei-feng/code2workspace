@@ -874,6 +874,20 @@ class HeuristicSupervisorPlanner:
             for tool in tools:
                 nodes.append(
                     TaskNode(
+                        node_id=f"prebuild_{tool}",
+                        title=f"Prepare {tool} image",
+                        objective=f"Check whether the benchmark image for {tool} already exists locally; if not, build it from the staged Dockerfile/context when possible and record the exact blocker otherwise.",
+                        capability_bundles=["docker_build_run", "validate"],
+                        metadata={"tool": tool},
+                    )
+                )
+        elif _benchmark_prebuild_round_has_ready_tools(prior_rounds[-1]):
+            tools = _benchmark_prebuild_ready_tools_from_round(prior_rounds[-1])
+            nodes = []
+            edges = []
+            for tool in tools:
+                nodes.append(
+                    TaskNode(
                         node_id=tool,
                         title=f"Run {tool}",
                         objective=f"Execute the staged benchmark workload for {tool} and record outputs, logs, and failure reasons.",
@@ -890,6 +904,52 @@ class HeuristicSupervisorPlanner:
                 )
             )
         else:
+            if _benchmark_register_has_only_blocked_tools(prior_rounds[-1]):
+                nodes = [
+                    TaskNode(
+                        node_id="summarize",
+                        title="Summarize benchmark outcomes",
+                        objective="Summarize benchmark blockers, available staged inputs, and next data-preparation steps.",
+                        capability_bundles=["metric_compute", "summarize"],
+                    )
+                ]
+                edges = []
+                return TaskGraph(
+                    graph_id=f"benchmark-r{round_index}",
+                    task_type="benchmark",
+                    round_index=round_index,
+                    nodes=_attach_common_node_metadata(
+                        nodes,
+                        task=task,
+                        task_type="benchmark",
+                        guidance_ids=guidance_ids,
+                    ),
+                    edges=edges,
+                    metadata=_graph_metadata(task=task, retrieved_cases=retrieved_cases, guidance_ids=guidance_ids),
+                )
+            if _benchmark_prebuild_round_has_only_blocked_tools(prior_rounds[-1]):
+                nodes = [
+                    TaskNode(
+                        node_id="summarize",
+                        title="Summarize benchmark outcomes",
+                        objective="Summarize benchmark blockers, missing images, and next preparation steps.",
+                        capability_bundles=["metric_compute", "summarize"],
+                    )
+                ]
+                edges = []
+                return TaskGraph(
+                    graph_id=f"benchmark-r{round_index}",
+                    task_type="benchmark",
+                    round_index=round_index,
+                    nodes=_attach_common_node_metadata(
+                        nodes,
+                        task=task,
+                        task_type="benchmark",
+                        guidance_ids=guidance_ids,
+                    ),
+                    edges=edges,
+                    metadata=_graph_metadata(task=task, retrieved_cases=retrieved_cases, guidance_ids=guidance_ids),
+                )
             if _benchmark_register_needs_retry(prior_rounds[-1]):
                 nodes = [
                     TaskNode(
@@ -1104,7 +1164,9 @@ def _benchmark_register_round_finished(round_result: TaskExecutionRound) -> bool
     if [item.node_id for item in round_result.node_results] != ["register"]:
         return False
     register = round_result.node_results[0]
-    return register.status == "completed" and bool(_benchmark_selected_tools_from_result(register))
+    return register.status in {"completed", "partial"} and bool(
+        _benchmark_selected_tools_from_result(register)
+    )
 
 
 def _benchmark_register_needs_retry(round_result: TaskExecutionRound) -> bool:
@@ -1124,7 +1186,7 @@ def _benchmark_register_needs_retry(round_result: TaskExecutionRound) -> bool:
     )
     if register is None:
         return False
-    if register.status == "completed" and _benchmark_selected_tools_from_result(register):
+    if register.status in {"completed", "partial"} and _benchmark_selected_tools_from_result(register):
         return False
     return register.status in {"failed", "partial", "blocked"} or not _benchmark_selected_tools_from_result(register)
 
@@ -1147,6 +1209,55 @@ def _benchmark_selected_tools_from_result(result: WorkerNodeResult) -> list[str]
     if not isinstance(selected_tools, list):
         return []
     return [str(item) for item in selected_tools if isinstance(item, str) and item.strip()]
+
+
+def _benchmark_prebuild_round_has_ready_tools(round_result: TaskExecutionRound) -> bool:
+    node_ids = [node.node_id for node in round_result.graph.nodes]
+    if not node_ids or not all(node_id.startswith("prebuild_") for node_id in node_ids):
+        return False
+    return bool(_benchmark_prebuild_ready_tools_from_round(round_result))
+
+
+def _benchmark_prebuild_ready_tools_from_round(round_result: TaskExecutionRound) -> list[str]:
+    ready_tools: list[str] = []
+    for item in round_result.node_results:
+        if not item.node_id.startswith("prebuild_"):
+            continue
+        if item.status != "completed":
+            continue
+        tool = item.node_id.removeprefix("prebuild_")
+        if tool:
+            ready_tools.append(tool)
+    return ready_tools
+
+
+def _benchmark_prebuild_round_has_only_blocked_tools(round_result: TaskExecutionRound) -> bool:
+    node_ids = [node.node_id for node in round_result.graph.nodes]
+    if not node_ids or not all(node_id.startswith("prebuild_") for node_id in node_ids):
+        return False
+    if _benchmark_prebuild_ready_tools_from_round(round_result):
+        return False
+    return any(item.status in {"failed", "blocked", "partial"} for item in round_result.node_results)
+
+
+def _benchmark_register_has_only_blocked_tools(round_result: TaskExecutionRound) -> bool:
+    if [node.node_id for node in round_result.graph.nodes] != ["register"]:
+        return False
+    if [item.node_id for item in round_result.node_results] != ["register"]:
+        return False
+    register = round_result.node_results[0]
+    if register.status != "partial":
+        return False
+    payload = register.spawned_subgraph
+    if not isinstance(payload, dict):
+        return False
+    selected_tools = payload.get("selected_tools")
+    blocked_tools = payload.get("blocked_tools")
+    registered_tools = payload.get("registered_tools")
+    has_registered = isinstance(registered_tools, list) and bool(registered_tools)
+    has_blocked = isinstance(blocked_tools, list) and bool(blocked_tools)
+    has_selected = isinstance(selected_tools, list) and bool(selected_tools)
+    return has_registered and has_blocked and not has_selected
 
 
 def _round_contains_only_analyze(round_result: TaskExecutionRound) -> bool:
@@ -1380,6 +1491,14 @@ def _select_benchmark_tools(task: str) -> list[str]:
         ]
         if len(tools) >= 2:
             return tools
+    if _task_requests_multiple_benchmark_tools(task):
+        hinted_tools = [
+            tool
+            for tool in _tools_for_case_dir_hint(catalog, _benchmark_case_dir_hint(task))
+            if tool not in excluded_tools
+        ]
+        if len(hinted_tools) >= 2:
+            return hinted_tools
     for key in dataset_keys:
         tools = [
             tool
@@ -1422,10 +1541,46 @@ def _benchmark_case_dir_hint(task: str) -> str | None:
     if "新冠病毒组装" in lowered or "病毒组装" in lowered:
         return "新冠病毒组装"
     if "circrna" in lowered or "cirrna" in lowered:
-        return "cirrna"
+        return "circrna"
     if "免疫逃逸" in lowered:
         return "免疫逃逸"
     return None
+
+
+def _task_requests_multiple_benchmark_tools(task: str) -> bool:
+    lowered = task.casefold()
+    markers = (
+        "多个算子",
+        "多个工具",
+        "多个 workflow",
+        "多个工作流",
+        "并行跑",
+        "并发",
+        "不同工具",
+        "different",
+        "multiple",
+        "parallel",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _tools_for_case_dir_hint(catalog: dict[str, object], hint: str | None) -> list[str]:
+    if not hint:
+        return []
+    cases = catalog.get("repo_cases", {})
+    if not isinstance(cases, dict):
+        return []
+    hint_lower = hint.casefold()
+    benchmark_root = str(catalog.get("benchmark_root", "")).casefold()
+    if hint_lower in benchmark_root:
+        return sorted(str(tool) for tool in cases)
+    tools = [
+        str(tool)
+        for tool, payload in cases.items()
+        if isinstance(payload, dict)
+        and hint_lower in str(payload.get("case_dir", "")).casefold()
+    ]
+    return sorted(tools)
 
 
 def _dataset_has_case_dir_hint(catalog: dict[str, object], tools: list[str], hint: str) -> bool:
@@ -1540,10 +1695,12 @@ def _read_benchmark_catalog(root: Path) -> dict[str, object]:
         if isinstance(payload, dict):
             payload.setdefault("datasets", {})
             payload.setdefault("repo_cases", {})
+            payload.setdefault("benchmark_root", str(root))
             payload.setdefault("dataset_root", str(root / "datasets"))
             payload.setdefault("downloads_root", str(root / "datasets" / "downloads"))
             return payload
     return {
+        "benchmark_root": str(root),
         "dataset_root": str(root / "datasets"),
         "downloads_root": str(root / "datasets" / "downloads"),
         "datasets": {},
@@ -1648,7 +1805,13 @@ def _benchmark_case_from_dir(root: Path, case_dir: Path) -> dict[str, object] | 
     rel_case_dir = str(case_dir.relative_to(root.parent.parent if root.parent.name == "experiments" else root))
     rel_wdl = str(wdl_path.relative_to(root.parent.parent if root.parent.name == "experiments" else root))
     rel_inputs = str(input_path.relative_to(root.parent.parent if root.parent.name == "experiments" else root))
-    dockerfile_candidates = _known_benchmark_dockerfile_candidates(repo_name)
+    dockerfile_candidates = []
+    local_dockerfile = case_dir / "Dockerfile"
+    if local_dockerfile.exists():
+        dockerfile_candidates.append(str(local_dockerfile.relative_to(root.parent.parent if root.parent.name == "experiments" else root)))
+    dockerfile_candidates.extend(
+        item for item in _known_benchmark_dockerfile_candidates(repo_name) if item not in dockerfile_candidates
+    )
     return {
         "repo_name": repo_name,
         "repo_url": _known_benchmark_repo_url(repo_name),

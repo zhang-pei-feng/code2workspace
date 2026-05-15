@@ -186,6 +186,11 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
   - `tool_activity.jsonl`
   - `final_decision.json`
   - `final_summary.md`
+- Benchmark runs now also materialize reusable operator products under
+  `<workspace>/operator_store/`: file manifests remain canonical at
+  `objects/benchmark/<tool>/<run_id>/operator_product.json`, while
+  `index.sqlite` is a rebuildable metadata index for thousand-scale lookup by
+  input/output media type, metric, tag, status, and runtime details.
 
 Focused validation currently recorded:
 
@@ -404,7 +409,7 @@ local case directories with one reused `v-pipe` benchmark result
   helper can still merge one if a future run supplies it.
 - The benchmark dataset layer has now been widened beyond virus assembly:
   - kept the currently wired virus-assembly case directories intact
-  - infers shared-dataset candidate entries for `cirrna` and `免疫逃逸` from
+  - infers shared-dataset candidate entries for `circrna` and `免疫逃逸` from
     their tool-local `input.json` files, even though some still contain
     historical example paths
 - Non-assembly dataset groups documented by the local benchmark assets:
@@ -415,13 +420,26 @@ local case directories with one reused `v-pipe` benchmark result
   - `immune-escape-covabdab-structural-bundle`
 - Current benchmark directory now also has family-level README guides under:
   - `experiments/benchmark/README.md`
-  - `experiments/benchmark/cirrna/README.md`
+  - `experiments/benchmark/circrna/README.md`
   - `experiments/benchmark/免疫逃逸/README.md`
   These explain an important design choice:
-  - `cirrna` can honestly share RNA-seq/reference bundles across many tools
+  - `circrna` can honestly share RNA-seq/reference bundles across many tools
   - `免疫逃逸` is modality-heterogeneous, so the fair shared-benchmark shape is
     a two-layer bundle (`DMS` tables plus structure/sequence assets) rather
     than one fake “single input file for all tools”
+- Added a prompt handoff for real non-assembly benchmark runs at
+  `experiments/harness/runs/benchmark_real_case_prompts_20260514.md`, preserving
+  the successful virus-assembly local-root prompt shape and adding concrete
+  `免疫逃逸` and `circrna` prompts that avoid URL-only registration failure.
+- Benchmark register/case/summary helpers now write manifest-first operator
+  products for each registered local case. This preserves blocked, ready,
+  partial, failed, and completed states as reusable calculation assets without
+  making SQLite the source of truth.
+- Benchmark partial-register handling now continues with ready tools instead of
+  retrying registration when only some selected cases are blocked. A live
+  `circrna` rerun registered seven ready tools, left `AQUARIUM-HB` blocked, and
+  launched the ready tools in parallel; the remaining failure is missing
+  selected input files in the staged case manifests.
 - Fixed local `inputs.json` files now point at live repo-local data instead of
   dead historical absolute paths.
 - Current 2026-04-21 benchmark run root:

@@ -4,6 +4,8 @@ import importlib.util
 import json
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -78,6 +80,100 @@ def test_benchmark_orchestrator_prebuild_does_not_count_as_completion(tmp_path: 
     assert spades_case["wdl_success"] is False
     assert spades_case["completed"] is False
     assert summary["status"] == "in_progress"
+
+
+def test_benchmark_orchestrator_materializes_missing_copy_sources_from_repo_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load_module(BENCHMARK_SCRIPT, "benchmark_workflow_source_materialization_test")
+    context_dir = tmp_path / "context"
+    context_dir.mkdir()
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM scratch\nCOPY tool_src/ /app/\n", encoding="utf-8")
+
+    def fake_run(command, **kwargs):  # noqa: ANN001
+        clone_dir = Path(command[-1])
+        clone_dir.mkdir(parents=True)
+        (clone_dir / "src").mkdir()
+        (clone_dir / "src" / "main.py").write_text("print('ok')\n", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="cloned", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    result = module._materialize_missing_docker_context_sources(
+        dockerfile_path=dockerfile,
+        context_dir=context_dir,
+        case_manifest={"repo_name": "tool_src", "repo_url": "https://example.invalid/tool.git"},
+        timeout_seconds=30,
+    )
+
+    assert (context_dir / "tool_src" / "src" / "main.py").exists()
+    assert result[0]["returncode"] == 0
+    assert result[-1]["source_root"] == "tool_src"
+
+
+def test_benchmark_orchestrator_materializes_missing_files_into_existing_source_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load_module(BENCHMARK_SCRIPT, "benchmark_workflow_existing_root_materialization_test")
+    context_dir = tmp_path / "context"
+    target_root = context_dir / "tool_src"
+    target_root.mkdir(parents=True)
+    (target_root / "Dockerfile").write_text("keep-local\n", encoding="utf-8")
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM scratch\nCOPY tool_src/ /app/\n", encoding="utf-8")
+
+    def fake_run(command, **kwargs):  # noqa: ANN001
+        clone_dir = Path(command[-1])
+        clone_dir.mkdir(parents=True)
+        (clone_dir / "Dockerfile").write_text("upstream-version\n", encoding="utf-8")
+        (clone_dir / "src").mkdir()
+        (clone_dir / "src" / "main.py").write_text("print('ok')\n", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="cloned", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    result = module._materialize_missing_docker_context_sources(
+        dockerfile_path=dockerfile,
+        context_dir=context_dir,
+        case_manifest={"repo_name": "tool_src", "repo_url": "https://example.invalid/tool.git"},
+        timeout_seconds=30,
+    )
+
+    assert (target_root / "src" / "main.py").exists()
+    assert (target_root / "Dockerfile").read_text(encoding="utf-8") == "keep-local\n"
+    assert result[-1]["copied_files"] == 1
+
+
+def test_benchmark_orchestrator_streams_build_log_while_command_is_running(tmp_path: Path) -> None:
+    module = load_module(BENCHMARK_SCRIPT, "benchmark_workflow_streaming_log_test")
+    log_path = tmp_path / "build.log"
+    status_holder: dict[str, object] = {}
+
+    def run_build() -> None:
+        status_holder["status"] = module._run_build_command(
+            [sys.executable, "-c", "import sys, time; print('phase1', flush=True); time.sleep(1.2); print('phase2', flush=True)"],
+            cwd=tmp_path,
+            log_path=log_path,
+            timeout_seconds=10,
+        )
+
+    worker = threading.Thread(target=run_build)
+    worker.start()
+
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if log_path.exists() and "phase1" in log_path.read_text(encoding="utf-8"):
+            break
+        time.sleep(0.1)
+
+    assert log_path.exists()
+    assert "phase1" in log_path.read_text(encoding="utf-8")
+    worker.join()
+    assert status_holder["status"]["success"] is True
+    assert "phase2" in log_path.read_text(encoding="utf-8")
 
 
 def test_benchmark_orchestrator_init_supports_repo_subset(tmp_path: Path) -> None:
@@ -165,10 +261,68 @@ def test_benchmark_orchestrator_prepare_case_writes_dataset_selection(tmp_path: 
     selection = json.loads(run_dir.joinpath("cases", "spades", "dataset_selection.json").read_text(encoding="utf-8"))
     manifest = json.loads(run_dir.joinpath("cases", "spades", "manifest.json").read_text(encoding="utf-8"))
     assert selection["dataset_key"] == "short-read-ecoli-srr001666"
-    assert manifest["selected_input_source"] in {"catalog.local_candidates", "downloads_root", "catalog_only"}
+    assert manifest["selected_input_source"] in {"catalog.local_candidates", "downloads_root", "catalog_only", "shared_dataset_rewrite"}
     assert manifest["source_case_dir"].endswith("experiments/benchmark/新冠病毒组装/001_spades")
     assert manifest["source_wdl_path"].endswith("experiments/benchmark/新冠病毒组装/001_spades/spades.wdl")
     assert manifest["source_inputs_path"].endswith("experiments/benchmark/新冠病毒组装/001_spades/inputs.json")
+
+
+def test_benchmark_orchestrator_prepare_case_rewrites_old_inputs_from_shared_dataset(tmp_path: Path) -> None:
+    benchmark_root = tmp_path / "benchmark"
+    case_dir = benchmark_root / "circrna" / "ACValidator"
+    dataset_dir = benchmark_root / "datasets" / "downloads" / "circrna-hela-rnaser-paired"
+    case_dir.mkdir(parents=True)
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "README.md").write_text(
+        "- `clean_test.sam`\n- `GRCh38.primary_assembly.fa`\n",
+        encoding="utf-8",
+    )
+    (dataset_dir / "clean_test.sam").write_text("@HD\tVN:1.0\n", encoding="utf-8")
+    (dataset_dir / "GRCh38.primary_assembly.fa").write_text(">chr1\nACGT\n", encoding="utf-8")
+    (case_dir / "input.json").write_text(
+        json.dumps(
+            {
+                "ACValidatorWorkflow.input_sam": "/old/path/clean_test.sam",
+                "ACValidatorWorkflow.reference_fasta": "/old/path/ref.fa",
+                "ACValidatorWorkflow.coordinate": "1:1-4",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (case_dir / "workflow.wdl").write_text(
+        'workflow ACValidatorWorkflow {}\nruntime { docker: "benchmark/acvalidator:test" }\n',
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "benchmark-run"
+
+    run_json_command(
+        str(BENCHMARK_SCRIPT),
+        "init",
+        "--task",
+        "circRNA shared dataset rewrite",
+        "--benchmark-root",
+        str(benchmark_root / "circrna"),
+        "--output-dir",
+        str(run_dir),
+        "--repos",
+        "ACValidator",
+    )
+    run_json_command(str(BENCHMARK_SCRIPT), "prepare-case", "--repo", "ACValidator", "--run-dir", str(run_dir))
+    ready = run_json_command(str(BENCHMARK_SCRIPT), "execution-ready", "--repo", "ACValidator", "--run-dir", str(run_dir))
+
+    manifest = json.loads(run_dir.joinpath("cases", "ACValidator", "manifest.json").read_text(encoding="utf-8"))
+    selection = json.loads(run_dir.joinpath("cases", "ACValidator", "dataset_selection.json").read_text(encoding="utf-8"))
+    rewritten_inputs = json.loads(run_dir.joinpath("cases", "ACValidator", "wdl", "inputs.json").read_text(encoding="utf-8"))
+
+    assert manifest["dataset_key"] == "circrna-hela-rnaser-paired"
+    assert manifest["selected_input_source"] == "shared_dataset_rewrite"
+    assert selection["selected_input_source"] == "shared_dataset_rewrite"
+    assert manifest["selected_input_files"]["input_sam"].endswith("clean_test.sam")
+    assert manifest["selected_input_files"]["reference_fasta"].endswith("GRCh38.primary_assembly.fa")
+    assert rewritten_inputs["ACValidatorWorkflow.input_sam"].endswith("clean_test.sam")
+    assert rewritten_inputs["ACValidatorWorkflow.reference_fasta"].endswith("GRCh38.primary_assembly.fa")
+    assert ready["inputs_json_path"].endswith("cases/ACValidator/wdl/inputs.json")
+    assert ready["inputs_ready"] is True
 
 
 def test_benchmark_orchestrator_execution_ready_resolves_existing_paths(tmp_path: Path) -> None:
@@ -187,8 +341,57 @@ def test_benchmark_orchestrator_execution_ready_resolves_existing_paths(tmp_path
     assert payload["ready"] is True
     assert str(payload["dockerfile_path"]).endswith(".workspaces/oneshot/spades/spades_Dockerfile")
     assert str(payload["wdl_path"]).endswith("experiments/benchmark/新冠病毒组装/001_spades/spades.wdl")
-    assert str(payload["inputs_json_path"]).endswith("experiments/benchmark/新冠病毒组装/001_spades/inputs.json")
+    assert str(payload["inputs_json_path"]).endswith("cases/spades/wdl/inputs.json")
     assert payload["runtime_image"] == "benchmark/spades:escape_bench"
+    assert payload["inputs_ready"] is True
+
+
+def test_benchmark_orchestrator_execution_ready_stays_false_when_rewritten_inputs_are_missing(
+    tmp_path: Path,
+) -> None:
+    benchmark_root = tmp_path / "benchmark"
+    case_dir = benchmark_root / "circrna" / "ACValidator"
+    dataset_dir = benchmark_root / "datasets" / "downloads" / "circrna-hela-rnaser-paired"
+    case_dir.mkdir(parents=True)
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "README.md").write_text(
+        "- `derived/alignments/*.sam`\n- `GRCh38.primary_assembly.fa`\n",
+        encoding="utf-8",
+    )
+    (dataset_dir / "GRCh38.primary_assembly.fa").write_text(">chr1\nACGT\n", encoding="utf-8")
+    (case_dir / "input.json").write_text(
+        json.dumps(
+            {
+                "ACValidatorWorkflow.input_sam": "/old/path/clean_test.sam",
+                "ACValidatorWorkflow.reference_fasta": "/old/path/ref.fa",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (case_dir / "workflow.wdl").write_text(
+        'workflow ACValidatorWorkflow {}\nruntime { docker: "benchmark/acvalidator:test" }\n',
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "benchmark-run"
+
+    run_json_command(
+        str(BENCHMARK_SCRIPT),
+        "init",
+        "--task",
+        "circRNA missing derived inputs",
+        "--benchmark-root",
+        str(benchmark_root / "circrna"),
+        "--output-dir",
+        str(run_dir),
+        "--repos",
+        "ACValidator",
+    )
+    run_json_command(str(BENCHMARK_SCRIPT), "prepare-case", "--repo", "ACValidator", "--run-dir", str(run_dir))
+    ready = run_json_command(str(BENCHMARK_SCRIPT), "execution-ready", "--repo", "ACValidator", "--run-dir", str(run_dir))
+
+    assert ready["ready"] is False
+    assert ready["inputs_ready"] is False
+    assert "ACValidatorWorkflow.input_sam" in ready["missing_input_keys"]
 
 
 def test_benchmark_orchestrator_help_loads_catalog_from_benchmark_tree() -> None:

@@ -6,6 +6,119 @@
 
 ## Entries
 
+### 2026-05-15 00:10 CST
+- Session goal: Patch the circompara2 image build so it can get past the Python-2-era CIRCexplorer2 dependency failure.
+- Major changes:
+  - Updated `experiments/benchmark/circrna/circompara2/Dockerfile` to patch upstream `install_tools.py` after copy, replacing the direct `circexplorer2==2.3.8` install with an explicit Python-2-compatible dependency chain: `requests==2.27.1`, `scipy==1.2.3`, `docopt==0.6.2`, `pybedtools==0.8.2 --no-use-pep517`, then `circexplorer2==2.3.8 --no-deps`.
+  - Reran a focused `circompara2` prebuild probe and confirmed the build now gets past the old `pybedtools` build-isolation / `setuptools>=61` failure, successfully builds and installs both `pybedtools-0.8.2` and `circexplorer2-2.3.8`, then proceeds to later tool downloads (`CIRI_v2.0.6.zip`).
+- Validation: helper tests still passed (`4 passed`, 12 deselected) and helper py_compile passed; streamed probe log shows successful installation of the patched dependency set before later tool acquisition continues.
+- Next step: rerun the full circRNA benchmark with the circompara2 dependency patch in place, and separately consider speeding up or caching the large `find-circ` Bowtie2 download.
+
+### 2026-05-14 23:55 CST
+- Session goal: Rerun the short circRNA benchmark after enabling streaming build logs.
+- Major changes:
+  - Reran the live prompt at `workspace/20260514235429/orchestration_runs/20260514T155441461933Z`; register still selected ready tools `circompara2` and `find-circ`.
+  - Verified that `cases/<tool>/docker/build.log` now streams during prebuild: `circompara2` shows the installer progressing through `scons` and Python 2 `pip` bootstrap, while `find-circ` shows a very slow live download of Bowtie2 from GitHub release assets.
+  - Stopped the run after capturing the streamed blocker details so the long downloads/builds would not keep consuming resources indefinitely.
+- Validation: live `tool_activity.jsonl` confirms both prebuild nodes started and later finished as failed; streamed log evidence now exposes the real in-flight bottlenecks instead of empty postmortem logs.
+- Next step: improve long-download resilience for prebuilds, especially `find-circ` Bowtie2 acquisition, and let a subsequent rerun continue long enough to see the next concrete package/tool failure after these downloads complete.
+
+### 2026-05-14 23:56 CST
+- Session goal: Make benchmark image prebuild logs visible while long Docker builds are still running.
+- Major changes:
+  - Changed benchmark helper `_run_build_command()` to stream combined stdout/stderr directly into `cases/<tool>/docker/build.log` while the subprocess is still running, instead of waiting until `docker build` exits.
+  - Added a focused regression test that starts a slow fake build, observes `phase1` in the log before the command finishes, then confirms the final log also contains `phase2`.
+- Validation: focused helper tests passed (`4 passed`, 12 deselected); helper py_compile passed.
+- Next step: rerun the circRNA benchmark or a dedicated long prebuild and inspect `build.log` live to capture the next real blocker inside `circompara2` / `find-circ`.
+
+### 2026-05-14 23:31 CST
+- Session goal: Unblock circompara2 source materialization and avoid short-circuiting long prebuilds.
+- Major changes:
+  - Changed benchmark source materialization so Dockerfile source roots are merged from upstream even when the local benchmark case directory already exists, which preserves wrapper files but fills missing source files.
+  - Verified that `experiments/benchmark/circrna/circompara2/src/utils/bash/install_circompara` is now present after the new merge behavior, so the old immediate `not found` blocker is resolved at the source-tree level.
+  - Tried to launch a detached long-running `find-circ` prebuild and found the simple background wrapper did not stay attached as expected; the normal foreground helper path still demonstrates that `find-circ` now reaches long-running real build work instead of failing on Docker Hub token/COPY-source issues.
+- Validation: focused helper tests passed (`3 passed`); helper py_compile passed; verified the new `circompara2` source files exist in the benchmark case tree.
+- Next step: rerun the full circRNA benchmark or a dedicated `circompara2` prebuild to capture the next real failure after source merge, and if desired, build a more robust detached runner for long `find-circ` prebuilds.
+
+### 2026-05-14 23:13 CST
+- Session goal: Rerun the short circRNA benchmark prompt after adding source-clone prebuild behavior.
+- Major changes:
+  - Reran the live prompt at `workspace/20260514225813/orchestration_runs/20260514T145822028216Z`.
+  - Register still selected ready tools `circompara2` and `find-circ`, with `ACValidator`, `AQUARIUM-HB`, `AutoCirc`, `CIRI3`, and `acfs` still blocked at execution-ready.
+  - `circompara2` prebuild still fails quickly because the local case tree lacks `src/utils/bash/install_circompara`; `find-circ` prebuild now runs for a long time instead of failing immediately on Docker Hub token/COPY-source issues, so the base-image/source-material blockers were effectively removed for that path.
+- Validation: observed `benchmark/biq:zpf_v3` build success from the new source-clone prebuild helper; live rerun reached round-2 prebuild again and wrote a fresh failed status/log for `circompara2`.
+- Next step: either let `find-circ` prebuild finish under the full helper timeout in a fresh run, or run it separately to completion while we patch `circompara2` Dockerfile/source expectations.
+
+### 2026-05-14 22:53 CST
+- Session goal: Make benchmark image prebuild automatically fetch upstream source trees before Docker build.
+- Major changes:
+  - Added known upstream URLs for `biq`, `circompara2`, and `find-circ` to dynamic benchmark case discovery.
+  - Extended `prebuild-image` so it parses Dockerfile `COPY` / `ADD` sources, clones `repo_url` when required source directories are absent, and copies only missing upstream files into the build context without overwriting benchmark wrapper files.
+  - Materialized real upstream source files for `experiments/benchmark/circrna/biq/` and `experiments/benchmark/circrna/find_circ/`; removed copied `.git` directories from the target source trees.
+- Validation: focused helper tests passed (`2 passed`); helper py_compile passed; real `biq` prebuild succeeded and produced local image `benchmark/biq:zpf_v3`.
+- Next step: Let the normal circRNA prompt rerun with the new source materialization; `find-circ` build was manually stopped after a long-running probe, so it should be allowed to complete under the normal helper timeout if needed.
+
+### 2026-05-14 22:16 CST
+- Session goal: Stabilize Docker Hub base-image access for benchmark prebuilds on the current machine.
+- Major changes:
+  - Confirmed direct Docker Hub access is unreliable (`auth.docker.io` connect failure; `registry-1.docker.io` SSL reset) and the Docker daemon has no registry mirrors configured.
+  - Pulled `ubuntu:18.04` and `node:16-bullseye-slim` through `docker.m.daocloud.io`, tagged them back to the official names, and verified `find-circ` / `biq` now pass base-image metadata resolution.
+  - Added no-root base-image mirror preloading to the benchmark helper: `prebuild-image` parses Dockerfile `FROM`, pulls from `CODE2WORKSPACE_DOCKER_MIRRORS` or default mirrors, tags the official base name, then builds.
+- Validation: helper py_compile passed; focused prebuild helper test passed (`1 passed`); `find-circ` probe now fails later at missing `COPY find_circ/`, and `biq` probe now fails later at missing upstream `biq/*` directories instead of Docker Hub token/base-image fetch.
+- Next step: Either configure `/etc/docker/daemon.json` with a persistent registry mirror using sudo, or rely on helper preload; then provide/fetch upstream source trees for `find-circ`, `biq`, and `circompara2` so Dockerfile `COPY` / install steps have real source material.
+
+### 2026-05-14 21:00 CST
+- Session goal: Make generic judgment answers easier to audit for false positives.
+- Major changes:
+  - Updated the supervisor `final_response` prompt so judgment-style final answers end with `判断轨迹（可审计摘要）`.
+  - Framed the requirement as an auditable reasoning path with evidence checked, comparison rule, key inference, and uncertainty/gaps, while explicitly avoiding private chain-of-thought disclosure.
+  - Added regression coverage in `libs/cli/tests/unit_tests/test_supervisor_runtime.py`; mirrored the same prompt/test change into `code2workspace-runtime-export`.
+- Validation: `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q` passed in this worktree (`43 passed`) and in runtime export (`38 passed`).
+- Next step: Run a live generic研判 prompt and verify the visible final answer includes a compact, useful audit trail without becoming too verbose.
+### 2026-05-14 20:58 CST
+- Session goal: Rerun the short circRNA benchmark prompt and verify the image prebuild blocker after the generic context fix.
+- Major changes:
+  - Reran the live circRNA prompt twice; the first new run reproduced the `circompara2` build-context failure at `workspace/20260514205107/orchestration_runs/20260514T125129452344Z`.
+  - Updated benchmark prebuild context inference in `libs/cli/code2workspace_cli/supervisor_runtime.py` so it parses Dockerfile `COPY` / `ADD` sources and chooses a context that actually contains them.
+  - Reran again at `workspace/20260514205622/orchestration_runs/20260514T125630819446Z`; `circompara2` now gets past `COPY circompara2/`, while `find-circ` still fails on Docker Hub token/base-image access.
+- Validation: focused benchmark supervisor tests passed (`15 passed`, 1 warning); live rerun completed with `decision=stop`, `0/7` completed cases, and structured prebuild failures.
+- Next step: provide real upstream source content for `circompara2` under the local case context or adjust the Dockerfile to fetch it; separately fix Docker Hub/base-image access or preload `ubuntu:18.04` for `find-circ`.
+
+
+### 2026-05-14 15:55 CST
+- Session goal: Add real-case benchmark prompts for non-assembly benchmark families.
+- Major changes:
+  - Added `experiments/harness/runs/benchmark_real_case_prompts_20260514.md` with local-root task prompts for `免疫逃逸` and `circrna`, modeled after the prior `新冠病毒组装` benchmark prompt shape.
+  - Synchronized `docs/overview/current-status.md` and `docs/research/thesis-log.md` with the prompt handoff and corrected the benchmark family path spelling to `circrna`.
+- Validation: Ran benchmark helper probes: `circrna` local root registered a four-case subset; `免疫逃逸` catalog discovery currently auto-discovers only `esm`, so the prompt explicitly asks workers to inspect heterogeneous structure/sequence cases and report blockers.
+- Next step: Run the two prompts through the live CLI when ready, then save stdout/stderr and supervisor artifacts beside this prompt handoff.
+
+### 2026-05-13 07:05 CST
+- Session goal: Live-test benchmark supervisor behavior after catalog-free/arbitrary-root changes.
+- Major changes:
+  - Reran the natural virus-assembly benchmark prompt excluding `spades`/`megahit`; register selected `Flye` + `canu` on `long-read-canu-pacbio`, and round 2 started both tools in parallel.
+  - Observed `Flye` complete with repo-native outputs and assembly metrics, while `canu` returned code 0 but lacked expected assembly outputs, so its node failed and summary was blocked.
+  - Reran a URL-only benchmark prompt for undeployed tools (`AQUARIUM-HB`, `circompara2`, `acfs`, `ACValidator`); with no local benchmark root or selected tools, register/retry_register failed fast with `missing_selected_tools`.
+- Validation: Live run roots are `workspace/20260513063730/orchestration_runs/20260512T223739110742Z` and `workspace/20260513070413/orchestration_runs/20260512T230421542947Z`; no benchmark processes remained after testing.
+- Next step: improve benchmark register for URL-only undeployed tools, either by cloning/preparing a temporary benchmark root or by returning a clearer unsupported-input explanation before retry.
+
+### 2026-05-13 07:12 CST
+- Session goal: Harden benchmark outcomes exposed by the live retest.
+- Major changes:
+  - Changed deterministic benchmark case execution so a successful repo-native command with missing expected outputs is reported as `partial` with `expected_outputs_missing`, allowing downstream summary instead of blocking on a false hard failure.
+  - Changed URL-only benchmark register failures from generic `missing_selected_tools` to explicit `missing_benchmark_assets` with a `prepare_benchmark_assets_from_urls` next-action hint.
+- Validation: `test_supervisor_runtime.py` plus `test_orchestration_runtime.py` passed (`57 passed`); reran the URL-only benchmark prompt and confirmed the final summary now explains that local WDL/input assets must be prepared before benchmark selection can run.
+- Next step: implement the actual URL preparation path if URL-only benchmark support should become autonomous rather than a clear fail-fast.
+
+### 2026-05-13 06:20 CST
+- Session goal: Make benchmark selection/register work without the removed benchmark catalog and honor tool exclusions.
+- Major changes:
+  - Removed `experiments/benchmark/datasets/benchmark_catalog.json` and changed planner/helper discovery to infer benchmark cases from local WDL plus `{inputs,input}.json` files under a user-provided benchmark root.
+  - Added shared-input grouping so the virus-assembly prompt excluding `spades`/`megahit` selects the inferred `Flye` + `canu` long-read group.
+  - Preserved optional catalog merge behavior, persisted `benchmark_root` through helper manifests, and kept known Dockerfile candidates for existing spades/megahit helper paths.
+- Validation: `test_orchestration_runtime.py` + `test_project_skill_helpers.py` passed (`30 passed`); `test_supervisor_runtime.py` passed (`36 passed`); prior combined supervisor/orchestration suite passed (`55 passed`).
+- Next step: run the live natural benchmark prompt again to verify the full deterministic execution path now fans out to `Flye` and `canu`.
+
 ### 2026-05-12 20:44 CST
 - Session goal: Concurrently test the local `code2workspace` / Supervisor Graph CLI with seven long-running real tasks under a 40-minute outer timeout.
 - Major changes:
@@ -976,3 +1089,102 @@
   - Wired report node selectors into `SupervisorWorkerSubagent` entries for init, monitoring, local data, literature, compose, summarize, final_response, and retry nodes; updated focused tests and overview/thesis notes.
 - Validation: `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_agent.py libs/cli/tests/unit_tests/test_supervisor_runtime.py -q` passed (`122 passed`, warnings only).
 - Next step: optionally run one live report prompt with verbose supervisor events to confirm the configured report worker model routes are visible in traces.
+
+### 2026-05-13 08:03 CST
+- Session goal: Run the current CLI concurrently on a COVID variant question set and record final answers plus timings.
+- Major changes:
+  - Ran 11 non-interactive quiet CLI tasks with `/usr/bin/time -p`, using the current worktree's `libs/cli` project.
+  - Added `experiments/harness/runs/cli_covid_variant_parallel_20260513.md` with each question, final response, real-time duration, and observed output issues.
+  - Noted two notable run-quality issues: quiet output leaked task-classification JSON before final answers, and the "fastest-growing subtype" task returned an incomplete one-line answer.
+- Validation: Live CLI runs completed for all 11 prompts; no code tests were run because this was a runtime collection task.
+- Next step: investigate quiet-mode JSON leakage and rerun the failed fastest-growing-subtype prompt after fixing or with verbose artifacts enabled.
+
+### 2026-05-13 08:11 CST
+- Session goal: Document the current Supervisor Graph flow, recent experiment status, and portability/configuration requirement fit.
+- Major changes:
+  - Added `docs/overview/supervisor-flow-experiment-status.md` with Mermaid diagrams for the overall supervisor runtime and the `generic`, `github2workspace`, `benchmark`, and `report` flows.
+  - Summarized recent routing, generic capability, live generic, report, and COVID variant CLI experiment results, including the quiet-output leak and one incomplete answer.
+  - Updated overview handoff/status and thesis traceability notes to point to the new audit and record that strict portability and single-entry configuration are not yet satisfied.
+- Validation: Documentation-only change; reviewed diffs and searched the updated docs for the new audit references.
+- Next step: move report-worker model routing and credential/base-url handling into a single project-local configuration path, then fix quiet-mode stdout leakage.
+
+### 2026-05-13 09:48 CST
+- Session goal: Make the experiment-result summary clearer in Chinese.
+- Major changes:
+  - Rewrote the experiment section of `docs/overview/supervisor-flow-experiment-status.md` into a Chinese overview table plus per-experiment purpose/result/conclusion notes.
+  - Added clearer Chinese task-completion status wording and kept the known issues explicit: report timeouts, quiet-mode JSON leakage, incomplete subtype answer, and live portability blockage.
+- Validation: Documentation-only change; reviewed the rendered Markdown section by reading the updated file.
+- Next step: fix quiet-mode stdout leakage and rerun the incomplete COVID subtype prompt.
+
+### 2026-05-14 10:12 CST
+- Session goal: Move the default model name into the dotenv layer while keeping provider/model parameters in config.
+- Major changes:
+  - Added CODE2WORKSPACE_MODEL / compatibility env-var support as the default provider:model entrypoint for the normal runtime.
+  - Removed the hard-coded default/recent model from backend/config/agent_models.json while preserving provider lists, URLs, keys, and parameter/profile matching in config.
+  - Synchronized the same runtime/config changes into the trimmed code2workspace-runtime export repository.
+- Validation: Focused runtime/config/web tests passed in both repositories (454 passed each, warnings only).
+- Next step: Keep adding provider-level and per-model parameter entries to agent_models.json only for models that need different constructor/profile behavior.
+
+### 2026-05-14 16:38 CST
+- Session goal: Live-run the new immune-escape and circRNA benchmark prompts.
+- Major changes:
+  - Ran both prompts from `experiments/harness/runs/benchmark_real_case_prompts_20260514.md` through the live CLI and recorded outcomes back into that file.
+  - Immune escape routed to benchmark and registered only `esm`, then failed execution because no selected input file was recorded and the declared `few_proteins.fasta` path was absent.
+  - circRNA registered seven local cases and marked six as execution-ready, but partial register handling retried registration instead of faning out ready tools.
+- Validation: Live run dirs are `workspace/20260514163359/orchestration_runs/20260514T083410285635Z` and `workspace/20260514163603/orchestration_runs/20260514T083613373485Z`.
+- Next step: Fix benchmark partial-register semantics so ready tools can execute while blocked tools remain reported separately; separately repair immune-escape input/data mapping.
+
+### 2026-05-14 17:06 CST
+- Session goal: Fix circRNA benchmark partial-register fan-out and retest the user's short prompts.
+- Major changes:
+  - Changed benchmark planning so partial register results with ready tools expand into execution workers instead of retrying register.
+  - Changed deterministic benchmark register so `spawned_subgraph.selected_tools` contains only ready tools on partial results, while `registered_tools` and `blocked_tools` preserve the full state.
+  - Improved family-hint tool selection so short `circrna` prompts that ask for multiple/parallel operators choose multiple local family cases even when current historical input groups are not yet unified.
+- Validation: Targeted supervisor/orchestration tests passed (`62 passed`); live `circrna` rerun launched seven ready tools in parallel and left `AQUARIUM-HB` blocked; live `免疫逃逸` rerun still selected only `esm` and failed on missing selected input files as expected.
+- Next step: Repair shared dataset/input mapping so circRNA and immune-escape prepared manifests contain real `selected_input_files` from the intended dataset layer.
+
+### 2026-05-14 17:35 CST
+- Session goal: Make benchmark prepare-case rewrite old `input.json` paths toward shared datasets and stop earlier when shared files are still missing.
+- Major changes:
+  - Extended the benchmark helper to infer the public `experiments/benchmark/datasets` root for family subdirectories like `circrna/` and `免疫逃逸/`.
+  - Added shared-dataset remapping for circRNA and immune-escape cases, plus staged `inputs.json` rewriting so old absolute paths are replaced by shared dataset targets during `prepare-case`.
+  - Tightened `execution-ready`: rewritten inputs now count as ready only when they resolve to real existing files, not wildcard placeholders or missing derived artifacts.
+  - Changed benchmark planning so an all-blocked partial register skips useless retry and goes straight to summary.
+- Validation: targeted helper/supervisor tests passed (`76 passed`); live short `circrna` rerun now registers shared datasets `circrna-hela-rnaser-paired` and `circrna-blood-prjna722046`, then stops at summary because shared dataset derived files are still absent.
+- Next step: populate the real circRNA shared dataset files under `experiments/benchmark/datasets/downloads/` so rewritten staged inputs can become execution-ready.
+
+### 2026-05-14 17:54 CST
+- Session goal: Populate real circRNA shared files and rerun the short benchmark prompt.
+- Major changes:
+  - Collected real sample files from upstream `circompara2` and `find_circ` source tarballs into `experiments/benchmark/datasets/downloads/circrna-hela-rnaser-paired/`, including annotation, paired FASTQ, `meta.csv`, and `find_circ` sample reference/read files.
+  - Verified with helper probes that `circompara2` and `find-circ` now rewrite old case-local `input.json` into staged shared-dataset-backed `cases/<tool>/wdl/inputs.json` with `inputs_ready=true`.
+  - Reran the short live `circrna` prompt; register now marks `biq`, `circompara2`, and `find-circ` as ready and launches them in parallel.
+- Validation: live run root `workspace/20260514175312/orchestration_runs/20260514T095321072465Z`; all three ready tools failed at runtime with exit code `125` because the required Docker images were unavailable locally and could not be pulled anonymously.
+- Next step: build or preload `benchmark/biq:zpf_v3`, `benchmark/circompara2:circrna`, and `benchmark/find-circ:circrna`, or relax execution to a preparation-only status when images are absent.
+
+### 2026-05-14 18:31 CST
+- Session goal: Add a real parallel prebuild stage before benchmark execution and rerun the short circRNA prompt.
+- Major changes:
+  - Changed the benchmark supervisor graph to `register -> parallel prebuild_* -> run/summarize`, with benchmark runs getting at least three orchestration rounds.
+  - Added deterministic `prebuild_<tool>` workers that first check `docker image inspect` and skip rebuild when the image already exists locally.
+  - Wired local benchmark-case `Dockerfile` discovery into both planner-side and helper-side case metadata so non-assembly benchmark families can surface prebuild candidates from the checked-in case directory itself.
+- Validation: targeted tests passed (`80 passed`); live short circRNA rerun at `workspace/20260514183001/orchestration_runs/20260514T103011158536Z` shows round 2 as `prebuild_biq`, `prebuild_circompara2`, and `prebuild_find-circ`, followed by round-3 summary.
+- Next step: stabilize image prebuilds, especially Docker Hub base-image access for `biq` / `find-circ` and legacy dependency installation for `circompara2`.
+
+### 2026-05-14 16:59 CST
+- Session goal: Implement a thousand-scale local operator store for reusable benchmark products.
+- Major changes:
+  - Added `libs/cli/code2workspace_cli/operator_store.py`, using per-product file manifests as the canonical store and `operator_store/index.sqlite` as a rebuildable query index.
+  - Wired deterministic benchmark register/case/summary helpers to materialize `operator_store/objects/benchmark/<tool>/<run_id>/operator_product.json` for registered, blocked, partial, failed, and completed cases.
+  - Added focused operator-store tests and synchronized overview/thesis notes with the manifest-first SQLite-index design.
+- Validation: `test_operator_store.py` plus `test_supervisor_runtime.py` passed (`41 passed`, warnings only); ruff check passed for the new operator-store module and tests.
+- Next step: Use the indexed operator products during benchmark planning/tool selection, then add a small CLI/API query surface if manual inspection is needed.
+
+### 2026-05-14 23:14 CST
+- Session goal: Generate repo-specific github2workspace prompts for circRNA tools and stress them with concurrent live runs.
+- Major changes:
+  - Added a new `Repo-Specific GitHub2Workspace Prompts` section to `experiments/harness/runs/benchmark_real_case_prompts_20260514.md` covering `AQUARIUM-HB`, `circompara2`, `acfs`, `ACValidator`, `AutoCirc`, `biq`, `CircAST`, and `find_circ`, all with the explicit rule that small public real datasets are allowed but synthetic data is not.
+  - Launched concurrent 60-minute non-interactive runs for `AQUARIUM-HB`, `circompara2`, and `ACValidator`.
+  - Observed three different bottleneck shapes: `AQUARIUM-HB` spent the full budget in repository inspection/build preparation, `circompara2` timed out before finalization after reaching the build phase with bundled paired-end reads identified, and `ACValidator` progressed farther by discovering ENA-backed real read provenance but still timed out before a successful build/WDL closeout.
+- Validation: live run roots were `experiments/harness/runs/repo_task_aquarium_hb_20260514T221333`, `.../repo_task_circompara2_20260514T221335`, and `.../repo_task_acvalidator_20260514T221336`; all exited with timeout code `124`, produced no `final_decision.json`, and wrote no final `operator_store` manifests.
+- Next step: either raise the per-run budget for `github2workspace` repo tasks with heavy builds, or pre-stage/build likely blocker images and helper dependencies before repeating the concurrent matrix.

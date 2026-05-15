@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -34,6 +35,24 @@ PHASE_ORDER = [
     "analysis",
     "summary",
 ]
+
+FILE_INPUT_SUFFIXES = (
+    ".fq",
+    ".fastq",
+    ".fa",
+    ".fasta",
+    ".gz",
+    ".bam",
+    ".bed",
+    ".pt",
+    ".vcf",
+    ".sam",
+    ".gtf",
+    ".csv",
+    ".txt",
+    ".pdb",
+    ".pdbqt",
+)
 
 FAMILY_METRICS = {
     "short-read-assembly": ["contig_count", "n50", "assembly_size"],
@@ -167,24 +186,83 @@ def _load_catalog(root: Path | None = None) -> tuple[dict[str, Any], dict[str, D
 
 def _load_or_discover_catalog(root: Path | None = None) -> dict[str, Any]:
     benchmark_root = (root or _default_benchmark_root()).resolve()
+    dataset_root = _infer_dataset_root_for_benchmark_root(benchmark_root)
     try:
         raw = json.loads(_catalog_path(benchmark_root).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         raw = {
             "benchmark_root": str(benchmark_root),
             "catalog_file": str(_catalog_path(benchmark_root)),
-            "dataset_root": str(benchmark_root / "datasets"),
-            "downloads_root": str(benchmark_root / "datasets" / "downloads"),
+            "dataset_root": str(dataset_root),
+            "downloads_root": str(dataset_root / "downloads"),
             "datasets": {},
             "repo_cases": {},
         }
     raw.setdefault("benchmark_root", str(benchmark_root))
     raw.setdefault("catalog_file", str(_catalog_path(benchmark_root)))
-    raw.setdefault("dataset_root", str(benchmark_root / "datasets"))
-    raw.setdefault("downloads_root", str(benchmark_root / "datasets" / "downloads"))
+    raw.setdefault("dataset_root", str(dataset_root))
+    raw.setdefault("downloads_root", str(dataset_root / "downloads"))
     raw.setdefault("datasets", {})
     raw.setdefault("repo_cases", {})
+    _augment_catalog_from_dataset_readmes(raw)
     return _augment_catalog_from_case_dirs(raw, benchmark_root=benchmark_root)
+
+
+def _infer_dataset_root_for_benchmark_root(benchmark_root: Path) -> Path:
+    if benchmark_root.name.casefold() in {"circrna", "cirrna", "免疫逃逸", "新冠病毒组装"}:
+        candidates = [
+            benchmark_root.parent / "datasets",
+            benchmark_root / "datasets",
+        ]
+    else:
+        candidates = [
+            benchmark_root / "datasets",
+            benchmark_root.parent / "datasets",
+        ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return candidates[0].resolve()
+
+
+def _augment_catalog_from_dataset_readmes(raw: dict[str, Any]) -> None:
+    datasets = raw.get("datasets")
+    if not isinstance(datasets, dict):
+        return
+    downloads_raw = Path(str(raw.get("downloads_root", "")))
+    downloads_root = downloads_raw if downloads_raw.is_absolute() else _repo_root() / downloads_raw
+    if not downloads_root.exists():
+        return
+    for dataset_dir in sorted(path for path in downloads_root.iterdir() if path.is_dir()):
+        key = dataset_dir.name
+        if key in datasets:
+            continue
+        expected_files = _expected_dataset_files_from_readme(dataset_dir / "README.md")
+        datasets[key] = {
+            "dataset_id": key,
+            "description": f"Shared benchmark dataset declared by {dataset_dir / 'README.md'}.",
+            "fallback_urls": [],
+            "family": _family_for_dataset_key(key),
+            "files": [
+                {"logical_name": _logical_input_name(name, index), "uri": str(dataset_dir / name), "filename": name}
+                for index, name in enumerate(expected_files, start=1)
+            ],
+            "local_candidates": [str(dataset_dir / name) for name in expected_files],
+            "shared_between": [],
+            "source": "shared benchmark dataset directory",
+            "source_urls": [],
+        }
+
+
+def _expected_dataset_files_from_readme(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    names: list[str] = []
+    for match in re.finditer(r"`([^`]+)`", path.read_text(encoding="utf-8", errors="replace")):
+        name = match.group(1).strip()
+        if name and not name.endswith("/"):
+            names.append(name)
+    return sorted(dict.fromkeys(names))
 
 
 def _augment_catalog_from_case_dirs(raw: dict[str, Any], *, benchmark_root: Path) -> dict[str, Any]:
@@ -200,6 +278,9 @@ def _augment_catalog_from_case_dirs(raw: dict[str, Any], *, benchmark_root: Path
             discovered[str(case["repo_name"])] = case
 
     for repo_name, case in discovered.items():
+        remapped_dataset = _shared_dataset_key_for_case(benchmark_root, case)
+        if remapped_dataset:
+            case["dataset_key"] = remapped_dataset
         repo_cases.setdefault(repo_name, case)
 
     for case in discovered.values():
@@ -226,6 +307,21 @@ def _augment_catalog_from_case_dirs(raw: dict[str, Any], *, benchmark_root: Path
             "source_urls": [],
         }
     return raw
+
+
+def _shared_dataset_key_for_case(benchmark_root: Path, case: dict[str, Any]) -> str | None:
+    lowered_root = str(benchmark_root).casefold()
+    repo_name = str(case.get("repo_name", "")).casefold()
+    if "circrna" in lowered_root or "cirrna" in lowered_root:
+        if repo_name == "aquarium-hb":
+            return "circrna-blood-prjna722046"
+        return "circrna-hela-rnaser-paired"
+    if "免疫逃逸" in lowered_root:
+        if repo_name == "esm":
+            return "immune-escape-covabdab-structural-bundle"
+        if repo_name in {"immunebuilder", "autodock-vina", "imapep"}:
+            return "immune-escape-covabdab-structural-bundle"
+    return None
 
 
 def _discover_case_dirs(root: Path) -> list[Path]:
@@ -257,7 +353,13 @@ def _case_payload_from_dir(benchmark_root: Path, case_dir: Path) -> dict[str, An
     workflow_name = _workflow_name_from_wdl(wdl_path) or repo_name
     family = _family_for_case(repo_name, workflow_name, input_files)
     runtime_image = _runtime_image_from_wdl_text(wdl_path.read_text(encoding="utf-8", errors="replace")) or f"benchmark/{repo_name.casefold()}:latest"
-    dockerfile_candidates = _known_dockerfile_candidates(repo_name)
+    dockerfile_candidates = []
+    local_dockerfile = case_dir / "Dockerfile"
+    if local_dockerfile.exists():
+        dockerfile_candidates.append(_manifest_path_for(local_dockerfile, benchmark_root=benchmark_root))
+    dockerfile_candidates.extend(
+        item for item in _known_dockerfile_candidates(repo_name) if item not in dockerfile_candidates
+    )
     return {
         "case_dir": _manifest_path_for(case_dir, benchmark_root=benchmark_root),
         "constraints": ["Use benchmark inputs discovered from the local case directory."],
@@ -293,13 +395,24 @@ def _manifest_path_for(path: Path, *, benchmark_root: Path) -> str:
 
 def _file_input_values(inputs: dict[str, Any]) -> list[str]:
     values: list[str] = []
-    for value in inputs.values():
+    for value in _iter_input_values(inputs):
         if not isinstance(value, str):
             continue
         lowered = value.casefold()
-        if any(lowered.endswith(suffix) for suffix in (".fq", ".fastq", ".fa", ".fasta", ".gz", ".bam", ".bed", ".pt", ".vcf")):
+        if any(lowered.endswith(suffix) for suffix in FILE_INPUT_SUFFIXES):
             values.append(value)
     return sorted(dict.fromkeys(values))
+
+
+def _iter_input_values(value: Any):
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from _iter_input_values(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _iter_input_values(item)
+    else:
+        yield value
 
 
 def _workflow_name_from_wdl(wdl_path: Path) -> str | None:
@@ -340,6 +453,19 @@ def _logical_input_name(value: str, index: int) -> str:
     return f"input_{index}"
 
 
+def _family_for_dataset_key(key: str) -> str:
+    lowered = key.casefold()
+    if "circrna" in lowered:
+        return "circrna"
+    if "immune-escape" in lowered:
+        return "immune-escape"
+    if "short-read" in lowered:
+        return "short-read-assembly"
+    if "long-read" in lowered:
+        return "long-read-assembly"
+    return "unknown"
+
+
 def _family_for_case(repo_name: str, workflow_name: str, input_files: list[str]) -> str:
     lowered = f"{repo_name} {workflow_name} {' '.join(input_files)}".casefold()
     if "spades" in lowered or "megahit" in lowered:
@@ -364,6 +490,9 @@ def _known_repo_url(repo_name: str) -> str:
         "trinityrnaseq": "https://github.com/trinityrnaseq/trinityrnaseq",
         "covid-19-signal": "https://github.com/jaleezyy/covid-19-signal",
         "fieldbioinformatics": "https://github.com/artic-network/fieldbioinformatics",
+        "biq": "https://github.com/pmenzel/biq",
+        "circompara2": "https://github.com/egaffo/circompara2",
+        "find-circ": "https://github.com/marvin-jens/find_circ",
     }
     return known.get(repo_name, "")
 
@@ -388,6 +517,14 @@ def _default_repo_native_entry(repo_name: str) -> str:
         "trinityrnaseq": "Trinity --left <reads_1> --right <reads_2> --seqType fq --output out",
     }
     return defaults.get(repo_name, "")
+
+
+def _has_repo_native_entry(case_manifest: dict[str, Any]) -> bool:
+    entry = str(case_manifest.get("repo_native_entry", "")).strip()
+    if entry:
+        return True
+    candidates = case_manifest.get("repo_native_command_candidates", [])
+    return isinstance(candidates, list) and any(isinstance(item, str) and item.strip() for item in candidates)
 
 
 def _expected_outputs_for_family(family: str) -> list[str]:
@@ -663,6 +800,124 @@ def _select_dataset_files(dataset: DatasetSpec) -> dict[str, Any]:
     }
 
 
+def _available_dataset_files(dataset: DatasetSpec) -> list[Path]:
+    dataset_dir = ensure_dir(_dataset_download_dir(dataset.key))
+    candidates = _dataset_target_files(dataset)
+    candidates.extend(_resolve_repo_path(item) for item in dataset.local_candidates)
+    candidates.extend(path for path in dataset_dir.rglob("*") if path.is_file())
+    unique: dict[str, Path] = {}
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            unique[str(candidate.resolve())] = candidate.resolve()
+    return list(unique.values())
+
+
+def _dataset_target_files(dataset: DatasetSpec) -> list[Path]:
+    dataset_dir = ensure_dir(_dataset_download_dir(dataset.key))
+    return [dataset_dir / item.filename for item in dataset.files]
+
+
+def _rewrite_inputs_with_dataset_files(
+    inputs: dict[str, Any],
+    dataset_files: list[Path],
+) -> tuple[dict[str, Any], dict[str, str], list[str]]:
+    selected: dict[str, str] = {}
+    missing: list[str] = []
+
+    def rewrite(value: Any, key_hint: str) -> Any:
+        if isinstance(value, dict):
+            return {nested_key: rewrite(nested_value, nested_key) for nested_key, nested_value in value.items()}
+        if isinstance(value, list):
+            rewritten_items: list[Any] = []
+            for index, item in enumerate(value, start=1):
+                rewritten_items.append(rewrite(item, f"{key_hint}_{index}"))
+            return rewritten_items
+        if not isinstance(value, str) or not _looks_like_file_input(value):
+            return value
+        match = _match_dataset_file_for_input(key_hint, value, dataset_files)
+        logical_name = _logical_name_from_input_key(key_hint, len(selected) + 1)
+        if match is None:
+            missing.append(key_hint)
+            return value
+        selected[logical_name] = str(match)
+        if not match.exists():
+            missing.append(key_hint)
+        return str(match)
+
+    return {key: rewrite(value, key) for key, value in inputs.items()}, selected, missing
+
+
+def _looks_like_file_input(value: str) -> bool:
+    lowered = value.casefold()
+    return any(lowered.endswith(suffix) for suffix in FILE_INPUT_SUFFIXES)
+
+
+def _logical_name_from_input_key(key: str, index: int) -> str:
+    raw = key.rsplit(".", 1)[-1]
+    normalized = re.sub(r"[^A-Za-z0-9_]+", "_", raw).strip("_")
+    return normalized or f"input_{index}"
+
+
+def _match_dataset_file_for_input(key_hint: str, old_value: str, files: list[Path]) -> Path | None:
+    if not files:
+        return None
+    old_name = Path(old_value).name.casefold()
+    for path in files:
+        if path.name.casefold() == old_name:
+            return path
+    key = key_hint.casefold()
+    ranked = sorted(files, key=lambda item: item.name.casefold())
+    if any(marker in key for marker in ("fastq1", "read1", "reads_1", "r1")):
+        return _first_file_matching(ranked, (".fastq.gz", ".fq.gz", ".fastq", ".fq"), ("_1", "r1"))
+    if any(marker in key for marker in ("fastq2", "read2", "reads_2", "r2")):
+        return _first_file_matching(ranked, (".fastq.gz", ".fq.gz", ".fastq", ".fq"), ("_2", "r2"))
+    if "gtf" in key or "annotation" in key:
+        return _first_file_matching(ranked, (".gtf",), ())
+    if "bed" in key:
+        return _first_file_matching(ranked, (".bed",), ())
+    if "sam" in key:
+        return _first_file_matching(ranked, (".sam",), ())
+    if "bam" in key or "unmap" in key:
+        return _first_file_matching(ranked, (".bam",), ())
+    if "junction" in key or "circ" in key and "list" in key:
+        return _first_file_matching(ranked, (".txt", ".csv"), ("circ", "junction"))
+    if "meta" in key:
+        return _first_file_matching(ranked, (".csv",), ("meta",))
+    if "reference_file" in key:
+        return _first_file_matching(ranked, (".txt",), ("reference", "circ"))
+    if "pdbqt" in old_name or "pdbqt" in key:
+        return _first_file_matching(ranked, (".pdbqt",), ())
+    if "pdb" in old_name or "pdb" in key:
+        return _first_file_matching(ranked, (".pdb",), ())
+    if "fasta" in key or "genome" in key or "reference" in key or "ref" in key:
+        return _first_file_matching(ranked, (".fa", ".fasta"), ())
+    if "csv" in old_name or "escape" in key or "dms" in key:
+        return _first_file_matching(ranked, (".csv",), ())
+    return _first_file_matching(ranked, tuple(FILE_INPUT_SUFFIXES), ())
+
+
+def _first_file_matching(files: list[Path], suffixes: tuple[str, ...], name_markers: tuple[str, ...]) -> Path | None:
+    for path in files:
+        lowered = path.name.casefold()
+        if suffixes and not lowered.endswith(suffixes):
+            continue
+        if name_markers and not any(marker in lowered for marker in name_markers):
+            continue
+        return path
+    return None
+
+
+def _selected_input_files_are_ready(selected_input_files: dict[str, str]) -> bool:
+    if not selected_input_files:
+        return False
+    for raw_path in selected_input_files.values():
+        if any(token in raw_path for token in ("*", "?", "[")):
+            return False
+        if not Path(raw_path).exists():
+            return False
+    return True
+
+
 def _write_dataset_selection(case_dir: Path, dataset: DatasetSpec) -> dict[str, Any]:
     selection = {
         "dataset_key": dataset.key,
@@ -854,25 +1109,247 @@ def _analysis_for_case(case_dir: Path, case_manifest: dict[str, Any]) -> dict[st
 
 def _run_build_command(command: list[str], *, cwd: Path, log_path: Path, timeout_seconds: int) -> dict[str, Any]:
     started_at = time.time()
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w", encoding="utf-8") as log_handle:
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert process.stdout is not None
+
+        def _stream_output() -> None:
+            for chunk in process.stdout:
+                log_handle.write(chunk)
+                log_handle.flush()
+
+        reader = threading.Thread(target=_stream_output, daemon=True)
+        reader.start()
+        try:
+            returncode = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            returncode = process.wait()
+        reader.join(timeout=5)
+        log_handle.flush()
+
     elapsed = round(time.time() - started_at, 3)
-    log_path.write_text(completed.stdout + completed.stderr, encoding="utf-8")
     return {
         "attempted": True,
         "completed": True,
-        "success": completed.returncode == 0,
-        "returncode": completed.returncode,
+        "success": returncode == 0,
+        "returncode": returncode,
         "elapsed_seconds": elapsed,
         "command": command,
         "log_path": str(log_path),
     }
+
+
+def _docker_image_exists(image_ref: str) -> bool:
+    try:
+        completed = subprocess.run(
+            ["docker", "image", "inspect", image_ref],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False
+    return completed.returncode == 0
+
+
+def _docker_mirror_candidates() -> list[str]:
+    raw = os.environ.get("CODE2WORKSPACE_DOCKER_MIRRORS")
+    if raw:
+        return [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
+    return ["docker.m.daocloud.io", "hub.rat.dev"]
+
+
+def _dockerfile_local_sources(dockerfile_path: Path | None) -> list[str]:
+    if dockerfile_path is None or not dockerfile_path.exists():
+        return []
+    sources: list[str] = []
+    for raw_line in dockerfile_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        instruction, _, rest = line.partition(" ")
+        if instruction.upper() not in {"COPY", "ADD"} or not rest.strip():
+            continue
+        tokens = shlex.split(rest, comments=True)
+        while tokens and tokens[0].startswith("--"):
+            tokens.pop(0)
+        if len(tokens) < 2:
+            continue
+        for source in tokens[:-1]:
+            if source.startswith(("http://", "https://")) or source == "-":
+                continue
+            sources.append(source)
+    return sources
+
+
+def _source_root_for_materialization(source: str) -> str | None:
+    first = source.strip().lstrip("./").split("/", 1)[0]
+    if not first or any(char in first for char in "*?["):
+        return None
+    return first
+
+
+def _dockerfile_source_roots(dockerfile_path: Path | None) -> list[str]:
+    roots: list[str] = []
+    for source in _dockerfile_local_sources(dockerfile_path):
+        root = _source_root_for_materialization(source)
+        if root and root not in roots:
+            roots.append(root)
+    return roots
+
+
+def _copy_missing_tree(source_dir: Path, target_dir: Path) -> int:
+    copied = 0
+    for item in source_dir.rglob("*"):
+        relative = item.relative_to(source_dir)
+        if ".git" in relative.parts:
+            continue
+        target = target_dir / relative
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item, target)
+        copied += 1
+    return copied
+
+
+def _materialize_missing_docker_context_sources(
+    *,
+    dockerfile_path: Path | None,
+    context_dir: Path,
+    case_manifest: dict[str, Any],
+    timeout_seconds: int,
+) -> list[dict[str, Any]]:
+    repo_url = str(case_manifest.get("repo_url", "")).strip()
+    if not repo_url:
+        return []
+    materialized: list[dict[str, Any]] = []
+    source_roots = _dockerfile_source_roots(dockerfile_path)
+    if not source_roots:
+        return materialized
+    source_root = context_dir / ".prebuild_sources"
+    ensure_dir(source_root)
+    repo_name = str(case_manifest.get("repo_name", "")).strip() or "repo"
+    clone_dir = source_root / re.sub(r"[^A-Za-z0-9_.-]+", "_", repo_name)
+    if not clone_dir.exists():
+        clone = subprocess.run(
+            ["git", "clone", "--depth", "1", repo_url, str(clone_dir)],
+            capture_output=True,
+            text=True,
+            timeout=min(timeout_seconds, 600),
+            check=False,
+        )
+        materialized.append(
+            {
+                "repo_url": repo_url,
+                "clone_dir": str(clone_dir),
+                "returncode": clone.returncode,
+                "tail": (clone.stdout + clone.stderr)[-1000:],
+            }
+        )
+        if clone.returncode != 0:
+            return materialized
+    else:
+        materialized.append({"repo_url": repo_url, "clone_dir": str(clone_dir), "returncode": 0, "cached": True})
+    for root in source_roots:
+        target_dir = context_dir / root
+        copied = _copy_missing_tree(clone_dir, target_dir)
+        materialized.append(
+            {
+                "source_root": root,
+                "target_dir": str(target_dir),
+                "copied_files": copied,
+            }
+        )
+    return materialized
+
+
+def _dockerfile_base_images(dockerfile_path: Path | None) -> list[str]:
+    if dockerfile_path is None or not dockerfile_path.exists():
+        return []
+    images: list[str] = []
+    for raw_line in dockerfile_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        instruction, _, rest = line.partition(" ")
+        if instruction.upper() != "FROM" or not rest.strip():
+            continue
+        tokens = shlex.split(rest, comments=True)
+        while tokens and tokens[0].startswith("--"):
+            tokens.pop(0)
+        if not tokens:
+            continue
+        image = tokens[0]
+        if image.lower() == "scratch" or "$" in image:
+            continue
+        images.append(image)
+    return images
+
+
+def _mirror_image_ref(image_ref: str, mirror: str) -> str | None:
+    registry_or_name = image_ref.split("/", 1)[0]
+    has_registry = "." in registry_or_name or ":" in registry_or_name or registry_or_name == "localhost"
+    if has_registry:
+        return None
+    if "/" in image_ref:
+        return f"{mirror}/{image_ref}"
+    return f"{mirror}/library/{image_ref}"
+
+
+def _preload_base_images_from_mirrors(dockerfile_path: Path | None, *, timeout_seconds: int) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for image_ref in _dockerfile_base_images(dockerfile_path):
+        if _docker_image_exists(image_ref):
+            results.append({"image": image_ref, "status": "present"})
+            continue
+        image_result: dict[str, Any] = {"image": image_ref, "status": "missing", "attempts": []}
+        for mirror in _docker_mirror_candidates():
+            mirror_ref = _mirror_image_ref(image_ref, mirror)
+            if mirror_ref is None:
+                continue
+            pull = subprocess.run(
+                ["docker", "pull", mirror_ref],
+                capture_output=True,
+                text=True,
+                timeout=min(timeout_seconds, 300),
+                check=False,
+            )
+            attempt = {
+                "mirror": mirror,
+                "mirror_ref": mirror_ref,
+                "returncode": pull.returncode,
+                "tail": (pull.stdout + pull.stderr)[-1000:],
+            }
+            image_result["attempts"].append(attempt)
+            if pull.returncode != 0:
+                continue
+            tag = subprocess.run(
+                ["docker", "tag", mirror_ref, image_ref],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            attempt["tag_returncode"] = tag.returncode
+            if tag.returncode == 0 and _docker_image_exists(image_ref):
+                image_result["status"] = "preloaded"
+                image_result["mirror_ref"] = mirror_ref
+                break
+        results.append(image_result)
+    return results
 
 
 def _run_logged_command(command: list[str], *, cwd: Path, log_path: Path, timeout_seconds: int) -> dict[str, Any]:
@@ -914,6 +1391,41 @@ def _collect_output_artifacts(output_dir: Path) -> list[str]:
     if not output_dir.exists():
         return []
     return sorted(str(path) for path in output_dir.rglob("*") if path.is_file())[:200]
+
+
+def _extract_output_artifacts_from_outputs_json(outputs_path: Path) -> list[str]:
+    if not outputs_path.exists():
+        return []
+    try:
+        payload = json.loads(outputs_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+
+    artifacts: list[str] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, str):
+            candidate = Path(value)
+            if candidate.exists() and candidate.is_file():
+                artifacts.append(str(candidate))
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                visit(item)
+
+    visit(payload)
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for artifact in artifacts:
+        if artifact in seen:
+            continue
+        seen.add(artifact)
+        ordered.append(artifact)
+    return ordered
 
 
 def _preferred_image_ref(case_dir: Path, case_manifest: dict[str, Any]) -> str:
@@ -1050,11 +1562,43 @@ def cmd_prepare_case(args: argparse.Namespace) -> int:
         ],
     }
     selection = _write_dataset_selection(case_dir, dataset)
+    source_inputs_payload: dict[str, Any] | None = None
+    rewritten_inputs_payload: dict[str, Any] | None = None
+    rewritten_selected_inputs: dict[str, str] = {}
+    missing_input_keys: list[str] = []
+    if source_inputs_path is not None and source_inputs_path.exists():
+        try:
+            source_inputs_payload = json.loads(source_inputs_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            source_inputs_payload = None
+        if isinstance(source_inputs_payload, dict):
+            rewritten_inputs_payload, rewritten_selected_inputs, missing_input_keys = _rewrite_inputs_with_dataset_files(
+                source_inputs_payload,
+                [*_dataset_target_files(dataset), *_available_dataset_files(dataset)],
+            )
+            if rewritten_selected_inputs:
+                selection = {
+                    **selection,
+                    "selected_input_source": "shared_dataset_rewrite",
+                    "selected_input_files": rewritten_selected_inputs,
+                    "selection_complete": not missing_input_keys,
+                    "selection_reason": (
+                        "Rewrote the case input template using files from the selected shared dataset."
+                        if not missing_input_keys
+                        else "Rewrote part of the case input template using shared dataset files; some file inputs are still unmapped."
+                    ),
+                    "missing_input_keys": missing_input_keys,
+                }
+                write_json(case_dir / "dataset_selection.json", selection)
     dataset_manifest.update(selection)
     write_json(case_dir / "dataset_manifest.json", dataset_manifest)
     if source_wdl_path is not None and source_wdl_path.exists():
         shutil.copy2(source_wdl_path, case_dir / "wdl" / source_wdl_path.name)
-    if source_inputs_path is not None and source_inputs_path.exists():
+    if rewritten_inputs_payload is not None:
+        write_json(case_dir / "wdl" / "inputs.json", rewritten_inputs_payload)
+        if source_inputs_path is not None and source_inputs_path.exists():
+            shutil.copy2(source_inputs_path, case_dir / "wdl" / "inputs.original.json")
+    elif source_inputs_path is not None and source_inputs_path.exists():
         shutil.copy2(source_inputs_path, case_dir / "wdl" / "inputs.json")
     else:
         input_template = {
@@ -1090,6 +1634,7 @@ def cmd_prepare_case(args: argparse.Namespace) -> int:
     case_manifest["source_inputs_path"] = str(source_inputs_path) if source_inputs_path is not None else None
     case_manifest["selected_input_source"] = selection["selected_input_source"]
     case_manifest["selected_input_files"] = selection["selected_input_files"]
+    case_manifest["missing_input_keys"] = selection.get("missing_input_keys", [])
     case_manifest["selection_reason"] = selection["selection_reason"]
     _save_case_manifest(run_dir, repo, case_manifest)
     print(json.dumps({"repo": repo, "dataset_key": dataset.key, "case_dir": str(case_dir)}, ensure_ascii=False, indent=2))
@@ -1108,11 +1653,23 @@ def cmd_execution_ready(args: argparse.Namespace) -> int:
     wdl_path = _resolve_repo_path(case.wdl_path) if case.wdl_path else _first_existing(case.wdl_candidates)
     if wdl_path is not None and not wdl_path.exists():
         wdl_path = None
-    input_json_path = _resolve_repo_path(case.inputs_path) if case.inputs_path else _first_existing(case.input_json_candidates)
+    staged_input_json_path = _case_dir(run_dir, repo) / "wdl" / "inputs.json"
+    input_json_path = staged_input_json_path if staged_input_json_path.exists() else (_resolve_repo_path(case.inputs_path) if case.inputs_path else _first_existing(case.input_json_candidates))
     if input_json_path is not None and not input_json_path.exists():
         input_json_path = None
     local_result_candidates = [str(_resolve_repo_path(item)) for item in case.local_result_candidates if _resolve_repo_path(item).exists()]
     runtime_image = _runtime_image_from_wdl(wdl_path) if wdl_path is not None else case.image_tag
+    selected_input_files = {
+        str(key): str(value)
+        for key, value in dict(case_manifest.get("selected_input_files") or {}).items()
+        if isinstance(key, str) and isinstance(value, str)
+    }
+    missing_input_keys = [
+        str(item)
+        for item in case_manifest.get("missing_input_keys", [])
+        if isinstance(item, str) and item.strip()
+    ]
+    inputs_ready = _selected_input_files_are_ready(selected_input_files) and not missing_input_keys
     payload = {
         "repo": repo,
         "dockerfile_path": None if dockerfile_path is None else str(dockerfile_path),
@@ -1121,7 +1678,9 @@ def cmd_execution_ready(args: argparse.Namespace) -> int:
         "repo_native_command_candidates": list(case.repo_native_command_candidates),
         "local_result_candidates": local_result_candidates,
         "runtime_image": runtime_image,
-        "ready": wdl_path is not None and input_json_path is not None and bool(runtime_image),
+        "ready": wdl_path is not None and input_json_path is not None and bool(runtime_image) and inputs_ready,
+        "inputs_ready": inputs_ready,
+        "missing_input_keys": missing_input_keys,
     }
     write_json(case_dir := _case_dir(run_dir, repo) / "execution_ready.json", payload)
     case_manifest["dockerfile_path"] = payload["dockerfile_path"]
@@ -1156,9 +1715,34 @@ def cmd_prebuild_image(args: argparse.Namespace) -> int:
     }
     write_json(docker_dir / "request.json", request)
     log_path = docker_dir / "build.log"
-    if args.build_command:
+    base_image_preload: list[dict[str, Any]] = []
+    source_materialization: list[dict[str, Any]] = []
+    if _docker_image_exists(image_tag):
+        status = {
+            "attempted": False,
+            "completed": True,
+            "success": True,
+            "returncode": 0,
+            "elapsed_seconds": 0.0,
+            "command": [],
+            "log_path": str(log_path),
+            "image_present": True,
+            "reason": "Image already exists locally; skipped rebuild.",
+        }
+        log_path.write_text("", encoding="utf-8")
+    elif args.build_command:
         status = _run_build_command(args.build_command, cwd=context_dir, log_path=log_path, timeout_seconds=args.timeout_seconds)
     elif dockerfile_path is not None and dockerfile_path.exists():
+        base_image_preload = _preload_base_images_from_mirrors(
+            dockerfile_path,
+            timeout_seconds=args.timeout_seconds,
+        )
+        source_materialization = _materialize_missing_docker_context_sources(
+            dockerfile_path=dockerfile_path,
+            context_dir=context_dir,
+            case_manifest=case_manifest,
+            timeout_seconds=args.timeout_seconds,
+        )
         command = ["docker", "build", "-t", image_tag, "-f", str(dockerfile_path), str(context_dir)]
         status = _run_build_command(command, cwd=context_dir, log_path=log_path, timeout_seconds=args.timeout_seconds)
     else:
@@ -1173,6 +1757,10 @@ def cmd_prebuild_image(args: argparse.Namespace) -> int:
             "reason": "No build command or Dockerfile path was provided.",
         }
         log_path.write_text("", encoding="utf-8")
+    if base_image_preload:
+        status["base_image_preload"] = base_image_preload
+    if source_materialization:
+        status["source_materialization"] = source_materialization
     write_json(docker_dir / "status.json", status)
     case_manifest["phase_status"]["prebuild"] = "completed" if status["success"] else ("failed" if status["attempted"] else "pending")
     _save_case_manifest(run_dir, repo, case_manifest)
@@ -1226,6 +1814,93 @@ def cmd_run_repo_native(args: argparse.Namespace) -> int:
     case_manifest["benchmark_notes"]["repo_native_status"] = str(run_dir_path / "status.json")
     case_manifest["benchmark_notes"]["repo_native_log"] = str(log_path)
     case_manifest["benchmark_notes"]["repo_native_failure_reason"] = status.get("failure_reason")
+    _save_case_manifest(run_dir, repo, case_manifest)
+    print(json.dumps({"repo": repo, **status}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_run_wdl(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir).resolve()
+    _activate_benchmark_root_from_run_dir(run_dir)
+    repo = args.repo
+    case_manifest = _load_case_manifest(run_dir, repo)
+    case_dir = _case_dir(run_dir, repo)
+    wdl_dir = case_dir / "wdl"
+    ensure_dir(wdl_dir)
+
+    workflow_path = wdl_dir / "workflow.wdl"
+    if not workflow_path.exists():
+        workflow_path = next(iter(sorted(wdl_dir.glob("*.wdl"))), None)
+    inputs_path = wdl_dir / "inputs.json"
+    if workflow_path is None or not workflow_path.exists():
+        raise SystemExit(f"No staged workflow found for {repo}. Run prepare-case first.")
+    if not inputs_path.exists():
+        raise SystemExit(f"No staged inputs.json found for {repo}. Run prepare-case first.")
+
+    outputs_path = wdl_dir / "outputs.json"
+    log_path = wdl_dir / "miniwdl_run.log"
+    command = [
+        str(_repo_root() / "scripts" / "run-miniwdl.sh"),
+        str(workflow_path),
+        "-i",
+        str(inputs_path),
+        "-o",
+        str(outputs_path),
+    ]
+    status = _run_logged_command(command, cwd=wdl_dir, log_path=log_path, timeout_seconds=args.timeout_seconds)
+    status["workflow_path"] = str(workflow_path)
+    status["inputs_path"] = str(inputs_path)
+    status["outputs_path"] = str(outputs_path)
+    status["output_artifacts"] = _extract_output_artifacts_from_outputs_json(outputs_path)
+    write_json(wdl_dir / "status.json", status)
+
+    case_manifest.setdefault("benchmark_notes", {})
+    case_manifest["benchmark_notes"]["wdl_status"] = str(wdl_dir / "status.json")
+    case_manifest["benchmark_notes"]["wdl_log"] = str(log_path)
+    case_manifest["benchmark_notes"]["wdl_failure_reason"] = status.get("failure_reason")
+    _save_case_manifest(run_dir, repo, case_manifest)
+    print(json.dumps({"repo": repo, **status}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_run_wdl(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir).resolve()
+    _activate_benchmark_root_from_run_dir(run_dir)
+    repo = args.repo
+    case_manifest = _load_case_manifest(run_dir, repo)
+    case_dir = _case_dir(run_dir, repo)
+    wdl_dir = case_dir / "wdl"
+    ensure_dir(wdl_dir)
+
+    workflow_candidates = [wdl_dir / "workflow.wdl", *sorted(wdl_dir.glob("*.wdl"))]
+    workflow_path = next((path for path in workflow_candidates if path.exists()), None)
+    inputs_path = wdl_dir / "inputs.json"
+    if workflow_path is None:
+        raise SystemExit(f"No staged workflow found for {repo}. Run prepare-case first.")
+    if not inputs_path.exists():
+        raise SystemExit(f"No staged inputs.json found for {repo}. Run prepare-case first.")
+
+    outputs_path = wdl_dir / "outputs.json"
+    log_path = wdl_dir / "miniwdl_run.log"
+    command = [
+        str(_repo_root() / "scripts" / "run-miniwdl.sh"),
+        str(workflow_path),
+        "-i",
+        str(inputs_path),
+        "-o",
+        str(outputs_path),
+    ]
+    status = _run_logged_command(command, cwd=wdl_dir, log_path=log_path, timeout_seconds=args.timeout_seconds)
+    status["workflow_path"] = str(workflow_path)
+    status["inputs_path"] = str(inputs_path)
+    status["outputs_path"] = str(outputs_path)
+    status["output_artifacts"] = _extract_output_artifacts_from_outputs_json(outputs_path)
+    write_json(wdl_dir / "status.json", status)
+
+    case_manifest.setdefault("benchmark_notes", {})
+    case_manifest["benchmark_notes"]["wdl_status"] = str(wdl_dir / "status.json")
+    case_manifest["benchmark_notes"]["wdl_log"] = str(log_path)
+    case_manifest["benchmark_notes"]["wdl_failure_reason"] = status.get("failure_reason")
     _save_case_manifest(run_dir, repo, case_manifest)
     print(json.dumps({"repo": repo, **status}, ensure_ascii=False, indent=2))
     return 0
@@ -1385,7 +2060,7 @@ def build_parser() -> argparse.ArgumentParser:
     prebuild.add_argument("--dockerfile-path")
     prebuild.add_argument("--context-dir")
     prebuild.add_argument("--image-tag")
-    prebuild.add_argument("--timeout-seconds", type=int, default=3600)
+    prebuild.add_argument("--timeout-seconds", type=int, default=14400)
     prebuild.add_argument("--build-command", nargs=argparse.REMAINDER)
     prebuild.set_defaults(func=cmd_prebuild_image)
 
@@ -1398,6 +2073,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_repo_native.add_argument("--no-shell", action="store_true")
     run_repo_native.add_argument("--timeout-seconds", type=int, default=7200)
     run_repo_native.set_defaults(func=cmd_run_repo_native)
+
+    run_wdl = subparsers.add_parser("run-wdl", help="Execute one staged benchmark WDL run and write wdl/status.json.")
+    run_wdl.add_argument("--repo", required=True)
+    run_wdl.add_argument("--run-dir", required=True)
+    run_wdl.add_argument("--timeout-seconds", type=int, default=7200)
+    run_wdl.set_defaults(func=cmd_run_wdl)
 
     analyze = subparsers.add_parser("analyze-case", help="Analyze one case from local WDL and benchmark artifacts.")
     analyze.add_argument("--repo", required=True)

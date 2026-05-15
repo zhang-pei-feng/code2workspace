@@ -24,6 +24,44 @@ and evidence-backed completion judgment.
 
 ## Chronology
 
+### 2026-05-14
+
+- Added reusable real-case prompts for extending the local benchmark beyond
+  `新冠病毒组装`:
+  - `experiments/harness/runs/benchmark_real_case_prompts_20260514.md`
+    records the prior successful local-root benchmark prompt shape and provides
+    concrete prompts for `免疫逃逸` and `circrna`
+  - the prompts explicitly point at local benchmark directories so the
+    Supervisor Graph register node can inspect checked-in Dockerfile/WDL/input
+    assets, avoiding the URL-only failure mode seen in earlier circRNA attempts
+  - local helper probes confirmed that the `circrna` root can register a
+    four-case subset, while `免疫逃逸` remains modality-heterogeneous and
+    currently requires explicit inspection beyond the helper's auto-discovered
+    `esm` case
+- Fixed a live `circrna` benchmark control-flow issue exposed by the new prompt:
+  - partial register results now preserve only ready tools in
+    `spawned_subgraph.selected_tools`, while keeping blocked tools in separate
+    metadata
+  - the benchmark planner treats a partial register with ready tools as a valid
+    fan-out point instead of retrying register
+  - a rerun of the short `circrna` prompt registered seven ready tools, left
+    `AQUARIUM-HB` blocked, and launched the ready tools in parallel
+  - all seven execution nodes then failed before real tool execution because
+    selected input files were still missing, which correctly moves the remaining
+    problem from supervisor fan-out to dataset/input mapping
+- Validation: targeted supervisor/orchestration tests passed
+  (`62 passed`, warnings only); live run roots are recorded in
+  `experiments/harness/runs/benchmark_real_case_prompts_20260514.md`.
+- Added the first reusable operator-store implementation for benchmark
+  products:
+  - `libs/cli/code2workspace_cli/operator_store.py` keeps each operator as a
+    file manifest and stores only query metadata in rebuildable SQLite
+  - deterministic benchmark register/case/summary helpers now materialize
+    `operator_store/objects/benchmark/<tool>/<run_id>/operator_product.json`
+    and update `operator_store/index.sqlite`
+  - this supports later thousand-scale operator reuse while preserving
+    file-backed provenance for thesis traceability
+
 ### 2026-05-13
 
 - Added a current Supervisor Graph flow and status audit document:
@@ -273,7 +311,7 @@ and evidence-backed completion judgment.
   - restored a checked-in `experiments/benchmark/datasets/benchmark_catalog.json`
     in the current worktree after that local copy had gone missing
   - added benchmark-family README guides for `experiments/benchmark/`,
-    `cirrna/`, and `免疫逃逸/`
+    `circrna/`, and `免疫逃逸/`
   - extended the dataset registry with shared-dataset candidate bundles for
     circRNA and immune-escape tasks
 - This matters for the thesis because it sharpens an experimental-design

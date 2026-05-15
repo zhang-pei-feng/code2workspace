@@ -14,6 +14,7 @@ from langgraph.errors import GraphInterrupt
 
 from code2workspace.orchestration_runtime import (
     ModelRefusalError,
+    SupervisorDecision,
     TaskGraph,
     TaskNode,
     WorkerResult,
@@ -21,14 +22,16 @@ from code2workspace.orchestration_runtime import (
     execute_graph_round,
 )
 from code2workspace_cli.agent import create_cli_agent
+from code2workspace_cli.operator_store import OperatorSearchFilter, OperatorStore
 from code2workspace_cli.supervisor_runtime import (
     _build_worker_invoke_request,
     _build_benchmark_comparison,
     _build_worker_prompt,
+    _github2workspace_product_status,
     _invoke_worker_agent,
     _latest_human_route_mode,
-    _run_worker_and_capture,
     _parse_worker_result,
+    _run_worker_and_capture,
     SQLiteCaseIndex,
     SupervisorWorkerRunner,
     build_supervisor_enabled_agent,
@@ -171,6 +174,11 @@ async def test_run_supervisor_orchestration_writes_artifacts_and_replans(
     final_payload = json.loads((run_dir / "final_decision.json").read_text())
     assert final_payload["decision"] == "stop"
     assert result.round_count == 2
+    github_store = OperatorStore(workspace / "operator_store")
+    rows = github_store.search(
+        OperatorSearchFilter(status="registered", tag="github2workspace")
+    )
+    assert rows[0]["id"] == f"github2workspace:spades:{run_dir.name}"
 
 
 @pytest.mark.asyncio
@@ -695,6 +703,10 @@ def test_build_worker_prompt_final_response_preserves_evidence_sources() -> None
     assert "brief evidence-source explanation" in prompt
     assert "source categories" in prompt
     assert "direct-vs-inferred evidence distinctions" in prompt
+    assert "判断轨迹（可审计摘要）" in prompt
+    assert "auditable reasoning path" in prompt
+    assert "not private chain-of-thought" in prompt
+    assert "false positives" in prompt
 
 
 def test_build_worker_prompt_includes_wdl_node_guidance() -> None:
@@ -731,6 +743,41 @@ def test_build_worker_prompt_includes_wdl_node_guidance() -> None:
     assert "spades.wdl" in prompt
     assert "results/wdl_result" in prompt
     assert "Succeeded" in prompt
+    assert "never run `spades.py --test -o ...`" in prompt
+    assert "copy the default `spades_test` directory" in prompt
+    assert "Do not fabricate or synthesize reads" in prompt
+
+
+def test_github2workspace_product_status_rejects_synthetic_inputs(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "results" / "wdl_result").mkdir(parents=True)
+    (workspace / "results" / "wdl_result" / "outputs.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    (workspace / "results" / "wdl_file").mkdir(parents=True)
+    (workspace / "results" / "wdl_file" / "toy_reads.fastq").write_text(
+        "@r1\nACGT\n+\n!!!!\n",
+        encoding="utf-8",
+    )
+    (workspace / "inputs.json").write_text(
+        json.dumps(
+            {
+                "canu_workflow.reads": str(
+                    workspace / "results" / "wdl_file" / "toy_reads.fastq"
+                )
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = _github2workspace_product_status(
+        workspace_root=workspace,
+        rounds=[],
+        final_decision=SupervisorDecision(decision="stop", reason="done"),
+    )
+
+    assert status == "partial"
 
 
 def test_parse_worker_result_extracts_direct_json() -> None:
@@ -1062,6 +1109,8 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
     assert "spades" in result.summary
     assert result.spawned_subgraph == {
         "selected_tools": ["spades", "megahit"],
+        "ready_tools": ["spades", "megahit"],
+        "blocked_tools": [],
         "dataset_keys": ["short-read-ecoli-srr001666"],
         "register_report": str(run_dir / "register_report.json"),
     }
@@ -1070,6 +1119,154 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
     assert (run_dir / "metric_plan.json").exists()
     assert (run_dir / "cases" / "spades" / "execution_ready.json").exists()
     assert (run_dir / "cases" / "megahit" / "execution_ready.json").exists()
+    operator_store = OperatorStore(workspace_root / "operator_store")
+    rows = operator_store.search(OperatorSearchFilter(input_media_type="file", status="registered_ready"))
+    assert {row["name"] for row in rows} == {"spades", "megahit"}
+    assert (
+        workspace_root
+        / "operator_store"
+        / "objects"
+        / "benchmark"
+        / "spades"
+        / "run-1"
+        / "operator_product.json"
+    ).exists()
+
+
+@pytest.mark.asyncio
+async def test_benchmark_register_partial_returns_only_ready_tools_for_fanout(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-partial"
+    run_dir.mkdir(parents=True)
+    node = TaskNode(
+        node_id="register",
+        title="Register benchmark cases",
+        objective="Confirm benchmark inputs, register each tool/case pair, and verify staged constraints before execution.",
+        capability_bundles=["plan", "task_manage", "validate"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "在本地 circRNA benchmark 目录里选择多个工具。",
+            "run_dir": str(run_dir),
+            "selected_tools": ["ACValidator", "AQUARIUM-HB"],
+        },
+    )
+
+    def fake_register_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
+        if phase == "resolve-datasets":
+            (run_dir / "dataset_resolution.json").write_text("{}", encoding="utf-8")
+            (run_dir / "dataset_resolution.md").write_text("# datasets\n", encoding="utf-8")
+            return {"phase": phase, "command": command, "stdout": {}}
+        if phase == "init":
+            (run_dir / "benchmark_plan.json").write_text("{}", encoding="utf-8")
+            (run_dir / "benchmark_plan.md").write_text("# plan\n", encoding="utf-8")
+            return {"phase": phase, "command": command, "stdout": {"case_order": ["ACValidator", "AQUARIUM-HB"]}}
+        repo = phase.split(":", 1)[1]
+        case_dir = run_dir / "cases" / repo
+        case_dir.mkdir(parents=True, exist_ok=True)
+        if phase.startswith("prepare-case:"):
+            (case_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "dataset_key": "circrna-test",
+                        "metric_keys": [],
+                        "selected_input_files": {"input_1": "/tmp/input"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (case_dir / "dataset_selection.json").write_text("{}", encoding="utf-8")
+            (case_dir / "dataset_manifest.json").write_text("{}", encoding="utf-8")
+            (case_dir / "agent_task.md").write_text("# task\n", encoding="utf-8")
+            return {"phase": phase, "command": command, "stdout": {"repo": repo}}
+        if phase.startswith("execution-ready:"):
+            ready = repo == "ACValidator"
+            (case_dir / "execution_ready.json").write_text(
+                json.dumps(
+                    {
+                        "ready": ready,
+                        "runtime_image": "benchmark/acvalidator" if ready else None,
+                        "wdl_path": f"/tmp/{repo}.wdl",
+                        "inputs_json_path": f"/tmp/{repo}.json",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {"phase": phase, "command": command, "stdout": {"repo": repo}}
+        raise AssertionError(f"unexpected phase: {phase}")
+
+    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_register_helper):
+        result = await _invoke_worker_agent(
+            agent=AsyncMock(),
+            node=node,
+            workspace_root=workspace_root,
+        )
+
+    assert result.status == "partial"
+    assert result.failure_reason == "execution_ready_incomplete"
+    assert result.spawned_subgraph == {
+        "selected_tools": ["ACValidator"],
+        "registered_tools": ["ACValidator", "AQUARIUM-HB"],
+        "ready_tools": ["ACValidator"],
+        "blocked_tools": ["AQUARIUM-HB"],
+        "dataset_keys": ["circrna-test"],
+        "register_report": str(run_dir / "register_report.json"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_benchmark_prebuild_skips_when_image_already_exists(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-prebuild"
+    case_dir = run_dir / "cases" / "find-circ"
+    case_dir.mkdir(parents=True)
+    (case_dir / "docker").mkdir()
+    (case_dir / "execution_ready.json").write_text("{}", encoding="utf-8")
+    (case_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "repo_name": "find-circ",
+                "image_tag": "benchmark/find-circ:circrna",
+                "runtime_image": "benchmark/find-circ:circrna",
+                "phase_status": {"prebuild": "pending"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    node = TaskNode(
+        node_id="prebuild_find-circ",
+        title="Prepare find-circ image",
+        objective="prepare",
+        capability_bundles=["docker_build_run", "validate"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "prepare image",
+            "run_dir": str(run_dir),
+        },
+    )
+
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = AssertionError("prebuild helper path should bypass the model")
+
+    def fake_subprocess_run(*args, **kwargs):
+        class _Completed:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return _Completed()
+
+    with patch("code2workspace_cli.supervisor_runtime.subprocess.run", side_effect=fake_subprocess_run):
+        result = await _invoke_worker_agent(
+            agent=agent,
+            node=node,
+            workspace_root=workspace_root,
+        )
+
+    assert result.status == "completed"
+    assert "already exists locally" in result.summary
 
 
 @pytest.mark.asyncio
@@ -1203,10 +1400,165 @@ async def test_run_supervisor_orchestration_expands_benchmark_after_register_rou
 
     assert [node["node_id"] for node in graph_1_payload["nodes"]] == ["register"]
     assert [node["node_id"] for node in graph_2_payload["nodes"]] == [
-        "canu",
-        "Flye",
+        "prebuild_canu",
+        "prebuild_Flye",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_supervisor_orchestration_expands_benchmark_after_partial_register_ready_tools(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace" / "20260514164000"
+    workspace.mkdir(parents=True)
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "register":
+            return WorkerResult(
+                status="partial",
+                summary="register partially ready",
+                failure_reason="execution_ready_incomplete",
+                spawned_subgraph={
+                    "selected_tools": ["ACValidator", "AutoCirc"],
+                    "registered_tools": ["ACValidator", "AutoCirc", "AQUARIUM-HB"],
+                    "blocked_tools": ["AQUARIUM-HB"],
+                },
+            )
+        return WorkerResult(status="completed", summary=f"{node.node_id} ok")
+
+    result = await run_supervisor_orchestration(
+        task="我想评估 /tmp/benchmark/circrna 里的 circRNA benchmark 数据集在不同工具上的表现。",
+        workspace_root=workspace,
+        worker_runner=worker_runner,
+    )
+
+    graph_2_payload = json.loads((result.run_dir / "graph_round_2.json").read_text())
+
+    assert [node["node_id"] for node in graph_2_payload["nodes"]] == [
+        "prebuild_ACValidator",
+        "prebuild_AutoCirc",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_supervisor_orchestration_expands_benchmark_after_prebuild_round(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace" / "20260514164500"
+    workspace.mkdir(parents=True)
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "register":
+            return WorkerResult(
+                status="partial",
+                summary="register partially ready",
+                failure_reason="execution_ready_incomplete",
+                spawned_subgraph={
+                    "selected_tools": ["ACValidator", "AutoCirc"],
+                    "registered_tools": ["ACValidator", "AutoCirc", "AQUARIUM-HB"],
+                    "blocked_tools": ["AQUARIUM-HB"],
+                },
+            )
+        if node.node_id == "prebuild_ACValidator":
+            return WorkerResult(status="completed", summary="image exists")
+        if node.node_id == "prebuild_AutoCirc":
+            return WorkerResult(status="blocked", summary="missing image", failure_reason="missing_image")
+        return WorkerResult(status="completed", summary=f"{node.node_id} ok")
+
+    result = await run_supervisor_orchestration(
+        task="我想评估 /tmp/benchmark/circrna 里的 circRNA benchmark 数据集在不同工具上的表现。",
+        workspace_root=workspace,
+        worker_runner=worker_runner,
+    )
+
+    graph_3_payload = json.loads((result.run_dir / "graph_round_3.json").read_text())
+
+    assert [node["node_id"] for node in graph_3_payload["nodes"]] == [
+        "ACValidator",
         "summarize",
     ]
+
+
+@pytest.mark.asyncio
+async def test_invoke_worker_agent_falls_back_to_wdl_when_repo_native_command_is_missing(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-wdl"
+    case_dir = run_dir / "cases" / "circompara2"
+    (case_dir / "run").mkdir(parents=True, exist_ok=True)
+    (case_dir / "wdl").mkdir(parents=True, exist_ok=True)
+    (case_dir / "wdl" / "workflow.wdl").write_text("workflow CirComPara2Workflow {}", encoding="utf-8")
+    (case_dir / "wdl" / "inputs.json").write_text("{}", encoding="utf-8")
+    (case_dir / "analysis.json").write_text(
+        json.dumps({"family": "unknown", "artifact_paths": [], "artifact_checksums": {}, "metrics": {}}),
+        encoding="utf-8",
+    )
+    (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
+    (case_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "repo_name": "circompara2",
+                "family": "unknown",
+                "dataset_key": "circrna-hela-rnaser-paired",
+                "metric_keys": [],
+                "phase_status": {"analysis": "pending", "summary": "pending"},
+                "repo_native_entry": "",
+                "repo_native_command_candidates": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    run_dir.joinpath("manifest.json").write_text(json.dumps({"case_order": ["circompara2"]}), encoding="utf-8")
+
+    def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
+        if phase != "run-wdl:circompara2":
+            raise AssertionError(f"unexpected phase: {phase}")
+        output_file = case_dir / "wdl" / "circompara2.out"
+        output_file.write_text("ok\n", encoding="utf-8")
+        (case_dir / "wdl" / "status.json").write_text(
+            json.dumps(
+                {
+                    "success": True,
+                    "returncode": 0,
+                    "started_at": "2026-05-15T00:00:00Z",
+                    "finished_at": "2026-05-15T00:00:01Z",
+                    "elapsed_seconds": 1.0,
+                    "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
+                    "outputs_path": str(case_dir / "wdl" / "outputs.json"),
+                    "output_artifacts": [str(output_file)],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (case_dir / "wdl" / "outputs.json").write_text(
+            json.dumps({"outputs": {"CirComPara2Workflow.output": str(output_file)}}),
+            encoding="utf-8",
+        )
+        return {"phase": phase, "command": command, "stdout": {"repo": "circompara2"}}
+
+    node = TaskNode(
+        node_id="circompara2",
+        title="Run circompara2",
+        objective="Execute the staged benchmark workload for circompara2 and record outputs, logs, and failure reasons.",
+        capability_bundles=["docker_build_run", "wdl_run", "metric_compute"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "运行 circompara2 benchmark。",
+            "run_dir": str(run_dir),
+        },
+    )
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = AssertionError("deterministic worker should bypass the model")
+
+    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_helper):
+        result = await _invoke_worker_agent(agent=agent, node=node, workspace_root=workspace_root)
+
+    assert result.status == "completed"
+    assert (case_dir / "run" / "status.json").exists()
+    run_status = json.loads((case_dir / "run" / "status.json").read_text(encoding="utf-8"))
+    assert run_status["execution_mode"] == "wdl_only"
+    assert run_status["success"] is True
 
 
 @pytest.mark.asyncio
@@ -1321,6 +1673,30 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_repo_helper(
                 encoding="utf-8",
             )
             return {"phase": phase, "command": command, "stdout": {"repo": "megahit"}}
+        if phase == "run-wdl:megahit":
+            wdl_out = case_dir / "wdl" / "megahit.out"
+            wdl_out.parent.mkdir(parents=True, exist_ok=True)
+            wdl_out.write_text("ok\n", encoding="utf-8")
+            (case_dir / "wdl" / "outputs.json").write_text(
+                json.dumps({"outputs": {"MegahitAssembly.output": str(wdl_out)}}),
+                encoding="utf-8",
+            )
+            (case_dir / "wdl" / "status.json").write_text(
+                json.dumps(
+                    {
+                        "success": True,
+                        "returncode": 0,
+                        "elapsed_seconds": 1.0,
+                        "started_at": "2026-05-15T00:00:00Z",
+                        "finished_at": "2026-05-15T00:00:01Z",
+                        "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
+                        "outputs_path": str(case_dir / "wdl" / "outputs.json"),
+                        "output_artifacts": [str(wdl_out)],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {"phase": phase, "command": command, "stdout": {"repo": "megahit"}}
         if phase == "analyze-case:megahit":
             (case_dir / "analysis.json").write_text(
                 json.dumps(
@@ -1373,6 +1749,7 @@ async def test_deterministic_benchmark_repo_helper_marks_missing_expected_output
                 "metric_keys": ["contig_count", "assembly_size", "n50"],
                 "expected_outputs": ["assembly.fasta"],
                 "phase_status": {},
+                "repo_native_entry": "canu -correct -p ecoli -d out genomeSize=4.8m -pacbio <reads>",
             }
         ),
         encoding="utf-8",
@@ -1407,6 +1784,29 @@ async def test_deterministic_benchmark_repo_helper_marks_missing_expected_output
                         "log_path": str(case_dir / "run" / "repo_native.log"),
                         "output_dir": str(case_dir / "run" / "repo_native_output"),
                         "output_artifacts": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {"phase": phase, "command": command, "stdout": {"repo": "canu"}}
+        if phase == "run-wdl:canu":
+            (case_dir / "wdl").mkdir(parents=True, exist_ok=True)
+            (case_dir / "wdl" / "canu.out").write_text("ok\n", encoding="utf-8")
+            (case_dir / "wdl" / "outputs.json").write_text(
+                json.dumps({"outputs": {"canu_workflow.output": str(case_dir / "wdl" / "canu.out")}}),
+                encoding="utf-8",
+            )
+            (case_dir / "wdl" / "status.json").write_text(
+                json.dumps(
+                    {
+                        "success": True,
+                        "returncode": 0,
+                        "elapsed_seconds": 1.0,
+                        "started_at": "2026-05-15T00:00:00Z",
+                        "finished_at": "2026-05-15T00:00:01Z",
+                        "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
+                        "outputs_path": str(case_dir / "wdl" / "outputs.json"),
+                        "output_artifacts": [str(case_dir / "wdl" / "canu.out")],
                     }
                 ),
                 encoding="utf-8",

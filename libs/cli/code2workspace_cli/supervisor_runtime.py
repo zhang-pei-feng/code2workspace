@@ -7,6 +7,8 @@ import asyncio
 import json
 import os
 import re
+import shlex
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -37,6 +39,11 @@ from code2workspace.orchestration_runtime import (
     classify_task_with_model,
     decide_supervisor_step,
     execute_graph_round,
+)
+from code2workspace_cli.operator_store import (
+    OperatorStore,
+    build_benchmark_operator_manifest,
+    build_github2workspace_operator_manifest,
 )
 from code2workspace_cli.supervisor_capabilities import (
     describe_capabilities,
@@ -126,6 +133,7 @@ class SupervisorWorkerRunner:
 _BENCHMARK_HELPER_RELATIVE_PATH = (
     ".code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py"
 )
+_BENCHMARK_PREBUILD_TIMEOUT_SECONDS = 14400
 _TASK_PATH_RE = re.compile(r"(/[^ \n\t,;:]+)")
 _TRANSIENT_WORKER_ERROR_MARKERS = (
     "APIConnectionError",
@@ -283,6 +291,9 @@ async def run_supervisor_orchestration(
     rounds = []
     selected_generic_approach: GenericApproach | None = None
     final_decision = SupervisorDecision(decision="stop", reason="No rounds executed.")
+    effective_max_rounds = max_rounds
+    if task_type == "benchmark":
+        effective_max_rounds = max(max_rounds, 3)
     while True:
         graph = planner.plan_round(
             task=task,
@@ -332,7 +343,14 @@ async def run_supervisor_orchestration(
                 selected_tools=_benchmark_selected_tools_from_round_result(round_result),
             )
             continue
-        final_decision = decide_supervisor_step(round_result, max_rounds=max_rounds)
+        if task_type == "benchmark" and _benchmark_prebuild_round_has_ready_tools(round_result):
+            _emit_supervisor_event(
+                kind="benchmark_prebuild_completed",
+                round_index=round_result.graph.round_index,
+                selected_tools=_benchmark_prebuild_ready_tools_from_round_result(round_result),
+            )
+            continue
+        final_decision = decide_supervisor_step(round_result, max_rounds=effective_max_rounds)
         if final_decision.decision == "replan":
             continue
         break
@@ -376,6 +394,14 @@ async def run_supervisor_orchestration(
             "final_response_path": str(run_dir / "final_response.md"),
         },
     )
+    if task_type == "github2workspace":
+        _materialize_github2workspace_operator_product(
+            task=task,
+            workspace_root=workspace_root,
+            run_dir=run_dir,
+            rounds=rounds,
+            final_decision=final_decision,
+        )
     _emit_supervisor_event(
         kind="run_finished",
         decision=final_decision.decision,
@@ -470,7 +496,7 @@ def _benchmark_register_round_finished(round_result: Any) -> bool:
     return (
         round_result.graph.task_type == "benchmark"
         and [item.node_id for item in round_result.node_results] in (["register"], ["retry_register"])
-        and round_result.node_results[0].status == "completed"
+        and round_result.node_results[0].status in {"completed", "partial"}
         and bool(_benchmark_selected_tools_from_round_result(round_result))
     )
 
@@ -485,6 +511,36 @@ def _benchmark_selected_tools_from_round_result(round_result: Any) -> list[str]:
     if not isinstance(selected_tools, list):
         return []
     return [str(item) for item in selected_tools if isinstance(item, str) and item.strip()]
+
+
+def _benchmark_has_repo_native_command(case_manifest: dict[str, object]) -> bool:
+    entry = str(case_manifest.get("repo_native_entry", "")).strip()
+    if entry:
+        return True
+    candidates = case_manifest.get("repo_native_command_candidates", [])
+    return isinstance(candidates, list) and any(
+        isinstance(item, str) and item.strip() for item in candidates
+    )
+
+
+def _benchmark_prebuild_round_has_ready_tools(round_result: Any) -> bool:
+    node_ids = [node.node_id for node in round_result.graph.nodes]
+    if not node_ids or not all(node_id.startswith("prebuild_") for node_id in node_ids):
+        return False
+    return bool(_benchmark_prebuild_ready_tools_from_round_result(round_result))
+
+
+def _benchmark_prebuild_ready_tools_from_round_result(round_result: Any) -> list[str]:
+    ready_tools: list[str] = []
+    for item in round_result.node_results:
+        if not item.node_id.startswith("prebuild_"):
+            continue
+        if item.status != "completed":
+            continue
+        tool = item.node_id.removeprefix("prebuild_")
+        if tool:
+            ready_tools.append(tool)
+    return ready_tools
 
 
 def _build_generic_approach_options(
@@ -863,6 +919,14 @@ def _maybe_run_deterministic_worker(*, node: TaskNode, workspace_root: Path) -> 
         return None
     if node.node_id in {"register", "retry_register"}:
         return _run_deterministic_benchmark_register(node=node, workspace_root=workspace_root)
+    if node.node_id.startswith("prebuild_"):
+        repo = node.node_id.removeprefix("prebuild_")
+        if repo:
+            return _run_deterministic_benchmark_prebuild(
+                node=node,
+                workspace_root=workspace_root,
+                repo=repo,
+            )
     if node.node_id == "summarize":
         return _run_deterministic_benchmark_summary(node=node, workspace_root=workspace_root)
     if _looks_like_user_delivery_node(node.node_id):
@@ -1030,6 +1094,8 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
     ]
     shared_datasets: list[str] = []
     all_ready = True
+    ready_tools: list[str] = []
+    blocked_tools: list[str] = []
     for repo in selected_tools:
         case_dir = run_dir / "cases" / repo
         manifest_path = case_dir / "manifest.json"
@@ -1044,6 +1110,10 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
             shared_datasets.append(dataset_key)
         ready = bool(ready_payload.get("ready"))
         all_ready = all_ready and ready
+        if ready:
+            ready_tools.append(repo)
+        else:
+            blocked_tools.append(repo)
         readiness_rows.append(
             {
                 "repo": repo,
@@ -1067,6 +1137,8 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
         "repo_root": str(repo_root),
         "run_dir": str(run_dir),
         "selected_tools": selected_tools,
+        "ready_tools": ready_tools,
+        "blocked_tools": blocked_tools,
         "shared_datasets": shared_datasets,
         "metric_plan": metric_plan,
         "readiness": readiness_rows,
@@ -1074,6 +1146,12 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
     }
     _write_json(run_dir / "register_report.json", register_report)
     artifacts.append(str(run_dir / "register_report.json"))
+    operator_artifacts = _materialize_benchmark_operator_products(
+        run_dir=run_dir,
+        selected_tools=selected_tools,
+        source_repo="",
+    )
+    artifacts.extend(operator_artifacts)
     if shared_datasets:
         dataset_summary = ", ".join(shared_datasets)
     else:
@@ -1087,6 +1165,32 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
             evidence=[str(run_dir / "register_report.json")],
             spawned_subgraph={
                 "selected_tools": selected_tools,
+                "ready_tools": ready_tools,
+                "blocked_tools": blocked_tools,
+                "dataset_keys": shared_datasets,
+                "register_report": str(run_dir / "register_report.json"),
+            },
+        )
+    if ready_tools:
+        ready_summary = ", ".join(ready_tools)
+        blocked_summary = ", ".join(blocked_tools) if blocked_tools else "none"
+        return WorkerResult(
+            status="partial",
+            summary=(
+                f"Registered benchmark subset for {dataset_summary}; ready tools: "
+                f"{ready_summary}; blocked tools: {blocked_summary}."
+            ),
+            artifacts=artifacts,
+            evidence=[str(run_dir / "register_report.json")],
+            failure_reason="execution_ready_incomplete",
+            next_action_hint=(
+                "Proceed with ready benchmark tools and report blocked tools separately."
+            ),
+            spawned_subgraph={
+                "selected_tools": ready_tools,
+                "registered_tools": selected_tools,
+                "ready_tools": ready_tools,
+                "blocked_tools": blocked_tools,
                 "dataset_keys": shared_datasets,
                 "register_report": str(run_dir / "register_report.json"),
             },
@@ -1098,10 +1202,152 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
         evidence=[str(run_dir / "register_report.json")],
         failure_reason="execution_ready_incomplete",
         spawned_subgraph={
-            "selected_tools": selected_tools,
+            "selected_tools": [],
+            "registered_tools": selected_tools,
+            "ready_tools": ready_tools,
+            "blocked_tools": blocked_tools,
             "dataset_keys": shared_datasets,
             "register_report": str(run_dir / "register_report.json"),
         },
+    )
+
+
+def _run_deterministic_benchmark_prebuild(
+    *,
+    node: TaskNode,
+    workspace_root: Path,
+    repo: str,
+) -> WorkerResult:
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    run_dir_raw = metadata.get("run_dir")
+    if not isinstance(run_dir_raw, str) or not run_dir_raw.strip():
+        return WorkerResult(
+            status="failed",
+            summary=f"Benchmark prebuild helper is missing run_dir metadata for {repo}.",
+            failure_reason="missing_run_dir",
+        )
+    run_dir = Path(run_dir_raw)
+    case_dir = run_dir / "cases" / repo
+    manifest_path = case_dir / "manifest.json"
+    if not manifest_path.exists():
+        return WorkerResult(
+            status="failed",
+            summary=f"Benchmark case manifest for {repo} is missing.",
+            failure_reason="missing_case_manifest",
+        )
+    case_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    image_ref = _benchmark_image_ref(case_manifest)
+    status_path = case_dir / "docker" / "status.json"
+    request_path = case_dir / "docker" / "request.json"
+    artifacts: list[str] = []
+    evidence: list[str] = [str(case_dir / "execution_ready.json")]
+
+    if _docker_image_exists(image_ref):
+        status_payload = {
+            "attempted": False,
+            "completed": True,
+            "success": True,
+            "returncode": 0,
+            "elapsed_seconds": 0.0,
+            "command": [],
+            "log_path": str(case_dir / "docker" / "build.log"),
+            "image_ref": image_ref,
+            "image_present": True,
+            "reason": "Image already exists locally; skipped rebuild.",
+        }
+        case_dir.joinpath("docker").mkdir(parents=True, exist_ok=True)
+        _write_json(status_path, status_payload)
+        if not case_dir.joinpath("docker", "build.log").exists():
+            case_dir.joinpath("docker", "build.log").write_text("", encoding="utf-8")
+        case_manifest["phase_status"]["prebuild"] = "completed"
+        _write_json(manifest_path, case_manifest)
+        artifacts.append(str(status_path))
+        return WorkerResult(
+            status="completed",
+            summary=f"Benchmark image for {repo} already exists locally as {image_ref}; skipped rebuild.",
+            artifacts=artifacts,
+            evidence=evidence,
+        )
+
+    repo_root = _locate_repo_root_for_benchmark(node=node, workspace_root=workspace_root)
+    if repo_root is None:
+        return WorkerResult(
+            status="failed",
+            summary=f"Could not locate the repository root for deterministic benchmark prebuild of {repo}.",
+            failure_reason="missing_repo_root",
+        )
+    helper_script = repo_root / _BENCHMARK_HELPER_RELATIVE_PATH
+    if not helper_script.exists():
+        return WorkerResult(
+            status="failed",
+            summary="Benchmark helper script is missing from the repository.",
+            failure_reason="missing_benchmark_helper_script",
+        )
+
+    dockerfile_path = case_manifest.get("dockerfile_path")
+    context_dir = _benchmark_prebuild_context_dir(case_manifest)
+    if not dockerfile_path or not Path(str(dockerfile_path)).exists():
+        return WorkerResult(
+            status="blocked",
+            summary=f"Benchmark image for {repo} is missing locally and no Dockerfile is available for prebuild.",
+            failure_reason="missing_dockerfile",
+            artifacts=[str(request_path)] if request_path.exists() else [],
+            evidence=evidence,
+        )
+    if context_dir is None:
+        return WorkerResult(
+            status="blocked",
+            summary=f"Benchmark image for {repo} is missing locally and no build context could be inferred from the staged assets.",
+            failure_reason="missing_build_context",
+            artifacts=[str(request_path)] if request_path.exists() else [],
+            evidence=evidence,
+        )
+
+    try:
+        _run_helper_json_command(
+            [
+                sys.executable,
+                str(helper_script),
+                "prebuild-image",
+                "--repo",
+                repo,
+                "--run-dir",
+                str(run_dir),
+                "--dockerfile-path",
+                str(dockerfile_path),
+                "--context-dir",
+                str(context_dir),
+                "--image-tag",
+                image_ref,
+                "--timeout-seconds",
+                str(_BENCHMARK_PREBUILD_TIMEOUT_SECONDS),
+            ],
+            cwd=repo_root,
+            phase=f"prebuild-image:{repo}",
+        )
+    except RuntimeError as exc:
+        return WorkerResult(
+            status="failed",
+            summary=f"Benchmark image prebuild failed for {repo}.",
+            failure_reason=str(exc),
+            artifacts=[str(status_path)] if status_path.exists() else [],
+            evidence=evidence,
+        )
+
+    artifacts.append(str(status_path))
+    if _status_payload_is_success(status_path):
+        return WorkerResult(
+            status="completed",
+            summary=f"Prepared benchmark image for {repo}: {image_ref}.",
+            artifacts=artifacts,
+            evidence=evidence,
+        )
+    return WorkerResult(
+        status="failed",
+        summary=f"Benchmark image prebuild did not complete successfully for {repo}.",
+        failure_reason="prebuild_failed",
+        artifacts=artifacts,
+        evidence=evidence,
     )
 
 
@@ -1143,34 +1389,96 @@ def _run_deterministic_benchmark_case(
             failure_reason="missing_case_manifest",
         )
     status_path = case_dir / "run" / "status.json"
-    if not _status_payload_is_success(status_path):
+    wdl_status_path = case_dir / "wdl" / "status.json"
+    repo_native_available = _benchmark_has_repo_native_command(json.loads(manifest_path.read_text(encoding="utf-8")))
+    if repo_native_available:
+        if not _status_payload_is_success(status_path):
+            try:
+                _run_helper_json_command(
+                    [
+                        sys.executable,
+                        str(helper_script),
+                        "run-repo-native",
+                        "--repo",
+                        repo,
+                        "--run-dir",
+                        str(run_dir),
+                    ],
+                    cwd=repo_root,
+                    phase=f"run-repo-native:{repo}",
+                )
+            except RuntimeError as exc:
+                return WorkerResult(
+                    status="failed",
+                    summary=f"Deterministic benchmark execution failed for {repo}.",
+                    failure_reason=str(exc),
+                )
+        if not status_path.exists():
+            return WorkerResult(
+                status="failed",
+                summary=f"Benchmark execution for {repo} did not produce run/status.json.",
+                failure_reason="missing_run_status",
+            )
+        status_payload = json.loads(status_path.read_text(encoding="utf-8"))
+    else:
         try:
             _run_helper_json_command(
                 [
                     sys.executable,
                     str(helper_script),
-                    "run-repo-native",
+                    "run-wdl",
                     "--repo",
                     repo,
                     "--run-dir",
                     str(run_dir),
+                    "--timeout-seconds",
+                    str(_BENCHMARK_PREBUILD_TIMEOUT_SECONDS),
                 ],
                 cwd=repo_root,
-                phase=f"run-repo-native:{repo}",
+                phase=f"run-wdl:{repo}",
             )
         except RuntimeError as exc:
             return WorkerResult(
                 status="failed",
-                summary=f"Deterministic benchmark execution failed for {repo}.",
+                summary=f"Deterministic WDL execution failed for {repo}.",
                 failure_reason=str(exc),
             )
-    if not status_path.exists():
-        return WorkerResult(
-            status="failed",
-            summary=f"Benchmark execution for {repo} did not produce run/status.json.",
-            failure_reason="missing_run_status",
-        )
-    status_payload = json.loads(status_path.read_text(encoding="utf-8"))
+        if not wdl_status_path.exists():
+            return WorkerResult(
+                status="failed",
+                summary=f"Benchmark WDL execution for {repo} did not produce wdl/status.json.",
+                failure_reason="missing_wdl_status",
+            )
+        wdl_status = json.loads(wdl_status_path.read_text(encoding="utf-8"))
+        wdl_output_dir = case_dir / "wdl" / "run_outputs"
+        wdl_output_dir.mkdir(parents=True, exist_ok=True)
+        copied_artifacts: list[str] = []
+        for artifact in wdl_status.get("output_artifacts", []):
+            try:
+                source = Path(str(artifact))
+            except (TypeError, ValueError):
+                continue
+            if not source.exists() or not source.is_file():
+                continue
+            target = wdl_output_dir / source.name
+            shutil.copy2(source, target)
+            copied_artifacts.append(str(target))
+        status_payload = {
+            "attempted": True,
+            "completed": True,
+            "success": bool(wdl_status.get("success")),
+            "returncode": wdl_status.get("returncode"),
+            "started_at": wdl_status.get("started_at"),
+            "finished_at": wdl_status.get("finished_at"),
+            "elapsed_seconds": wdl_status.get("elapsed_seconds"),
+            "command": ["run-wdl", repo],
+            "log_path": wdl_status.get("log_path"),
+            "output_dir": str(wdl_output_dir),
+            "output_artifacts": copied_artifacts,
+            "failure_reason": wdl_status.get("failure_reason"),
+            "execution_mode": "wdl_only",
+        }
+        _write_json(status_path, status_payload)
     analysis_paths = _ensure_benchmark_analysis(
         repo=repo,
         run_dir=run_dir,
@@ -1182,9 +1490,13 @@ def _run_deterministic_benchmark_case(
         case_dir=case_dir,
         status_payload=status_payload,
     )
+    operator_artifacts = _materialize_benchmark_operator_products(
+        run_dir=run_dir,
+        selected_tools=[repo],
+        source_repo="",
+    )
     artifacts = [
         str(status_path),
-        str(case_dir / "run" / "repo_native.log"),
         *[
             str(path)
             for path in _benchmark_expected_output_paths(repo=repo, case_dir=case_dir, status_payload=status_payload)
@@ -1192,17 +1504,26 @@ def _run_deterministic_benchmark_case(
         ],
         str(case_dir / "run" / "result_manifest.json"),
     ]
+    if (case_dir / "run" / "repo_native.log").exists():
+        artifacts.append(str(case_dir / "run" / "repo_native.log"))
+    if wdl_status_path.exists():
+        artifacts.append(str(wdl_status_path))
+    artifacts.extend(operator_artifacts)
     artifacts.extend(str(path) for path in analysis_paths if path.exists())
     evidence = [
         str(case_dir / "execution_ready.json"),
         str(case_dir / "dataset_manifest.json"),
         str(status_path),
+        str(wdl_status_path),
         str(case_dir / "run" / "result_manifest.json"),
     ]
     run_succeeded = bool(status_payload.get("success"))
     expected_output_found = any(
         item["exists"] for item in result_manifest["expected_outputs"].values()
     )
+    wdl_only_mode = status_payload.get("execution_mode") == "wdl_only"
+    if wdl_only_mode:
+        expected_output_found = bool(status_payload.get("output_artifacts"))
     success = run_succeeded and expected_output_found
     summary = (
         f"Executed the staged {repo} benchmark via the prepared helper path; "
@@ -1372,6 +1693,13 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
             str(run_dir / "benchmark_supervisor_summary.md"),
         ]
     )
+    artifacts.extend(
+        _materialize_benchmark_operator_products(
+            run_dir=run_dir,
+            selected_tools=selected_tools,
+            source_repo="",
+        )
+    )
     evidence.append(str(run_dir / "benchmark_supervisor_summary.json"))
     summary = (
         f"Summarized benchmark results for {', '.join(selected_tools)}; "
@@ -1456,6 +1784,7 @@ def _best_metric_repo(
 
 def _benchmark_repo_from_node_id(node_id: str) -> str | None:
     candidate = node_id.removeprefix("retry_")
+    candidate = candidate.removeprefix("prebuild_")
     if candidate in {"register", "summarize"} or _looks_like_user_delivery_node(candidate):
         return None
     return candidate or None
@@ -1473,6 +1802,89 @@ def _status_payload_is_success(status_path: Path) -> bool:
 
 def _task_contains_url(task: str) -> bool:
     return bool(re.search(r"https?://\S+", task))
+
+
+def _docker_image_exists(image_ref: str) -> bool:
+    try:
+        completed = subprocess.run(
+            ["docker", "image", "inspect", image_ref],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False
+    return completed.returncode == 0
+
+
+def _dockerfile_local_sources(dockerfile_path: Path) -> list[str]:
+    sources: list[str] = []
+    for raw_line in dockerfile_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        instruction, _, rest = line.partition(" ")
+        if instruction.upper() not in {"COPY", "ADD"} or not rest.strip():
+            continue
+        tokens = shlex.split(rest, comments=True)
+        while tokens and tokens[0].startswith("--"):
+            tokens.pop(0)
+        if len(tokens) < 2:
+            continue
+        for source in tokens[:-1]:
+            if source.startswith(("http://", "https://")) or source == "-":
+                continue
+            sources.append(source)
+    return sources
+
+
+def _context_satisfies_dockerfile(context_dir: Path, dockerfile_path: Path) -> bool:
+    sources = _dockerfile_local_sources(dockerfile_path)
+    if not sources:
+        return True
+    return all((context_dir / source).exists() for source in sources)
+
+
+def _benchmark_prebuild_context_dir(case_manifest: dict[str, object]) -> Path | None:
+    dockerfile_raw = case_manifest.get("dockerfile_path")
+    if not isinstance(dockerfile_raw, str) or not dockerfile_raw.strip():
+        return None
+    dockerfile_path = Path(dockerfile_raw)
+    if not dockerfile_path.exists():
+        return None
+    parent = dockerfile_path.parent
+    candidates: list[Path] = []
+    for raw in (
+        case_manifest.get("source_case_dir"),
+        parent,
+        parent.parent,
+    ):
+        if not raw:
+            continue
+        candidate = Path(str(raw)).resolve()
+        if candidate not in candidates and candidate.exists():
+            candidates.append(candidate)
+    repo_name = str(case_manifest.get("repo_name", "")).strip()
+    if repo_name:
+        sibling = parent / repo_name
+        if sibling.exists():
+            resolved_parent = parent.resolve()
+            if resolved_parent not in candidates:
+                candidates.insert(0, resolved_parent)
+    for candidate in candidates:
+        if _context_satisfies_dockerfile(candidate, dockerfile_path):
+            return candidate
+    return candidates[0] if candidates else parent
+
+
+def _benchmark_image_ref(case_manifest: dict[str, object]) -> str:
+    runtime_image = case_manifest.get("runtime_image")
+    if isinstance(runtime_image, str) and runtime_image.strip():
+        return runtime_image.strip()
+    image_tag = case_manifest.get("image_tag")
+    if isinstance(image_tag, str) and image_tag.strip():
+        return image_tag.strip()
+    return "benchmark:latest"
 
 
 def _ensure_benchmark_analysis(
@@ -1802,6 +2214,7 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
                 "Use only the source material already gathered by supervisor and workers. Do not invent files, commands, evidence, test results, or completion status.",
                 "Lead with useful information that was successfully obtained. Mention unfinished, failed, or blocked work only when it materially changes what the user can rely on.",
                 "For report, risk assessment, monitoring, or judgment-style answers, include a brief evidence-source explanation unless the user's requested format forbids it. Name the source categories and preserve direct-vs-inferred evidence distinctions.",
+                "For judgment-style answers, end the final response with a short section titled '判断轨迹（可审计摘要）'. This section must expose the auditable reasoning path, not private chain-of-thought: list the evidence checked, comparison rule, key inference, and uncertainty or gaps so a reviewer can spot likely false positives.",
                 "When something is partial, phrase it calmly and briefly; do not over-emphasize internal node names, rounds, worker contributions, or supervisor diagnostics.",
                 "Respect strict output constraints from the original user request. If the user asked for an exact short answer, put only that answer in summary.",
                 "Return JSON only; the summary field must contain the final natural-language response itself.",
@@ -2223,6 +2636,260 @@ def _render_final_summary(
         for item in round_result.node_results:
             lines.append(f"  - {item.node_id}: {item.status} - {item.summary}")
     return "\n".join(lines) + "\n"
+
+
+def _materialize_benchmark_operator_products(
+    *,
+    run_dir: Path,
+    selected_tools: list[str],
+    source_repo: str,
+) -> list[str]:
+    """Write manifest-first operator products for benchmark cases.
+
+    The file manifests are canonical; the SQLite database below
+    ``operator_store/`` is a rebuildable query layer.
+    """
+    artifacts: list[str] = []
+    if not selected_tools:
+        return artifacts
+    store = OperatorStore(_operator_store_root_for_run_dir(run_dir))
+    for repo in selected_tools:
+        case_dir = run_dir / "cases" / repo
+        manifest_path = case_dir / "manifest.json"
+        ready_path = case_dir / "execution_ready.json"
+        if not (manifest_path.exists() and ready_path.exists()):
+            continue
+        try:
+            case_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            ready_payload = json.loads(ready_path.read_text(encoding="utf-8"))
+            status, validation_summary = _benchmark_operator_status(
+                repo=repo,
+                case_dir=case_dir,
+                ready_payload=ready_payload,
+            )
+            product_id = f"benchmark:{repo}:{run_dir.name}"
+            product_dir = store.product_dir(
+                family="benchmark",
+                name=repo,
+                version=run_dir.name,
+            )
+            product_manifest = build_benchmark_operator_manifest(
+                product_id=product_id,
+                name=repo,
+                version=run_dir.name,
+                run_dir=run_dir,
+                case_dir=case_dir,
+                case_manifest=case_manifest,
+                ready_payload=ready_payload,
+                status=status,
+                validation_summary=validation_summary,
+                source_repo=source_repo,
+            )
+            written = store.write_manifest(product_manifest, product_dir=product_dir)
+        except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
+            failure_path = case_dir / "operator_product_error.json"
+            _write_json(
+                failure_path,
+                {
+                    "repo": repo,
+                    "error": str(exc),
+                    "run_dir": str(run_dir),
+                },
+            )
+            artifacts.append(str(failure_path))
+            continue
+        artifacts.append(str(written))
+    if artifacts:
+        artifacts.append(str(store.db_path))
+    return artifacts
+
+
+def _materialize_github2workspace_operator_product(
+    *,
+    task: str,
+    workspace_root: Path,
+    run_dir: Path,
+    rounds: list[Any],
+    final_decision: SupervisorDecision,
+) -> Path | None:
+    repo_name = _github2workspace_product_name(task=task, workspace_root=workspace_root)
+    if not repo_name:
+        return None
+    source_repo = _github_url_from_task(task) or ""
+    status = _github2workspace_product_status(
+        workspace_root=workspace_root,
+        rounds=rounds,
+        final_decision=final_decision,
+    )
+    summary = _github2workspace_validation_summary(rounds=rounds, status=status)
+    store = OperatorStore(_operator_store_root_for_run_dir(run_dir))
+    manifest = build_github2workspace_operator_manifest(
+        product_id=f"github2workspace:{repo_name}:{run_dir.name}",
+        name=repo_name,
+        version=run_dir.name,
+        workspace_root=workspace_root,
+        run_dir=run_dir,
+        status=status,
+        source_repo=source_repo,
+        validation_summary=summary,
+    )
+    try:
+        return store.write_manifest(
+            manifest,
+            product_dir=store.product_dir(
+                family="github2workspace",
+                name=repo_name,
+                version=run_dir.name,
+            ),
+        )
+    except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
+        _write_json(
+            run_dir / "operator_product_error.json",
+            {
+                "task": task,
+                "repo_name": repo_name,
+                "error": str(exc),
+            },
+        )
+        return None
+
+
+def _github2workspace_product_name(*, task: str, workspace_root: Path) -> str | None:
+    url = _github_url_from_task(task)
+    if url:
+        name = url.rstrip("/").rsplit("/", 1)[-1]
+        if name.endswith(".git"):
+            name = name[:-4]
+        if name:
+            return re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") or None
+    dockerfiles = sorted(workspace_root.glob("*_Dockerfile"))
+    if dockerfiles:
+        return dockerfiles[0].name.removesuffix("_Dockerfile")
+    return None
+
+
+def _github_url_from_task(task: str) -> str | None:
+    match = re.search(r"https://github\.com/[^\s，。'\"`]+", task)
+    if not match:
+        return None
+    return match.group(0).rstrip(".,;)")
+
+
+def _github2workspace_product_status(
+    *,
+    workspace_root: Path,
+    rounds: list[Any],
+    final_decision: SupervisorDecision,
+) -> str:
+    wdl_outputs = workspace_root / "results" / "wdl_result" / "outputs.json"
+    uses_synthetic_inputs = _github2workspace_uses_synthetic_inputs(workspace_root=workspace_root)
+    if wdl_outputs.exists() and wdl_outputs.stat().st_size > 0 and not uses_synthetic_inputs:
+        return "completed"
+    build_completed = _node_status_seen(rounds=rounds, node_id="build", status="completed")
+    docker_outputs = list((workspace_root / "results" / "docker_test").glob("**/contigs.fasta"))
+    if build_completed and docker_outputs:
+        return "docker_validated"
+    if uses_synthetic_inputs:
+        return "partial"
+    if final_decision.failed_nodes:
+        return "partial"
+    return "registered"
+
+
+def _node_status_seen(*, rounds: list[Any], node_id: str, status: str) -> bool:
+    for round_result in rounds:
+        for result in getattr(round_result, "node_results", []):
+            if result.node_id == node_id and result.status == status:
+                return True
+    return False
+
+
+def _github2workspace_validation_summary(*, rounds: list[Any], status: str) -> str:
+    summaries: list[str] = []
+    for round_result in rounds:
+        for result in getattr(round_result, "node_results", []):
+            if result.node_id in {"inspect", "build", "wdl", "retry_wdl", "summarize"}:
+                summaries.append(f"{result.node_id}:{result.status}: {result.summary}")
+    text = "\n".join(summaries)
+    if len(text) > 4000:
+        text = text[:4000] + "\n... truncated"
+    return f"status={status}\n{text}"
+
+
+def _github2workspace_uses_synthetic_inputs(*, workspace_root: Path) -> bool:
+    inputs_json = workspace_root / "inputs.json"
+    if not inputs_json.exists():
+        return False
+    try:
+        payload = json.loads(inputs_json.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    for value in payload.values():
+        if not isinstance(value, str):
+            continue
+        lowered = value.casefold()
+        if any(marker in lowered for marker in ("toy", "synthetic", "generated")):
+            return True
+        if "/results/wdl_file/" in lowered and lowered.endswith((".fastq", ".fq", ".fasta", ".fa")):
+            return True
+    return False
+
+
+def _benchmark_operator_status(
+    *,
+    repo: str,
+    case_dir: Path,
+    ready_payload: dict[str, object],
+) -> tuple[str, str]:
+    status_path = case_dir / "run" / "status.json"
+    if status_path.exists():
+        try:
+            status_payload = json.loads(status_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return "failed", f"{repo} has an unreadable run/status.json."
+        if status_payload.get("success") is True:
+            result_manifest_path = case_dir / "run" / "result_manifest.json"
+            if result_manifest_path.exists():
+                try:
+                    result_manifest = json.loads(result_manifest_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    result_manifest = {}
+                expected_outputs = result_manifest.get("expected_outputs")
+                if isinstance(expected_outputs, dict) and expected_outputs:
+                    if any(
+                        isinstance(item, dict) and item.get("exists") is True
+                        for item in expected_outputs.values()
+                    ):
+                        return "completed", f"{repo} ran successfully and produced expected output evidence."
+                    return "partial", f"{repo} ran successfully, but expected output files were not found."
+            return "completed", f"{repo} ran successfully."
+        reason = _optional_str(status_payload.get("failure_reason")) or "run_failed"
+        return "failed", f"{repo} execution failed: {reason}."
+    if ready_payload.get("ready") is True:
+        return "registered_ready", f"{repo} is registered and execution-ready."
+    blockers = []
+    for key in ("missing", "blockers", "failure_reason", "reason"):
+        value = ready_payload.get(key)
+        if isinstance(value, list):
+            blockers.extend(str(item) for item in value if str(item).strip())
+        elif isinstance(value, str) and value.strip():
+            blockers.append(value.strip())
+    if not blockers:
+        if not ready_payload.get("runtime_image"):
+            blockers.append("missing_runtime_image")
+        if not ready_payload.get("wdl_path"):
+            blockers.append("missing_wdl_path")
+        if not ready_payload.get("inputs_json_path"):
+            blockers.append("missing_inputs_json_path")
+    return "blocked", f"{repo} is not execution-ready: {', '.join(blockers) or 'unknown blocker'}."
+
+
+def _operator_store_root_for_run_dir(run_dir: Path) -> Path:
+    if run_dir.parent.name == "orchestration_runs":
+        return run_dir.parent.parent / "operator_store"
+    return run_dir.parent / "operator_store"
 
 
 def _write_metric_plan(*, run_dir: Path, selected_tools: list[str]) -> dict[str, object]:
