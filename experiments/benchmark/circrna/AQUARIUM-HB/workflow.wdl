@@ -32,7 +32,7 @@ workflow AQUARIUM_HB_Workflow {
         File? reference_file
         
         # For quant module
-        Directory? gtf_directory
+        File? gtf_directory_tar
         
         # Runtime parameters
         Int cpu = 4
@@ -101,8 +101,8 @@ workflow AQUARIUM_HB_Workflow {
         # Detect outputs
         File? detect_ciri_report = DetectCircRNA.ciri_report
         File? detect_stout_list = DetectCircRNA.stout_list
-        Directory? detect_full_output = DetectCircRNA.full_output
-        Directory? detect_vis_output = DetectCircRNA.vis_output
+        File? detect_full_output_tar = DetectCircRNA.full_output_tar
+        File? detect_vis_output_tar = DetectCircRNA.vis_output_tar
         
         # Reference outputs
         File? reference_set = BuildReference.reference_set
@@ -113,7 +113,7 @@ workflow AQUARIUM_HB_Workflow {
         File? circRNA_only_gtf = ReconstructCircRNA.circRNA_only_gtf
         
         # Quant outputs
-        Directory? quant_results = QuantifyCircRNA.quant_results
+        File? quant_results_tar = QuantifyCircRNA.quant_results_tar
         File? quant_gene_results = QuantifyCircRNA.gene_quant_results
         File? quant_transcript_results = QuantifyCircRNA.transcript_quant_results
     }
@@ -150,25 +150,40 @@ task DetectCircRNA {
     command <<<
         set -euxo pipefail
         
-        # Create reference directory and copy files
-        mkdir -p /data/references
-        cp ~{reference_fasta} /data/references/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa
-        cp ~{reference_gtf} /data/references/Homo_sapiens.GRCh38.94.chr.gtf
+        # Build a writable runtime copy of the AQUARIUM-HB data directory.
+        WORK_ROOT="$(pwd)/aquarium_runtime"
+        DATA_DIR="$WORK_ROOT/data"
+        SCRIPT_COPY="$WORK_ROOT/AQUARIUM_HB.sh"
+        mkdir -p "$WORK_ROOT"
+        cp -r /opt/AQUARIUM-HB/data "$DATA_DIR"
+        cp /opt/AQUARIUM-HB/AQUARIUM_HB.sh "$SCRIPT_COPY"
+        chmod +x "$SCRIPT_COPY"
+        REF_DIR="$DATA_DIR"
+        cp ~{reference_fasta} "$REF_DIR/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa"
+        cp ~{reference_gtf} "$REF_DIR/Homo_sapiens.GRCh38.94.chr.gtf"
         
         # Copy BWA index files if provided
         if [ -f "~{reference_fasta_bwt}" ]; then
-            cp ~{reference_fasta_bwt} /data/references/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.bwt
-            cp ~{reference_fasta_pac} /data/references/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.pac
-            cp ~{reference_fasta_ann} /data/references/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.ann
-            cp ~{reference_fasta_amb} /data/references/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.amb
-            cp ~{reference_fasta_sa} /data/references/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.sa
+            cp ~{reference_fasta_bwt} "$REF_DIR/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.bwt"
+            cp ~{reference_fasta_pac} "$REF_DIR/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.pac"
+            cp ~{reference_fasta_ann} "$REF_DIR/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.ann"
+            cp ~{reference_fasta_amb} "$REF_DIR/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.amb"
+            cp ~{reference_fasta_sa} "$REF_DIR/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.sa"
         else
             # Build BWA index if not provided
-            bwa index /data/references/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa
+            bwa index "$REF_DIR/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa"
         fi
         
+        # Point the pipeline script at the writable runtime data directory.
+        sed -i 's/sh ${scriptsdir}/bash ${scriptsdir}/g' "$SCRIPT_COPY"
+        sed -i "s|^export referencesdir=.*|export referencesdir=${REF_DIR}/|" "$SCRIPT_COPY"
+        sed -i "s|^export fa=.*|export fa=${REF_DIR}/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa|" "$SCRIPT_COPY"
+        sed -i "s|^export gtf=.*|export gtf=${REF_DIR}/Homo_sapiens.GRCh38.94.chr.gtf|" "$SCRIPT_COPY"
+        sed -i "s|^export FLcircAS=.*|export FLcircAS=${REF_DIR}/FLcircAS.final.datatable|" "$SCRIPT_COPY"
+        sed -i "s|^export IsoCirc=.*|export IsoCirc=${REF_DIR}/IsoCirc.final.datatable|" "$SCRIPT_COPY"
+
         # Run detection
-        bash /opt/AQUARIUM-HB/AQUARIUM_HB.sh detect \
+        bash "$SCRIPT_COPY" detect \
             --fastq1 ~{fastq1} \
             --fastq2 ~{fastq2} \
             --outdir ~{outdir}
@@ -179,13 +194,21 @@ task DetectCircRNA {
         cp -r ~{outdir}/vis outputs/
         cp ~{outdir}/full/ciri.report outputs/
         cp ~{outdir}/vis/stout.list outputs/
+
+        # Create tar archives for directory outputs so miniwdl can track them as files
+        tar -czf outputs/full.tar.gz -C outputs/full .
+        tar -czf outputs/vis.tar.gz -C outputs/vis .
+
+        echo "=== Detection Output Files ===" > output_manifest.txt
+        find outputs -type f >> output_manifest.txt
     >>>
     
     output {
         File ciri_report = "outputs/ciri.report"
         File stout_list = "outputs/stout.list"
-        Directory full_output = "outputs/full"
-        Directory vis_output = "outputs/vis"
+        File full_output_tar = "outputs/full.tar.gz"
+        File vis_output_tar = "outputs/vis.tar.gz"
+        File manifest = "output_manifest.txt"
     }
     
     runtime {
@@ -213,17 +236,27 @@ task BuildReference {
     command <<<
         set -euxo pipefail
         
-        bash /opt/AQUARIUM-HB/AQUARIUM_HB.sh reference \
+        WORK_ROOT="$(pwd)/aquarium_runtime"
+        SCRIPT_COPY="$WORK_ROOT/AQUARIUM_HB.sh"
+        mkdir -p "$WORK_ROOT"
+        cp /opt/AQUARIUM-HB/AQUARIUM_HB.sh "$SCRIPT_COPY"
+        chmod +x "$SCRIPT_COPY"
+
+        bash "$SCRIPT_COPY" reference \
             --stoutlist_path ~{stoutlist_path_file} \
             --reference_prefix ~{reference_output_prefix}
         
         # Copy output
         mkdir -p outputs
         cp ~{reference_output_prefix}.txt outputs/reference_set.txt
+
+        echo "=== Reference Output Files ===" > output_manifest.txt
+        find outputs -type f >> output_manifest.txt
     >>>
     
     output {
         File reference_set = "outputs/reference_set.txt"
+        File manifest = "output_manifest.txt"
     }
     
     runtime {
@@ -254,7 +287,13 @@ task ReconstructCircRNA {
     command <<<
         set -euxo pipefail
         
-        bash /opt/AQUARIUM-HB/AQUARIUM_HB.sh reconstruct \
+        WORK_ROOT="$(pwd)/aquarium_runtime"
+        SCRIPT_COPY="$WORK_ROOT/AQUARIUM_HB.sh"
+        mkdir -p "$WORK_ROOT"
+        cp /opt/AQUARIUM-HB/AQUARIUM_HB.sh "$SCRIPT_COPY"
+        chmod +x "$SCRIPT_COPY"
+
+        bash "$SCRIPT_COPY" reconstruct \
             --cirireport_file ~{cirireport_file} \
             --stoutlist_file ~{stoutlist_file} \
             --reference_file ~{reference_file} \
@@ -265,12 +304,16 @@ task ReconstructCircRNA {
         cp ~{outdir}/circRNA_full.gtf outputs/
         cp ~{outdir}/circRNA_break.gtf outputs/
         cp ~{outdir}/circRNA_only.gtf outputs/
+
+        echo "=== Reconstruct Output Files ===" > output_manifest.txt
+        find outputs -type f >> output_manifest.txt
     >>>
     
     output {
         File circRNA_full_gtf = "outputs/circRNA_full.gtf"
         File circRNA_break_gtf = "outputs/circRNA_break.gtf"
         File circRNA_only_gtf = "outputs/circRNA_only.gtf"
+        File manifest = "output_manifest.txt"
     }
     
     runtime {
@@ -306,10 +349,24 @@ task QuantifyCircRNA {
     command <<<
         set -euxo pipefail
         
-        # Setup reference files
-        mkdir -p /data/references
-        cp ~{reference_fasta} /data/references/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa
-        cp ~{reference_gtf} /data/references/Homo_sapiens.GRCh38.94.chr.gtf
+        # Build a writable runtime copy of the AQUARIUM-HB data directory.
+        WORK_ROOT="$(pwd)/aquarium_runtime"
+        DATA_DIR="$WORK_ROOT/data"
+        SCRIPT_COPY="$WORK_ROOT/AQUARIUM_HB.sh"
+        mkdir -p "$WORK_ROOT"
+        cp -r /opt/AQUARIUM-HB/data "$DATA_DIR"
+        cp /opt/AQUARIUM-HB/AQUARIUM_HB.sh "$SCRIPT_COPY"
+        chmod +x "$SCRIPT_COPY"
+        REF_DIR="$DATA_DIR"
+        cp ~{reference_fasta} "$REF_DIR/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa"
+        cp ~{reference_gtf} "$REF_DIR/Homo_sapiens.GRCh38.94.chr.gtf"
+
+        sed -i 's/sh ${scriptsdir}/bash ${scriptsdir}/g' "$SCRIPT_COPY"
+        sed -i "s|^export referencesdir=.*|export referencesdir=${REF_DIR}/|" "$SCRIPT_COPY"
+        sed -i "s|^export fa=.*|export fa=${REF_DIR}/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa|" "$SCRIPT_COPY"
+        sed -i "s|^export gtf=.*|export gtf=${REF_DIR}/Homo_sapiens.GRCh38.94.chr.gtf|" "$SCRIPT_COPY"
+        sed -i "s|^export FLcircAS=.*|export FLcircAS=${REF_DIR}/FLcircAS.final.datatable|" "$SCRIPT_COPY"
+        sed -i "s|^export IsoCirc=.*|export IsoCirc=${REF_DIR}/IsoCirc.final.datatable|" "$SCRIPT_COPY"
         
         # Setup GTF directory
         mkdir -p ~{gtfdir}
@@ -318,7 +375,7 @@ task QuantifyCircRNA {
         cp ~{circRNA_only_gtf} ~{gtfdir}/circRNA_only.gtf
         
         # Run quantification
-        bash /opt/AQUARIUM-HB/AQUARIUM_HB.sh quant \
+        bash "$SCRIPT_COPY" quant \
             --fastq1 ~{fastq1} \
             --fastq2 ~{fastq2} \
             --gtfdir ~{gtfdir} \
@@ -329,12 +386,18 @@ task QuantifyCircRNA {
         cp -r ~{quantdir}/profile_results outputs/
         cp ~{quantdir}/profile_results/quant.genes.sf outputs/gene_quant.sf
         cp ~{quantdir}/profile_results/quant.sf outputs/transcript_quant.sf
+
+        tar -czf outputs/profile_results.tar.gz -C outputs/profile_results .
+
+        echo "=== Quant Output Files ===" > output_manifest.txt
+        find outputs -type f >> output_manifest.txt
     >>>
     
     output {
-        Directory quant_results = "outputs/profile_results"
+        File quant_results_tar = "outputs/profile_results.tar.gz"
         File gene_quant_results = "outputs/gene_quant.sf"
         File transcript_quant_results = "outputs/transcript_quant.sf"
+        File manifest = "output_manifest.txt"
     }
     
     runtime {

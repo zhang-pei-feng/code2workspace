@@ -12,6 +12,9 @@ the repository root.
   - active goals, phased plan, and acceptance criteria
 - `docs/overview/session-handoff.md`
   - shortest restart note for a new coding session
+- `docs/overview/supervisor-agent-function-flows.zh.md`
+  - thesis-facing Chinese flow diagrams and technical notes for the Supervisor
+    Agent runtime
 
 ## Research
 

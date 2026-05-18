@@ -8,5 +8,15 @@
   - the directory skeleton needed by downstream report nodes
 - Do not do first-pass research in this node.
 - Do not draft the final report body in this node.
+- The report contract should include:
+  - intended audience and decision context when inferable
+  - report language and tone
+  - expected section outline
+  - evidence lanes to consume
+  - citation/source style
+  - freshness/date requirements
+  - known exclusions or user-specified constraints
+- Create or describe a report outline that downstream composition can follow; prefer stable section names over ad hoc headings.
+- If the user's requested format conflicts with the default report template, record the user's format as authoritative in the contract.
 - As soon as the minimum initialization artifacts above exist, stop and return a structured JSON result immediately.
 - If some initialization artifact still cannot be created, return `partial` with exact blocker details instead of continuing to think.

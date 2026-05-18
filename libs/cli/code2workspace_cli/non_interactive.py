@@ -20,7 +20,9 @@ stderr, leaving stdout exclusively for the agent's response text.
 from __future__ import annotations
 
 import ast
+import json
 import logging
+import re
 import sys
 import threading
 import time
@@ -212,6 +214,120 @@ class StreamState:
     spinner: _ConsoleSpinner | None = None
     """Optional animated spinner shown during agent work in verbose mode."""
 
+    pending_leading_text: str = ""
+    """Buffered leading assistant text while we decide whether it is an
+    internal classifier JSON payload that should stay hidden from the user."""
+
+    emitted_visible_text: bool = False
+    """Whether any user-visible assistant text has already been emitted or
+    committed to the buffered response."""
+
+
+_TASK_TYPE_NAMES = {"benchmark", "github2workspace", "report", "generic"}
+_CLASSIFIER_PAYLOAD_KEYS = {"task_type", "confidence", "reason", "matched_signals"}
+_JSON_OBJECT_START_RE = re.compile(r"^\s*\{", re.DOTALL)
+
+
+def _find_leading_json_object_end(text: str) -> int | None:
+    """Return the exclusive end offset of the first complete top-level JSON object.
+
+    This is intentionally narrow: it only scans an object that begins at the
+    start of the string (ignoring leading whitespace), handling nested braces,
+    strings, and escaped quotes.
+    """
+    match = _JSON_OBJECT_START_RE.match(text)
+    if match is None:
+        return None
+    start = match.start(0) + len(match.group(0)) - 1
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            depth += 1
+            continue
+        if char == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
+
+
+def _extract_hidden_classifier_prefix(text: str) -> tuple[str | None, str]:
+    """Strip a leaked leading task-classifier JSON payload when present."""
+    json_end = _find_leading_json_object_end(text)
+    if json_end is None:
+        return None, text
+    candidate = text[:json_end]
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None, text
+    if not isinstance(payload, dict):
+        return None, text
+    if not _CLASSIFIER_PAYLOAD_KEYS.issubset(payload):
+        return None, text
+    task_type = payload.get("task_type")
+    confidence = payload.get("confidence")
+    matched_signals = payload.get("matched_signals")
+    if task_type not in _TASK_TYPE_NAMES:
+        return None, text
+    if not isinstance(confidence, int | float):
+        return None, text
+    if not isinstance(matched_signals, list):
+        return None, text
+    return candidate, text[json_end:]
+
+
+def _commit_visible_text(text: str, state: StreamState) -> None:
+    """Write or buffer visible assistant text and mark the stream as started."""
+    if not text:
+        return
+    if state.stream:
+        if state.spinner:
+            state.spinner.stop()
+        _write_text(text)
+    state.full_response.append(text)
+    state.emitted_visible_text = True
+
+
+def _handle_text_block(text: str, state: StreamState) -> None:
+    """Render a text block while hiding leaked internal classifier JSON."""
+    if not text:
+        return
+    if state.emitted_visible_text:
+        _commit_visible_text(text, state)
+        return
+
+    state.pending_leading_text += text
+    hidden_prefix, remainder = _extract_hidden_classifier_prefix(
+        state.pending_leading_text
+    )
+    if hidden_prefix is not None:
+        state.pending_leading_text = ""
+        if remainder:
+            _commit_visible_text(remainder, state)
+        return
+
+    if _JSON_OBJECT_START_RE.match(state.pending_leading_text):
+        return
+
+    visible_text = state.pending_leading_text
+    state.pending_leading_text = ""
+    _commit_visible_text(visible_text, state)
+
 
 @dataclass
 class ThreadUrlLookupState:
@@ -340,11 +456,7 @@ def _process_ai_message(
         if block_type == "text":
             text = block.get("text", "")
             if text:
-                if state.stream:
-                    if state.spinner:
-                        state.spinner.stop()
-                    _write_text(text)
-                state.full_response.append(text)
+                _handle_text_block(text, state)
         elif block_type in {"tool_call_chunk", "tool_call"}:
             chunk_name = block.get("name")
             chunk_id = block.get("id")
@@ -743,6 +855,14 @@ async def _run_agent_loop(
         )
 
     wall_time = time.monotonic() - start_time
+
+    if state.pending_leading_text:
+        hidden_prefix, remainder = _extract_hidden_classifier_prefix(
+            state.pending_leading_text
+        )
+        state.pending_leading_text = ""
+        if hidden_prefix is None:
+            _commit_visible_text(remainder, state)
 
     if state.full_response:
         if not state.stream:

@@ -87,11 +87,15 @@ task ACValidatorTask {
             cp -r ~{output_dir}/~{coordinate}/* outputs/ 2>/dev/null || true
             
             # Check for validation success markers
-            if ls outputs/Check_overlap_out_*_~{coord_clean}.txt 1> /dev/null 2>&1; then
+            overlap_files=$(find outputs -maxdepth 1 -type f \( \
+                -name "Check_overlap_out_*_~{coordinate}.txt" -o \
+                -name "Check_overlap_out_*_~{coord_clean}.txt" \
+            \) -print)
+            if [ -n "$overlap_files" ]; then
                 echo "VALIDATION_STATUS: Check overlap files found"
                 
                 # Check if files contain "Found overlap"
-                if grep -q "Found overlap" outputs/Check_overlap_out_*_~{coord_clean}.txt 2>/dev/null; then
+                if printf '%s\n' "$overlap_files" | xargs -r grep -q "Found overlap" 2>/dev/null; then
                     echo "VALIDATION_STATUS: CircRNA junction VALIDATED (overlap found)"
                     echo "VALIDATED" > validation_status.txt
                 else

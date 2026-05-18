@@ -24,6 +24,367 @@ and evidence-backed completion judgment.
 
 ## Chronology
 
+### 2026-05-18
+
+- Extended local data reuse from report-only history lookup to report/generic
+  local computation support:
+  - report `local_data_lane` and generic evidence/computation workers now
+    receive a shared local computation context in the worker prompt
+  - the context explicitly separates `existing_data` from `computed_data`
+  - `existing_data` covers local databases, registries, APIs, prior
+    orchestration artifacts, cached run outputs, and directly relevant history
+    records
+  - `computed_data` covers values that must be produced by retrieving a local
+    operator plus compatible dataset/input bundle, running the concrete
+    WDL/Docker/entrypoint path when available, and recording command/input/output
+    artifacts, status, and metrics
+  - guidance for report `local_data_lane` and generic `worker_context` now tells
+    workers to prioritize local operator stores before broad external discovery
+    when a prediction or calculation is needed; benchmark comparison history is
+    optional existing evidence rather than the main path
+  - added a focused report-graph test where `local_data_lane` receives an
+    operator-store candidate through the worker prompt, executes a local Python
+    operator over a CSV dataset, writes `forecast_result.json`, and returns the
+    computed peak week through `worker_outputs/local_data_lane.json`
+  - generic planning was tightened so `init_generic` now explicitly plans an
+    operator-store computation worker for prediction, simulation, scoring, metric
+    calculation, or other computed evidence; generic compose guidance now keeps
+    selected operator, dataset/input bundle, runtime/command path, output
+    artifact, status, and computed values visible in the answer provenance
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py libs/code2workspace/tests/unit_tests/test_orchestration_runtime.py -q`
+    -> `110 passed`
+
+- Added configurable per-worker raw trace artifacts for Supervisor Graph runs:
+  - every worker node now appends `raw_worker_traces/<node_id>.jsonl` by default
+    unless `CODE2WORKSPACE_SUPERVISOR_RAW_WORKER_TRACE=0`
+  - model-backed workers record full message payloads, final raw worker
+    JSON/text, parsed `WorkerResult`, model/usage metadata when exposed by the
+    provider, source URL lists extracted from messages/tool results, and
+    start/end/duration timestamps
+  - deterministic/helper nodes also record node-level start/finish/result rows
+    so `generic`, `github2workspace`, `benchmark`, and `report` have a common
+    trace shape
+  - validation: `uv run --project libs/cli --group test pytest
+    libs/cli/tests/unit_tests/test_supervisor_runtime.py` -> `82 passed`
+
+- Renamed the reusable benchmark history library fully to
+  `benchmark_comparison_history_store`:
+  - removed the old `benchmark_result_store` directory/env-path fallback from
+    the active runtime and evaluation path
+  - kept the Python module/class name as an internal implementation detail, but
+    the on-disk contract is now only the new benchmark-comparison-history name
+- Extended the benchmark helper workflow so manual/helper benchmark reruns now
+  also materialize reusable benchmark comparison history records:
+  - `benchmark_workflow.py summarize` now writes per-case
+    `benchmark_result_record.json` entries under the nearest
+    `benchmark_comparison_history_store`
+  - the helper prefers WDL execution evidence when only `wdl/status.json`
+    exists, so WDL-only reruns such as the repaired `canu` long-read case are
+    no longer invisible to history reuse and local-data reporting
+
+- Refined the Supervisor Graph monitoring evidence policy:
+  - report `monitoring_lane` now uses a scope-first source strategy:
+    user-specified sources, whitelisted official/primary sources, curated
+    skills/local stores/structured APIs, trusted-domain search, then full-web
+    discovery only as fallback
+  - report monitoring and generic evidence/judgment tasks now share the same
+    default D2 depth: targeted trusted-source search plus fetching/reading the
+    concrete source artifact behind each claim
+  - D3 is reserved for trend/change/watch-item analysis, while D4 is reserved
+    for high-stakes, contested, highly uncertain, or explicitly comprehensive
+    requests
+  - added generic `worker_context` and `compose_generic` guidance assets so
+    generic answers preserve evidence depth, source categories, direct vs
+    inferred evidence, and unresolved gaps without becoming formal reports
+- Re-ran the previous three generic real COVID/respiratory cases after the
+  monitoring-policy change:
+  - artifacts:
+    `experiments/harness/runs/supervisor-generic-real-rerun-20260518/20260518T092020Z/`
+  - all three CLI invocations returned code 0 and stayed classified as
+    `generic`
+  - generated round-2 graphs were evidence-oriented:
+    `mobility_signal_2026q1 -> covid_signal_2026q1 -> oral_judgment_with_boundaries -> summarize`,
+    `covid_signal_lane -> flu_signal_lane -> timing_judgment -> oral_reply -> summarize`,
+    and
+    `evidence_ba32_descendants -> evidence_xfg_descendants -> summarize_severity_comparison -> summarize`
+  - the first rerun exposed two runtime issues that were fixed before the final
+    successful pass: completed `init_generic` results without
+    `spawned_subgraph` now fall back to a conservative generic evidence graph,
+    and streamed `AIMessageChunk` outputs are concatenated before worker-result
+    parsing
+  - follow-up fix on the same day removed the remaining quiet-output leak:
+    `non_interactive.py` now buffers only the very beginning of assistant text,
+    detects the leaked leading task-classifier JSON payload shape, and drops it
+    before writing stdout
+  - validation:
+    - `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_non_interactive.py -q`
+      -> `47 passed`
+    - a fresh quiet live generic smoke no longer printed the previous
+      classifier JSON prefix before the natural-language answer; the run was
+      manually stopped after the output-boundary check because the evidence
+      search itself had already gone beyond the needs of the smoke test
+
+- Added a standalone thesis-facing Chinese design note for the two local reuse
+  libraries:
+  - `docs/overview/operator-and-history-store-design.zh.md` explains why
+    `operator_store` and `benchmark_result_store` are split
+  - the note documents the directory layouts, JSON records, SQLite tables,
+    search parameters, and reuse rules with Chinese field comments
+
+- Added artifact-based evaluation for the two thesis-facing execution families:
+  - `github2workspace` runs now receive staged completion levels from
+    `G0.repo_not_materialized` through `G8.workspace_reproducible`
+  - `benchmark` runs now receive staged completion levels from
+    `B0.benchmark_not_registered` through `B10.result_reusable`
+  - both evaluations emphasize completion status, evidence paths, missing
+    evidence, reproducibility, and false-positive detection rather than numeric
+    scoring
+  - the evaluator is implemented as a deterministic post-run artifact checker
+    that writes `evaluation.json`, keeping experiment judgment separate from
+    the agent/middleware execution path
+- Validation:
+  - `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py libs/cli/tests/unit_tests/test_supervisor_evaluation.py -q`
+    -> `76 passed`
+
+- Improved observability for long-running supervisor worker nodes:
+  - `_run_worker_and_capture()` now starts a lightweight heartbeat loop while a
+    worker node is still running
+  - active nodes append `node_heartbeat` entries into `tool_activity.jsonl` and
+    emit matching supervisor stream events with elapsed time / heartbeat count
+  - this addresses the live `github2workspace` debugging case where fresh
+    `circrna` runs looked stuck at `node_started` even though the worker model
+    was still actively progressing
+- Validation:
+  - `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py`
+    -> `70 passed`
+
+- Fixed a second observability gap in supervisor worker execution:
+  - the earlier heartbeat patch proved that `github2workspace` build nodes were
+    still alive, but live `circompara2` runs showed `tool_activity.jsonl`
+    displaying only `node_heartbeat` until the worker finished
+  - root cause: `_invoke_worker_runnable()` used `agent.ainvoke()` and only
+    replayed `worker_tool_call` / `worker_tool_result` events after the full
+    message list returned
+  - the worker path now prefers `agent.astream(..., stream_mode=["messages"])`
+    and records tool-call / tool-result activity incrementally while still
+    falling back to `ainvoke()` for older non-streaming test doubles
+- Validation:
+  - `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py`
+    -> `72 passed`
+
+- Tightened `github2workspace` WDL completion judgment after a live
+  `AQUARIUM-HB` false-positive:
+  - root cause: the worker could finish with a generated `.wdl` plus successful
+    `miniwdl check`, but without any real `miniwdl run` outputs/logs
+  - updated WDL node guidance now states that `miniwdl check` is insufficient,
+    and requires reading back the successful main-function `workflow.log` and
+    `outputs.json` before returning `completed`
+  - node-level decision checks now reject completed `github2workspace` WDL
+    nodes when no successful non-smoke main-workflow run evidence exists
+- Validation:
+  - `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'wdl_node_guidance or github2workspace_wdl or maybe_prepare_worker_inputs_reuses_successful_github2workspace_wdl_smoke or node_decision_rejects_github2workspace_wdl_without_real_run_evidence or node_decision_accepts_github2workspace_wdl_with_real_run_evidence'`
+    -> `4 passed`
+
+- Added node-level decision checks for Supervisor Graph completion judgment:
+  - planner-marked gates now include generic graph initialization,
+    `github2workspace` inspect/build/WDL phases, benchmark registration, and
+    report initialization
+  - after each marked gate runs, the supervisor checks whether the node outcome
+    is reasonable and sufficient before allowing the graph to continue
+  - this catches explicit `failed` / `blocked` outcomes, and also
+    completed-yet-unusable outputs such as a missing generic subgraph, missing
+    benchmark selection/blocker details, or a missing report contract signal
+  - when a check requests finalization, remaining work is skipped by
+    `blocked_by_node_decision_check`, and final summary/response artifacts are
+    still written from captured evidence
+- Validation:
+  - `uv run --project libs/cli --group test pytest libs/code2workspace/tests/unit_tests/test_orchestration_runtime.py libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+    -> `93 passed`
+
+### 2026-05-17
+
+- Split benchmark execution history from the normal operator registry:
+  - added a dedicated `BenchmarkResultStore` under
+    `<workspace>/benchmark_result_store/`
+  - successful deterministic benchmark cases now persist reusable records with
+    operator identity, staged WDL path, workflow signature, input signature,
+    dataset key, result files, and copied analysis/result-manifest payloads
+  - this separates “what operators exist” from “what benchmark computations
+    have already been executed and can be reused”
+- Added history-aware reuse to benchmark case execution:
+  - before running a staged benchmark case, deterministic case execution now
+    queries candidate benchmark result stores with structured filters plus the
+    same embedding-capable retrieval path used by benchmark register
+  - reuse is gated by operator identity plus workflow signature and exact input
+    signature, with dataset-key fallback only when needed
+  - a reuse hit materializes local `run/status.json`,
+    `run/result_manifest.json`, `analysis.json`, and
+    `run/reused_result_record.json` with
+    `execution_mode = history_reuse`, avoiding recomputation
+- Added a shared-history configuration surface:
+  - `CODE2WORKSPACE_SHARED_BENCHMARK_RESULT_STORE_ROOT` can point benchmark
+    runs at a shared historical result library beyond the current workspace
+- Validation:
+  - `python -m py_compile libs/cli/code2workspace_cli/benchmark_result_store.py libs/cli/code2workspace_cli/supervisor_runtime.py libs/cli/tests/unit_tests/test_supervisor_runtime.py`
+  - `pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py` -> `65 passed`
+
+### 2026-05-15
+
+- Simplified the benchmark execution graph to match the current local-operator
+  assumption:
+  - removed the dedicated benchmark `prebuild_*` orchestration round from the
+    planner and supervisor runtime
+  - benchmark runs now go directly from `register` to per-tool execution for
+    ready tools, with `summarize` attached in the same round
+  - this reflects the new working assumption that benchmark operators selected
+    from the local operator library already have corresponding local images, so
+    image-preparation is no longer a first-class benchmark phase
+- Started moving benchmark tool selection from static catalog routing toward
+  retrieval from the local operator library:
+  - benchmark round-1 planning no longer computes the benchmark tool list from
+    local catalog metadata; it now only stages register-time context such as
+    benchmark-root hints and exclusion hints
+  - deterministic benchmark register now writes
+    `operator_selection.json` and chooses tools from available operator stores
+    using the user task semantics and local operator metadata
+  - the current implementation uses pragmatic heuristic reranking over local
+    operator search results and operator records, which is sufficient for the
+    next integration step but should still be treated as an intermediate
+    retrieval layer rather than the final benchmark-selection design
+- Tightened the benchmark register contract so execution can consume resolved
+  operator artifacts rather than rediscovering repo names from benchmark-root
+  helper scans:
+  - selected operator candidates now carry WDL, inputs, Dockerfile/runtime, and
+    expected-output paths into `operator_selection.json`
+  - deterministic register can materialize case manifests directly from those
+    operator records, staging runnable copies under
+    `<run_dir>/cases/<tool>/wdl/`
+  - this removed the old execution-layer mismatch where correct selections such
+    as `ImmuneBuilder` or `Flye` could still fail with
+    `Unknown benchmark repo case(s)` because the current benchmark root lacked a
+    helper-discoverable local case
+  - validation:
+    - `pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py` -> `50 passed`
+    - live register smoke under `experiments/benchmark/免疫逃逸` completed for
+      `ImmuneBuilder`
+    - live register smoke also completed for `Flye` selected from the shared
+      operator store even when the active benchmark root remained
+      `experiments/benchmark/免疫逃逸`
+- Changed the default benchmark register selection policy to favor the largest
+  compatible operator subset on a shared dataset instead of defaulting to one
+  top-ranked tool:
+  - when a local `benchmark_root` is available, grouping first inspects the
+    checked-in case `inputs.json` files, so shared-input families can be
+    expanded even if the operator-store imports came from older run artifacts
+    with different historical input paths
+  - this now selects `Flye + canu` by default for long-read
+    `experiments/benchmark/新冠病毒组装` register requests, and keeps the same
+    policy available for short-read pairs such as `spades + megahit`
+  - validation:
+    - `pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py` -> `52 passed`
+    - live register smoke on `新冠病毒组装` with the request
+      “默认使用共享数据集并尽可能多地选择满足要求的算子” selected
+      `Flye + canu`
+- Added bounded agentic repair for benchmark retry cases:
+  - `retry_<tool>` benchmark nodes can now ask the worker model to inspect the
+    staged case copy under `<run_dir>/cases/<tool>/wdl/` before the
+    deterministic `run-wdl` retry runs
+  - the prompt includes prior `run/status.json`, `wdl/status.json`, and latest
+    miniwdl stderr/stdout excerpts so the model can apply local portability
+    fixes such as output-path or permission adjustments
+  - edits are intentionally constrained to the staged case directory, and every
+    successful parse is recorded as `repair_report.json`; invalid model output
+    does not block the original deterministic retry path
+  - validation:
+    - `python -m py_compile libs/cli/code2workspace_cli/supervisor_runtime.py libs/cli/tests/unit_tests/test_supervisor_runtime.py`
+    - focused retry tests `4 passed`
+    - full `pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py` -> `54 passed`
+- Relaxed benchmark candidate admission for partially validated operators:
+  - benchmark register no longer drops every `partial` operator during
+    operator-store retrieval
+  - operators with `validation_status=partial` can now still participate when
+    they already carry `wdl-completed` or `execution-ready` evidence
+  - this was required to let local multi-tool `circrna` benchmark runs include
+    `AQUARIUM-HB` alongside `circompara2`, because the local case is runnable
+    from staged WDL/input assets even though the historical import record lacks
+    full Docker success
+  - validation:
+    - focused supervisor runtime tests covering shared-group selection with a
+      `partial` but WDL-ready tool passed (`4 passed`)
+    - live `circrna` register rerun selected both `circompara2` and
+      `AQUARIUM-HB` and staged them as ready tools under the benchmark run
+- Aligned benchmark case materialization more closely with checked-in local
+  benchmark assets:
+  - when a selected operator name matches a local case directory under the
+    active `benchmark_root`, register now stages the local `workflow.wdl` and
+    `Dockerfile` instead of blindly preferring the historical operator-store
+    workflow path
+  - this was needed for the `circrna` family so `AQUARIUM-HB` could use the
+    repo-local benchmark WDL rather than an older imported artifact
+  - also updated the checked-in `experiments/benchmark/circrna/AQUARIUM-HB`
+    workflow to remove non-portable `/data` writes and replace WDL `Directory`
+    outputs with file-backed tar artifacts compatible with `miniwdl`
+- Added a small staged-input normalization pass for benchmark materialization:
+  - benchmark register now removes `_comment*` keys from staged `inputs.json`
+    before first execution
+  - when staged inputs still contain `/path/to/...` placeholders, register now
+    hydrates them from the resolved `selected_input_files` set whenever a clear
+    filename or modality-based match exists
+  - this reduced the `AQUARIUM-HB` local `circrna` failure mode from immediate
+    input-schema rejection and placeholder-path misses to later task-level
+    command/runtime issues
+- Verified a second live benchmark repair step for local `circrna` execution:
+  - updated the checked-in `AQUARIUM-HB` benchmark WDL so the pipeline script is
+    copied into the task work directory before patching/execution, instead of
+    editing `/opt/AQUARIUM-HB/AQUARIUM_HB.sh` in place
+  - a fresh `circrna` rerun under
+    `workspace/20260517223356/orchestration_runs/20260517T143405914732Z/`
+    confirmed that the original `/opt` read-only failure disappeared and the
+    task progressed into real tool execution
+  - the bounded retry agent then patched the staged WDL again after observing
+    that AQUARIUM-HB still looked for assets under `/data/references`
+  - the retry rerun still failed because copying benchmark assets into
+    `/data/references` hit container permission errors, establishing the next
+    portability blocker more precisely than the earlier `/opt` failure
+- Tightened the benchmark final-response contract so user-facing answers expose
+  the actual dataset/input context:
+  - `final_response` prompt construction now injects compact benchmark dataset
+    material from `dataset_resolution.json`, `metric_plan.json`, and
+    `register_report.json`
+  - benchmark final answers are now explicitly required to mention which
+    dataset or input bundle was used, or to state that no canonical dataset key
+    was resolved and summarize the real per-tool input bundle instead
+  - validation: focused supervisor runtime final-response tests passed
+- Defined the next operator-store design target before changing benchmark
+  selection logic:
+  - added
+    `docs/superpowers/specs/2026-05-15-operator-store-and-retrieval-design.md`
+    to pin down the minimal operator-management and retrieval model
+  - explicitly separated stable operator identity from single-run validation
+    evidence, instead of continuing to treat every `<tool, run_id>` product as
+    the primary operator record
+  - kept `wdl`, `inputs.json`, and `Dockerfile` / runtime image as the
+    execution core, while elevating `summary`, input/output media types, and
+    tags as the retrieval core
+  - constrained the first retrieval step to structured filters plus SQLite FTS,
+    with embedding/hybrid retrieval deferred until the storage model is stable
+  - this keeps the near-term implementation simpler while preserving the path
+    to thousand-scale operator reuse later
+- Hardened the `github2workspace` repository-fetch path after live GitHub
+  network stalls:
+  - moved repository materialization for `inspect` / `retry_inspect` into a
+    supervisor-side preflight instead of leaving it entirely to worker prompt
+    interpretation
+  - implemented the fallback order
+    `code_repository cache copy -> git clone -> git clone --depth 1 -> local repo clone -> structured failure`
+  - recorded each fetch attempt in
+    `<run_dir>/github_repo_materialization.json` so the failure mode is
+    auditable in later traces
+  - this keeps repository-fetch failures out of the generic worker loop and
+    makes `github2workspace` runs easier to diagnose when GitHub connectivity
+    is unstable
+
 ### 2026-05-14
 
 - Added reusable real-case prompts for extending the local benchmark beyond
@@ -1185,6 +1546,101 @@ and evidence-backed completion judgment.
     repository as a planning failure by the agent
 
 ## Writing Reminders
+
+### 2026-05-17
+
+- Strengthened the Supervisor Graph `report` family output contract with
+  template-style prompt guidance rather than new hardcoded report logic:
+  - `report_synthesis` and `compose_report` now ask for a stable Markdown
+    structure covering title, executive summary, scope/time window, key
+    findings, evidence analysis, uncertainty/limitations, optional
+    recommendations, and sources/evidence appendix
+  - `init_report` now asks workers to record the report language, audience,
+    outline, evidence lanes, citation/source style, freshness requirements, and
+    user-specified constraints before evidence gathering begins
+  - `compose_report` now includes section-quality gates, citation/source rules,
+    comparison-table guidance, direct/inferred/proxy evidence labeling, and
+    rules to keep missing evidence visible instead of silently dropping sections
+  - the final chat-facing `final_response` prompt now preserves structured
+    report deliverables for `report` tasks instead of collapsing them into a
+    short conversational summary
+  - the design follows the same broad prompt-first idea used by
+    Open Deep Research-style final report flows: constrain the final artifact
+    with section, citation/source, and no-internal-diagnostics rules while
+    keeping orchestration logic generic
+- Validation:
+  - targeted supervisor prompt tests passed
+    (`3 passed`, `test_supervisor_runtime.py -k "report_final_response or compose_report_includes_template_guidance or final_response_preserves_evidence_sources"`)
+- A live report smoke on the respiratory-pathogen report prompt confirmed the
+  new contract scaffolding works but exposed a runtime liveness issue:
+  - `init_report`, `literature_lane`, and `local_data_lane` produced useful
+    artifacts under
+    `workspace/20260517233437/orchestration_runs/20260517T153445807340Z/`
+  - `monitoring_lane` did not finish before the manual stop, so the run never
+    reached `compose_report` or `final_response`
+  - the runtime now applies a 20-minute default timeout to report worker nodes;
+    timed-out lanes become `partial` with `worker_timeout`, so composition can
+    continue while explicitly marking the missing evidence lane
+  - validation for the timeout path and report prompt checks passed
+    (`4 passed`, `test_supervisor_runtime.py -k "run_worker_and_capture_times_out_report_nodes or run_worker_and_capture_logs_and_reraises_interrupt or report_final_response or compose_report_includes_template_guidance"`)
+- Extended report local-data semantics beyond databases/APIs:
+  - `local_data_lane` guidance now treats benchmark result history,
+    operator-store evidence, prior orchestration artifacts, and reusable
+    calculation records as first-class local data when relevant to a report
+  - the worker prompt injects visible `benchmark_result_store` roots plus
+    candidate historical records, including operator/tool identity, dataset key,
+    success/failure, run id, metrics preview, and `record_path`
+  - composition guidance asks final reports to summarize what local benchmark
+    history directly supports, such as prior metrics, runnable datasets,
+    successful/failed tools, reusable artifacts, and reproducibility limits
+  - validation passed for the prompt injection path
+    (`3 passed`, `test_supervisor_runtime.py -k "local_data_report_includes_benchmark_history or compose_report_includes_template_guidance or run_worker_and_capture_times_out_report_nodes"`)
+
+### 2026-05-18
+
+- Added a thesis-facing Chinese Supervisor Agent flow document at
+  `docs/overview/supervisor-agent-function-flows.zh.md`.
+- The document consolidates the current implementation story into visual
+  Mermaid diagrams and short technical explanations:
+  - overall supervisor-first runtime and task routing
+  - `worker_agent` construction through `create_cli_agent()`, including the
+    distinction between `base_agent`, `supervisor_worker_agent`,
+    `fallback_agent`, report-specific worker runnables, and classifier model
+  - `generic`, `github2workspace`, `benchmark`, and `report` task-family flows
+  - node execution ownership across deterministic code, helper scripts, worker
+    agents, and final LLM response editing
+  - worker prompt assembly, middleware/tool surface, report model overrides, and
+    nested `task` subagent delegation
+  - canonical run artifacts, case-history retrieval, `operator_store`,
+    `benchmark_result_store`, and staged evaluation metrics
+- This gives the thesis draft a direct, auditable bridge from code-level runtime
+  design to diagrams and explanation text.
+
+### 2026-05-16
+
+- Benchmark `register` now has an optional model-assisted operator-selection
+  layer before deterministic registration:
+  - the runtime first gathers a bounded candidate set from the local operator
+    store
+  - it can then ask the worker model to choose the best tool subset in JSON
+  - successful selections are persisted in `operator_selection.json` with
+    rationale and attempt metadata
+  - malformed model output falls back to the older heuristic operator-store
+    search rather than blocking the run
+- This matters for the thesis because it cleanly separates two claims:
+  - deterministic helper scripts still provide reproducible benchmark case
+    materialization and readiness checks
+  - the LLM is only inserted at the ranking/selection boundary where semantic
+    ambiguity is highest
+- Validation in this session:
+  - targeted supervisor tests covering agent selection and fallback both passed
+    (`2 passed`)
+  - a wider benchmark-register regression slice also passed (`4 passed`)
+- Live limitation recorded explicitly:
+  - a real selection-only smoke against the local default chat-model path did
+    not complete because the environment returned `401 INVALID_API_KEY`
+  - treat current evidence as implementation-complete plus unit-validated, but
+    not yet a finished live quality/cost comparison
 
 ### 2026-05-13
 

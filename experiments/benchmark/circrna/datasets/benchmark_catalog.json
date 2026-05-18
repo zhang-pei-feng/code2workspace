@@ -1,0 +1,558 @@
+{
+  "benchmark_root": "experiments/benchmark/circrna",
+  "catalog_file": "experiments/benchmark/circrna/datasets/benchmark_catalog.json",
+  "dataset_root": "experiments/benchmark/datasets",
+  "downloads_root": "experiments/benchmark/datasets/downloads",
+  "datasets": {
+    "circrna-sam-fasta-acvalidator-ciri3": {
+      "dataset_id": "circrna-sam-fasta-acvalidator-ciri3",
+      "family": "unknown",
+      "description": "Shared SAM + reference FASTA bundle prepared for ACValidator and CIRI3.",
+      "source": "local benchmark dataset directory",
+      "source_urls": [],
+      "shared_between": [
+        "ACValidator",
+        "CIRI3"
+      ],
+      "files": [
+        {
+          "logical_name": "input_sam",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-sam-fasta-acvalidator-ciri3/clean_test.sam",
+          "filename": "clean_test.sam"
+        },
+        {
+          "logical_name": "reference_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-sam-fasta-acvalidator-ciri3/ref.fa",
+          "filename": "ref.fa"
+        }
+      ],
+      "local_candidates": [
+        "experiments/benchmark/datasets/downloads/circrna-sam-fasta-acvalidator-ciri3/clean_test.sam",
+        "experiments/benchmark/datasets/downloads/circrna-sam-fasta-acvalidator-ciri3/ref.fa"
+      ],
+      "fallback_urls": []
+    },
+    "circrna-human-paired-fastq-reference": {
+      "dataset_id": "circrna-human-paired-fastq-reference",
+      "family": "unknown",
+      "description": "Shared human paired-end FASTQ + GRCh38 reference bundle for AQUARIUM-HB detect mode and CirComPara2.",
+      "source": "local benchmark dataset directory",
+      "source_urls": [],
+      "shared_between": [
+        "AQUARIUM-HB",
+        "circompara2"
+      ],
+      "files": [
+        {
+          "logical_name": "fastq1",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/sample_1.fastq.gz",
+          "filename": "sample_1.fastq.gz"
+        },
+        {
+          "logical_name": "fastq2",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/sample_2.fastq.gz",
+          "filename": "sample_2.fastq.gz"
+        },
+        {
+          "logical_name": "reference_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa",
+          "filename": "Homo_sapiens.GRCh38.dna_sm.chromosomes.fa"
+        },
+        {
+          "logical_name": "reference_gtf",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.94.chr.gtf",
+          "filename": "Homo_sapiens.GRCh38.94.chr.gtf"
+        },
+        {
+          "logical_name": "reference_fasta_amb",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.amb",
+          "filename": "Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.amb"
+        },
+        {
+          "logical_name": "reference_fasta_ann",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.ann",
+          "filename": "Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.ann"
+        },
+        {
+          "logical_name": "reference_fasta_bwt",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.bwt",
+          "filename": "Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.bwt"
+        },
+        {
+          "logical_name": "reference_fasta_pac",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.pac",
+          "filename": "Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.pac"
+        },
+        {
+          "logical_name": "reference_fasta_sa",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.sa",
+          "filename": "Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.sa"
+        },
+        {
+          "logical_name": "meta_file",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/meta.csv",
+          "filename": "meta.csv"
+        }
+      ],
+      "local_candidates": [
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/sample_1.fastq.gz",
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/sample_2.fastq.gz",
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa",
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.94.chr.gtf",
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.amb",
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.ann",
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.bwt",
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.pac",
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.sa",
+        "experiments/benchmark/datasets/downloads/circrna-human-paired-fastq-reference/meta.csv"
+      ],
+      "fallback_urls": []
+    },
+    "circrna-autocirc-chr22-unmapped": {
+      "dataset_id": "circrna-autocirc-chr22-unmapped",
+      "family": "unknown",
+      "description": "AutoCirc shared dataset with unmapped BAM, chr22 reference, Bowtie2 indexes, and BED annotation.",
+      "source": "local benchmark dataset directory",
+      "source_urls": [],
+      "shared_between": [
+        "AutoCirc"
+      ],
+      "files": [
+        {
+          "logical_name": "unmapped_bam",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/unmapped.bam",
+          "filename": "unmapped.bam"
+        },
+        {
+          "logical_name": "reference_genome",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22.fa",
+          "filename": "chr22.fa"
+        },
+        {
+          "logical_name": "bowtie2_index_base_1",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.1.bt2",
+          "filename": "chr22_index.1.bt2"
+        },
+        {
+          "logical_name": "bowtie2_index_base_2",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.2.bt2",
+          "filename": "chr22_index.2.bt2"
+        },
+        {
+          "logical_name": "bowtie2_index_base_3",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.3.bt2",
+          "filename": "chr22_index.3.bt2"
+        },
+        {
+          "logical_name": "bowtie2_index_base_4",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.4.bt2",
+          "filename": "chr22_index.4.bt2"
+        },
+        {
+          "logical_name": "bowtie2_index_rev_1",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.rev.1.bt2",
+          "filename": "chr22_index.rev.1.bt2"
+        },
+        {
+          "logical_name": "bowtie2_index_rev_2",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.rev.2.bt2",
+          "filename": "chr22_index.rev.2.bt2"
+        },
+        {
+          "logical_name": "reference_annotation_bed",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_genes.bed",
+          "filename": "chr22_genes.bed"
+        }
+      ],
+      "local_candidates": [
+        "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/unmapped.bam",
+        "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22.fa",
+        "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.1.bt2",
+        "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.2.bt2",
+        "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.3.bt2",
+        "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.4.bt2",
+        "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.rev.1.bt2",
+        "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_index.rev.2.bt2",
+        "experiments/benchmark/datasets/downloads/circrna-autocirc-chr22-unmapped/chr22_genes.bed"
+      ],
+      "fallback_urls": []
+    },
+    "circrna-circast-sam-gtf-junction": {
+      "dataset_id": "circrna-circast-sam-gtf-junction",
+      "family": "unknown",
+      "description": "CircAST shared dataset with SAM, GTF, and circRNA junction list.",
+      "source": "local benchmark dataset directory",
+      "source_urls": [],
+      "shared_between": [
+        "CircAST"
+      ],
+      "files": [
+        {
+          "logical_name": "sam_file",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-circast-sam-gtf-junction/accepted_hits.sorted.sam",
+          "filename": "accepted_hits.sorted.sam"
+        },
+        {
+          "logical_name": "gtf_file",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-circast-sam-gtf-junction/genes_homo.gtf",
+          "filename": "genes_homo.gtf"
+        },
+        {
+          "logical_name": "junction_file",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-circast-sam-gtf-junction/circRNA_list.txt",
+          "filename": "circRNA_list.txt"
+        }
+      ],
+      "local_candidates": [
+        "experiments/benchmark/datasets/downloads/circrna-circast-sam-gtf-junction/accepted_hits.sorted.sam",
+        "experiments/benchmark/datasets/downloads/circrna-circast-sam-gtf-junction/genes_homo.gtf",
+        "experiments/benchmark/datasets/downloads/circrna-circast-sam-gtf-junction/circRNA_list.txt"
+      ],
+      "fallback_urls": []
+    },
+    "circrna-acfs-mouse-unmap": {
+      "dataset_id": "circrna-acfs-mouse-unmap",
+      "family": "unknown",
+      "description": "ACFS shared dataset with UNMAP inputs, genome FASTA, chromosomes archive, and GTF.",
+      "source": "local benchmark dataset directory",
+      "source_urls": [],
+      "shared_between": [
+        "acfs"
+      ],
+      "files": [
+        {
+          "logical_name": "unmap_file",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/UNMAP",
+          "filename": "UNMAP"
+        },
+        {
+          "logical_name": "unmap_expr_file",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/UNMAP_expr",
+          "filename": "UNMAP_expr"
+        },
+        {
+          "logical_name": "genome_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/genome.fa",
+          "filename": "genome.fa"
+        },
+        {
+          "logical_name": "chromosomes_tar",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/Chromosomes.tar.gz",
+          "filename": "Chromosomes.tar.gz"
+        },
+        {
+          "logical_name": "annotation_gtf",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/Mus_musculus.NCBIM37.67.1_split_exon.gtf",
+          "filename": "Mus_musculus.NCBIM37.67.1_split_exon.gtf"
+        }
+      ],
+      "local_candidates": [
+        "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/UNMAP",
+        "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/UNMAP_expr",
+        "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/genome.fa",
+        "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/Chromosomes.tar.gz",
+        "experiments/benchmark/datasets/downloads/circrna-acfs-mouse-unmap/Mus_musculus.NCBIM37.67.1_split_exon.gtf"
+      ],
+      "fallback_urls": []
+    },
+    "circrna-biq-exons-gtf": {
+      "dataset_id": "circrna-biq-exons-gtf",
+      "family": "unknown",
+      "description": "BIQ shared dataset with exon FASTA and gene GTF.",
+      "source": "local benchmark dataset directory",
+      "source_urls": [],
+      "shared_between": [
+        "biq"
+      ],
+      "files": [
+        {
+          "logical_name": "exon_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-biq-exons-gtf/test_exons.fa",
+          "filename": "test_exons.fa"
+        },
+        {
+          "logical_name": "gene_gtf",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-biq-exons-gtf/test_genes.gtf",
+          "filename": "test_genes.gtf"
+        }
+      ],
+      "local_candidates": [
+        "experiments/benchmark/datasets/downloads/circrna-biq-exons-gtf/test_exons.fa",
+        "experiments/benchmark/datasets/downloads/circrna-biq-exons-gtf/test_genes.gtf"
+      ],
+      "fallback_urls": []
+    },
+    "circrna-findcirc-cdr1as": {
+      "dataset_id": "circrna-findcirc-cdr1as",
+      "family": "unknown",
+      "description": "find-circ shared dataset with CDR1as reference FASTA and reads FASTA.",
+      "source": "local benchmark dataset directory",
+      "source_urls": [],
+      "shared_between": [
+        "find-circ"
+      ],
+      "files": [
+        {
+          "logical_name": "reference_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-findcirc-cdr1as/CDR1as_locus.fa",
+          "filename": "CDR1as_locus.fa"
+        },
+        {
+          "logical_name": "reads_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/circrna-findcirc-cdr1as/cdr1as_reads.fa",
+          "filename": "cdr1as_reads.fa"
+        }
+      ],
+      "local_candidates": [
+        "experiments/benchmark/datasets/downloads/circrna-findcirc-cdr1as/CDR1as_locus.fa",
+        "experiments/benchmark/datasets/downloads/circrna-findcirc-cdr1as/cdr1as_reads.fa"
+      ],
+      "fallback_urls": []
+    }
+  },
+  "repo_cases": {
+    "ACValidator": {
+      "repo_url": "",
+      "family": "unknown",
+      "dataset_key": "circrna-sam-fasta-acvalidator-ciri3",
+      "image_tag": "benchmark/acvalidator:circrna",
+      "repo_native_entry": "",
+      "wdl_workflow_name": "ACValidatorWorkflow",
+      "expected_outputs": [],
+      "constraints": [
+        "Use the shared SAM + reference FASTA dataset."
+      ],
+      "case_dir": "experiments/benchmark/circrna/ACValidator",
+      "wdl_path": "experiments/benchmark/circrna/ACValidator/workflow.wdl",
+      "inputs_path": "experiments/benchmark/circrna/ACValidator/input.json",
+      "dockerfile_path": "experiments/benchmark/circrna/ACValidator/Dockerfile",
+      "dockerfile_candidates": [
+        "experiments/benchmark/circrna/ACValidator/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/circrna/ACValidator/workflow.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/circrna/ACValidator/input.json"
+      ],
+      "repo_native_command_candidates": [],
+      "local_result_candidates": []
+    },
+    "AQUARIUM-HB": {
+      "repo_url": "",
+      "family": "unknown",
+      "dataset_key": "circrna-human-paired-fastq-reference",
+      "image_tag": "benchmark/aquarium-hb:zpf_v0",
+      "repo_native_entry": "",
+      "wdl_workflow_name": "AQUARIUM_HB_Workflow",
+      "expected_outputs": [],
+      "constraints": [
+        "Use the shared human paired-end FASTQ + GRCh38 reference dataset in detect mode."
+      ],
+      "case_dir": "experiments/benchmark/circrna/AQUARIUM-HB",
+      "wdl_path": "experiments/benchmark/circrna/AQUARIUM-HB/workflow.detect.wdl",
+      "inputs_path": "experiments/benchmark/circrna/AQUARIUM-HB/input.detect.json",
+      "dockerfile_path": "experiments/benchmark/circrna/AQUARIUM-HB/Dockerfile",
+      "dockerfile_candidates": [
+        "experiments/benchmark/circrna/AQUARIUM-HB/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/circrna/AQUARIUM-HB/workflow.detect.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/circrna/AQUARIUM-HB/input.detect.json"
+      ],
+      "repo_native_command_candidates": [],
+      "local_result_candidates": []
+    },
+    "AutoCirc": {
+      "repo_url": "",
+      "family": "unknown",
+      "dataset_key": "circrna-autocirc-chr22-unmapped",
+      "image_tag": "benchmark/autocirc:zpf_v3",
+      "repo_native_entry": "",
+      "wdl_workflow_name": "AutoCircWorkflow",
+      "expected_outputs": [],
+      "constraints": [
+        "Use the shared AutoCirc chr22 benchmark dataset."
+      ],
+      "case_dir": "experiments/benchmark/circrna/AutoCirc",
+      "wdl_path": "experiments/benchmark/circrna/AutoCirc/workflow.wdl",
+      "inputs_path": "experiments/benchmark/circrna/AutoCirc/input.json",
+      "dockerfile_path": "experiments/benchmark/circrna/AutoCirc/Dockerfile",
+      "dockerfile_candidates": [
+        "experiments/benchmark/circrna/AutoCirc/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/circrna/AutoCirc/workflow.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/circrna/AutoCirc/input.json"
+      ],
+      "repo_native_command_candidates": [],
+      "local_result_candidates": []
+    },
+    "CIRI3": {
+      "repo_url": "",
+      "family": "unknown",
+      "dataset_key": "circrna-sam-fasta-acvalidator-ciri3",
+      "image_tag": "benchmark/ciri3:zpf_v0",
+      "repo_native_entry": "",
+      "wdl_workflow_name": "CIRI3_Workflow",
+      "expected_outputs": [],
+      "constraints": [
+        "Use the shared SAM + reference FASTA dataset."
+      ],
+      "case_dir": "experiments/benchmark/circrna/CIRI3",
+      "wdl_path": "experiments/benchmark/circrna/CIRI3/workflow.wdl",
+      "inputs_path": "experiments/benchmark/circrna/CIRI3/input.json",
+      "dockerfile_path": "experiments/benchmark/circrna/CIRI3/Dockerfile",
+      "dockerfile_candidates": [
+        "experiments/benchmark/circrna/CIRI3/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/circrna/CIRI3/workflow.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/circrna/CIRI3/input.json"
+      ],
+      "repo_native_command_candidates": [],
+      "local_result_candidates": []
+    },
+    "CircAST": {
+      "repo_url": "",
+      "family": "unknown",
+      "dataset_key": "circrna-circast-sam-gtf-junction",
+      "image_tag": "benchmark/circast:latest",
+      "repo_native_entry": "",
+      "wdl_workflow_name": "CircASTWorkflow",
+      "expected_outputs": [],
+      "constraints": [
+        "Use the shared CircAST SAM + GTF + junction dataset."
+      ],
+      "case_dir": "experiments/benchmark/circrna/CircAST",
+      "wdl_path": "experiments/benchmark/circrna/CircAST/workflow.wdl",
+      "inputs_path": "experiments/benchmark/circrna/CircAST/input.json",
+      "dockerfile_path": "experiments/benchmark/circrna/CircAST/Dockerfile",
+      "dockerfile_candidates": [
+        "experiments/benchmark/circrna/CircAST/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/circrna/CircAST/workflow.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/circrna/CircAST/input.json"
+      ],
+      "repo_native_command_candidates": [],
+      "local_result_candidates": []
+    },
+    "acfs": {
+      "repo_url": "",
+      "family": "unknown",
+      "dataset_key": "circrna-acfs-mouse-unmap",
+      "image_tag": "benchmark/acfs:circrna",
+      "repo_native_entry": "",
+      "wdl_workflow_name": "ACFS_CircRNA_Discovery",
+      "expected_outputs": [],
+      "constraints": [
+        "Use the shared ACFS mouse benchmark dataset."
+      ],
+      "case_dir": "experiments/benchmark/circrna/acfs",
+      "wdl_path": "experiments/benchmark/circrna/acfs/workflow.wdl",
+      "inputs_path": "experiments/benchmark/circrna/acfs/input.json",
+      "dockerfile_path": "experiments/benchmark/circrna/acfs/Dockerfile",
+      "dockerfile_candidates": [
+        "experiments/benchmark/circrna/acfs/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/circrna/acfs/workflow.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/circrna/acfs/input.json"
+      ],
+      "repo_native_command_candidates": [],
+      "local_result_candidates": []
+    },
+    "biq": {
+      "repo_url": "",
+      "family": "unknown",
+      "dataset_key": "circrna-biq-exons-gtf",
+      "image_tag": "benchmark/biq:zpf_v3",
+      "repo_native_entry": "",
+      "wdl_workflow_name": "biq_workflow",
+      "expected_outputs": [],
+      "constraints": [
+        "Use the shared BIQ exon FASTA + GTF dataset."
+      ],
+      "case_dir": "experiments/benchmark/circrna/biq",
+      "wdl_path": "experiments/benchmark/circrna/biq/workflow.wdl",
+      "inputs_path": "experiments/benchmark/circrna/biq/input.json",
+      "dockerfile_path": "experiments/benchmark/circrna/biq/Dockerfile",
+      "dockerfile_candidates": [
+        "experiments/benchmark/circrna/biq/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/circrna/biq/workflow.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/circrna/biq/input.json"
+      ],
+      "repo_native_command_candidates": [],
+      "local_result_candidates": []
+    },
+    "circompara2": {
+      "repo_url": "",
+      "family": "unknown",
+      "dataset_key": "circrna-human-paired-fastq-reference",
+      "image_tag": "benchmark/circompara2:circrna",
+      "repo_native_entry": "",
+      "wdl_workflow_name": "CirComPara2Workflow",
+      "expected_outputs": [],
+      "constraints": [
+        "Use the shared human paired-end FASTQ + GRCh38 reference dataset."
+      ],
+      "case_dir": "experiments/benchmark/circrna/circompara2",
+      "wdl_path": "experiments/benchmark/circrna/circompara2/workflow.wdl",
+      "inputs_path": "experiments/benchmark/circrna/circompara2/input.shared_human_pair.json",
+      "dockerfile_path": "experiments/benchmark/circrna/circompara2/Dockerfile",
+      "dockerfile_candidates": [
+        "experiments/benchmark/circrna/circompara2/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/circrna/circompara2/workflow.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/circrna/circompara2/input.shared_human_pair.json"
+      ],
+      "repo_native_command_candidates": [],
+      "local_result_candidates": []
+    },
+    "find-circ": {
+      "repo_url": "",
+      "family": "unknown",
+      "dataset_key": "circrna-findcirc-cdr1as",
+      "image_tag": "benchmark/find-circ:circrna",
+      "repo_native_entry": "",
+      "wdl_workflow_name": "FindCirc_Complete",
+      "expected_outputs": [],
+      "constraints": [
+        "Use the shared find-circ CDR1as dataset."
+      ],
+      "case_dir": "experiments/benchmark/circrna/find-circ",
+      "wdl_path": "experiments/benchmark/circrna/find-circ/workflow.wdl",
+      "inputs_path": "experiments/benchmark/circrna/find-circ/input.json",
+      "dockerfile_path": "experiments/benchmark/circrna/find-circ/Dockerfile",
+      "dockerfile_candidates": [
+        "experiments/benchmark/circrna/find-circ/Dockerfile"
+      ],
+      "wdl_candidates": [
+        "experiments/benchmark/circrna/find-circ/workflow.wdl"
+      ],
+      "input_json_candidates": [
+        "experiments/benchmark/circrna/find-circ/input.json"
+      ],
+      "repo_native_command_candidates": [],
+      "local_result_candidates": []
+    }
+  }
+}

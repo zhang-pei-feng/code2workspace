@@ -35,6 +35,7 @@ TaskType = Literal["generic", "github2workspace", "benchmark", "report"]
 WorkerStatus = Literal["completed", "blocked", "failed", "partial"]
 DecisionType = Literal["stop", "replan", "continue"]
 GenericApproach = Literal["simple", "medium", "difficult"]
+NodeDecisionAction = Literal["continue", "finalize"]
 
 _CAPABILITY_BUNDLES: set[str] = {
     "repo_fetch",
@@ -634,10 +635,17 @@ class HeuristicSupervisorPlanner:
                         "sequential investigation, parallel evidence lanes, code inspect/fix/verify, data inspect/analyze/recommend, "
                         "or any other shape that fits. Research and evidence-judgment questions are the main scenario; scale "
                         "their graph by complexity, from one synthesis node to parallel source/evidence lanes when needed. "
+                        "If the generic request needs prediction, simulation, scoring, metric calculation, or other computed "
+                        "evidence, plan a worker that searches the local operator_store for candidate operators and compatible "
+                        "datasets/input bundles, runs the selected operator when available, and returns the computed artifact "
+                        "as local evidence. "
                         "Return a worker result whose spawned_subgraph contains nodes and edges for the next round."
                     ),
                     capability_bundles=["plan", "task_manage", "validate"],
-                    metadata={"planner_role": "generic_dynamic_graph_planner"},
+                    metadata={
+                        "planner_role": "generic_dynamic_graph_planner",
+                        "decision_check": True,
+                    },
                 )
             ]
             edges = []
@@ -729,18 +737,21 @@ class HeuristicSupervisorPlanner:
                     title="Inspect repository",
                     objective="Inspect the repository, identify build/test assets, and record validation prerequisites.",
                     capability_bundles=["repo_fetch", "validate"],
+                    metadata={"decision_check": True},
                 ),
                 TaskNode(
                     node_id="build",
                     title="Build Docker image",
                     objective="Build or repair the Docker image and run a minimal container validation attempt.",
                     capability_bundles=["docker_build_run", "validate"],
+                    metadata={"decision_check": True},
                 ),
                 TaskNode(
                     node_id="wdl",
                     title="Run WDL workflow",
-                    objective="Generate or repair WDL inputs and run Cromwell workflow validation.",
+                    objective="Generate or repair WDL inputs and run miniwdl workflow validation.",
                     capability_bundles=["wdl_run", "validate"],
+                    metadata={"decision_check": True},
                 ),
                 TaskNode(
                     node_id="summarize",
@@ -763,18 +774,21 @@ class HeuristicSupervisorPlanner:
                         title="Retry inspect",
                         objective="Retry repository inspection and correct the earlier repository understanding failure.",
                         capability_bundles=["repo_fetch", "validate"],
+                        metadata={"decision_check": True},
                     ),
                     TaskNode(
                         node_id="build",
                         title="Build Docker image",
                         objective="Build or repair the Docker image after refreshed inspection.",
                         capability_bundles=["docker_build_run", "validate"],
+                        metadata={"decision_check": True},
                     ),
                     TaskNode(
                         node_id="wdl",
                         title="Run WDL workflow",
                         objective="Retry WDL generation and validation after the repaired build path.",
                         capability_bundles=["wdl_run", "validate"],
+                        metadata={"decision_check": True},
                     ),
                     TaskNode(
                         node_id="summarize",
@@ -793,8 +807,9 @@ class HeuristicSupervisorPlanner:
                     TaskNode(
                         node_id="retry_wdl",
                         title="Retry WDL workflow",
-                        objective="Retry WDL generation and Cromwell validation using the latest validated build artifacts.",
+                        objective="Retry WDL generation and miniwdl validation using the latest validated build artifacts.",
                         capability_bundles=["wdl_run", "validate"],
+                        metadata={"decision_check": True},
                     ),
                     TaskNode(
                         node_id="summarize",
@@ -811,12 +826,14 @@ class HeuristicSupervisorPlanner:
                         title="Retry build",
                         objective="Retry Docker build/validation and apply the smallest repair needed for the earlier build failure.",
                         capability_bundles=["docker_build_run", "validate"],
+                        metadata={"decision_check": True},
                     ),
                     TaskNode(
                         node_id="wdl",
                         title="Run WDL workflow",
-                        objective="Retry WDL generation and Cromwell validation after the repaired build path.",
+                        objective="Retry WDL generation and miniwdl validation after the repaired build path.",
                         capability_bundles=["wdl_run", "validate"],
+                        metadata={"decision_check": True},
                     ),
                     TaskNode(
                         node_id="summarize",
@@ -860,29 +877,16 @@ class HeuristicSupervisorPlanner:
                     objective="Confirm benchmark inputs, register each tool/case pair, and verify staged constraints before execution.",
                     capability_bundles=["plan", "task_manage", "validate"],
                     metadata={
-                        "selected_tools": _select_benchmark_tools(task),
+                        "selected_tools": [],
                         "excluded_tools": _extract_benchmark_excluded_tools(task),
                         "benchmark_root": _select_benchmark_root(task),
+                        "decision_check": True,
                     },
                 )
             ]
             edges: list[TaskEdge] = []
         elif _benchmark_register_round_finished(prior_rounds[-1]):
             tools = _benchmark_selected_tools_from_round(prior_rounds[-1])
-            nodes = []
-            edges = []
-            for tool in tools:
-                nodes.append(
-                    TaskNode(
-                        node_id=f"prebuild_{tool}",
-                        title=f"Prepare {tool} image",
-                        objective=f"Check whether the benchmark image for {tool} already exists locally; if not, build it from the staged Dockerfile/context when possible and record the exact blocker otherwise.",
-                        capability_bundles=["docker_build_run", "validate"],
-                        metadata={"tool": tool},
-                    )
-                )
-        elif _benchmark_prebuild_round_has_ready_tools(prior_rounds[-1]):
-            tools = _benchmark_prebuild_ready_tools_from_round(prior_rounds[-1])
             nodes = []
             edges = []
             for tool in tools:
@@ -927,29 +931,6 @@ class HeuristicSupervisorPlanner:
                     edges=edges,
                     metadata=_graph_metadata(task=task, retrieved_cases=retrieved_cases, guidance_ids=guidance_ids),
                 )
-            if _benchmark_prebuild_round_has_only_blocked_tools(prior_rounds[-1]):
-                nodes = [
-                    TaskNode(
-                        node_id="summarize",
-                        title="Summarize benchmark outcomes",
-                        objective="Summarize benchmark blockers, missing images, and next preparation steps.",
-                        capability_bundles=["metric_compute", "summarize"],
-                    )
-                ]
-                edges = []
-                return TaskGraph(
-                    graph_id=f"benchmark-r{round_index}",
-                    task_type="benchmark",
-                    round_index=round_index,
-                    nodes=_attach_common_node_metadata(
-                        nodes,
-                        task=task,
-                        task_type="benchmark",
-                        guidance_ids=guidance_ids,
-                    ),
-                    edges=edges,
-                    metadata=_graph_metadata(task=task, retrieved_cases=retrieved_cases, guidance_ids=guidance_ids),
-                )
             if _benchmark_register_needs_retry(prior_rounds[-1]):
                 nodes = [
                     TaskNode(
@@ -957,6 +938,7 @@ class HeuristicSupervisorPlanner:
                         title="Retry register",
                         objective="Inspect benchmark assets again, choose a compatible tool subset, and write a structured registration result for the next execution round.",
                         capability_bundles=["plan", "task_manage", "validate"],
+                        metadata={"decision_check": True},
                     ),
                     TaskNode(
                         node_id="summarize",
@@ -1045,6 +1027,7 @@ class HeuristicSupervisorPlanner:
                     title="Initialize report run",
                     objective="Create the report run directory, save the request, outline evidence lanes, and define the report contract.",
                     capability_bundles=["plan", "task_manage", "validate"],
+                    metadata={"decision_check": True},
                 ),
                 TaskNode(
                     node_id="monitoring_lane",
@@ -1209,35 +1192,6 @@ def _benchmark_selected_tools_from_result(result: WorkerNodeResult) -> list[str]
     if not isinstance(selected_tools, list):
         return []
     return [str(item) for item in selected_tools if isinstance(item, str) and item.strip()]
-
-
-def _benchmark_prebuild_round_has_ready_tools(round_result: TaskExecutionRound) -> bool:
-    node_ids = [node.node_id for node in round_result.graph.nodes]
-    if not node_ids or not all(node_id.startswith("prebuild_") for node_id in node_ids):
-        return False
-    return bool(_benchmark_prebuild_ready_tools_from_round(round_result))
-
-
-def _benchmark_prebuild_ready_tools_from_round(round_result: TaskExecutionRound) -> list[str]:
-    ready_tools: list[str] = []
-    for item in round_result.node_results:
-        if not item.node_id.startswith("prebuild_"):
-            continue
-        if item.status != "completed":
-            continue
-        tool = item.node_id.removeprefix("prebuild_")
-        if tool:
-            ready_tools.append(tool)
-    return ready_tools
-
-
-def _benchmark_prebuild_round_has_only_blocked_tools(round_result: TaskExecutionRound) -> bool:
-    node_ids = [node.node_id for node in round_result.graph.nodes]
-    if not node_ids or not all(node_id.startswith("prebuild_") for node_id in node_ids):
-        return False
-    if _benchmark_prebuild_ready_tools_from_round(round_result):
-        return False
-    return any(item.status in {"failed", "blocked", "partial"} for item in round_result.node_results)
 
 
 def _benchmark_register_has_only_blocked_tools(round_result: TaskExecutionRound) -> bool:
@@ -1418,9 +1372,49 @@ def _connect_terminal_nodes_to_summarize(
 def _generic_fallback_execution_nodes() -> tuple[list[TaskNode], list[TaskEdge]]:
     nodes = [
         TaskNode(
+            node_id="worker_context",
+            title="Collect generic context",
+            objective=(
+                "The dynamic generic planner did not return a usable subgraph. "
+                "Collect the minimum source-backed or local context needed for the user's task, "
+                "preserving evidence boundaries and uncertainty."
+            ),
+            capability_bundles=[
+                "repo_fetch",
+                "data_filter",
+                "web_search",
+                "web_fetch",
+                "db_access",
+                "api_call",
+                "validate",
+            ],
+        ),
+        TaskNode(
+            node_id="worker_solution",
+            title="Develop generic answer",
+            objective=(
+                "Use the collected context to produce the main answer, recommendation, repair, "
+                "or solution content needed before final composition."
+            ),
+            capability_bundles=[
+                "repo_fetch",
+                "docker_build_run",
+                "wdl_run",
+                "data_filter",
+                "operator_filter",
+                "metric_compute",
+                "web_search",
+                "web_fetch",
+                "db_access",
+                "api_call",
+                "summarize",
+                "validate",
+            ],
+        ),
+        TaskNode(
             node_id="compose_generic",
             title="Compose generic answer",
-            objective="The dynamic generic planner did not return a usable subgraph. Produce the best direct user-facing answer with available context and state any uncertainty.",
+            objective="Merge the generic context and solution outputs into one normal user-facing answer, and state any uncertainty or evidence gaps.",
             capability_bundles=["summarize", "validate"],
         ),
         TaskNode(
@@ -1430,7 +1424,11 @@ def _generic_fallback_execution_nodes() -> tuple[list[TaskNode], list[TaskEdge]]
             capability_bundles=["summarize"],
         ),
     ]
-    return nodes, [TaskEdge(source="compose_generic", target="summarize")]
+    return nodes, [
+        TaskEdge(source="worker_context", target="worker_solution"),
+        TaskEdge(source="worker_solution", target="compose_generic"),
+        TaskEdge(source="compose_generic", target="summarize"),
+    ]
 
 
 def _generic_execute_objective(approach: GenericApproach) -> str:
@@ -1450,101 +1448,11 @@ def _generic_execute_objective(approach: GenericApproach) -> str:
     )
 
 
-def _extract_benchmark_tools(task: str) -> list[str]:
-    catalog = _load_benchmark_catalog(task)
-    if catalog is None:
-        return []
-    lowered = task.casefold()
-    return [
-        repo
-        for repo in catalog.get("repo_cases", {})
-        if str(repo).casefold() in lowered
-    ]
-
-
-def _select_benchmark_tools(task: str) -> list[str]:
-    catalog = _load_benchmark_catalog(task)
-    if catalog is None:
-        return []
-    excluded_tools = set(_extract_benchmark_excluded_tools(task))
-    explicit_tools = _extract_benchmark_tools(task)
-    explicit_tools = [tool for tool in explicit_tools if tool not in excluded_tools]
-    if explicit_tools:
-        return explicit_tools
-
-    dataset_key = _select_benchmark_dataset_key(task, catalog)
-    if dataset_key:
-        tools = [
-            tool
-            for tool in _tools_for_dataset(catalog, dataset_key)
-            if tool not in excluded_tools
-        ]
-        if tools:
-            return tools
-
-    dataset_keys = _ordered_candidate_benchmark_dataset_keys(task, catalog)
-    for key in dataset_keys:
-        tools = [
-            tool
-            for tool in _tools_for_dataset(catalog, str(key))
-            if tool not in excluded_tools
-        ]
-        if len(tools) >= 2:
-            return tools
-    if _task_requests_multiple_benchmark_tools(task):
-        hinted_tools = [
-            tool
-            for tool in _tools_for_case_dir_hint(catalog, _benchmark_case_dir_hint(task))
-            if tool not in excluded_tools
-        ]
-        if len(hinted_tools) >= 2:
-            return hinted_tools
-    for key in dataset_keys:
-        tools = [
-            tool
-            for tool in _tools_for_dataset(catalog, str(key))
-            if tool not in excluded_tools
-        ]
-        if tools:
-            return tools
-    return []
-
-
 def _select_benchmark_root(task: str) -> str | None:
     roots = _candidate_benchmark_roots(task)
     if not roots:
         return None
     return str(roots[0].resolve())
-
-
-def _ordered_candidate_benchmark_dataset_keys(task: str, catalog: dict[str, object]) -> list[str]:
-    datasets = catalog.get("datasets", {})
-    if not isinstance(datasets, dict):
-        return []
-    case_dir_hint = _benchmark_case_dir_hint(task)
-    keys = [str(key) for key in datasets]
-    if case_dir_hint is None:
-        return keys
-    hinted: list[str] = []
-    other: list[str] = []
-    for key in keys:
-        tools = _tools_for_dataset(catalog, key)
-        if _dataset_has_case_dir_hint(catalog, tools, case_dir_hint):
-            hinted.append(key)
-        else:
-            other.append(key)
-    return hinted + other
-
-
-def _benchmark_case_dir_hint(task: str) -> str | None:
-    lowered = task.casefold()
-    if "新冠病毒组装" in lowered or "病毒组装" in lowered:
-        return "新冠病毒组装"
-    if "circrna" in lowered or "cirrna" in lowered:
-        return "circrna"
-    if "免疫逃逸" in lowered:
-        return "免疫逃逸"
-    return None
 
 
 def _task_requests_multiple_benchmark_tools(task: str) -> bool:
@@ -1562,78 +1470,6 @@ def _task_requests_multiple_benchmark_tools(task: str) -> bool:
         "parallel",
     )
     return any(marker in lowered for marker in markers)
-
-
-def _tools_for_case_dir_hint(catalog: dict[str, object], hint: str | None) -> list[str]:
-    if not hint:
-        return []
-    cases = catalog.get("repo_cases", {})
-    if not isinstance(cases, dict):
-        return []
-    hint_lower = hint.casefold()
-    benchmark_root = str(catalog.get("benchmark_root", "")).casefold()
-    if hint_lower in benchmark_root:
-        return sorted(str(tool) for tool in cases)
-    tools = [
-        str(tool)
-        for tool, payload in cases.items()
-        if isinstance(payload, dict)
-        and hint_lower in str(payload.get("case_dir", "")).casefold()
-    ]
-    return sorted(tools)
-
-
-def _dataset_has_case_dir_hint(catalog: dict[str, object], tools: list[str], hint: str) -> bool:
-    cases = catalog.get("repo_cases", {})
-    if not isinstance(cases, dict):
-        return False
-    hint_lower = hint.casefold()
-    for tool in tools:
-        payload = cases.get(tool)
-        if isinstance(payload, dict) and hint_lower in str(payload.get("case_dir", "")).casefold():
-            return True
-    return False
-
-
-def _select_benchmark_dataset_key(task: str, catalog: dict[str, object]) -> str | None:
-    lowered = task.casefold()
-    datasets = catalog.get("datasets", {})
-    if not isinstance(datasets, dict):
-        return None
-    for key in datasets:
-        if str(key).casefold() in lowered:
-            return str(key)
-    for key, payload in datasets.items():
-        if not isinstance(payload, dict):
-            continue
-        identifiers = [
-            str(payload.get("dataset_id", "")),
-            str(payload.get("description", "")),
-        ]
-        if any(identifier and identifier.casefold() in lowered for identifier in identifiers):
-            return str(key)
-    return None
-
-
-def _tools_for_dataset(catalog: dict[str, object], dataset_key: str) -> list[str]:
-    datasets = catalog.get("datasets", {})
-    cases = catalog.get("repo_cases", {})
-    if not isinstance(datasets, dict) or not isinstance(cases, dict):
-        return []
-    dataset = datasets.get(dataset_key)
-    if isinstance(dataset, dict):
-        shared_between = [
-            str(item)
-            for item in dataset.get("shared_between", [])
-            if isinstance(item, str) and item in cases
-        ]
-        if shared_between:
-            return shared_between
-    return [
-        str(repo)
-        for repo, payload in cases.items()
-        if isinstance(payload, dict) and payload.get("dataset_key") == dataset_key
-    ]
 
 
 def _extract_benchmark_excluded_tools(task: str) -> list[str]:
@@ -2116,6 +1952,35 @@ async def execute_graph_round(
             final_status[node.node_id] = result.status
             pending.pop(node.node_id, None)
 
+        decision_checks = [
+            check
+            for node, result in zip(ready, batch_results, strict=True)
+            if (check := _evaluate_node_decision(node=node, result=result)) is not None
+        ]
+        results.extend(decision_checks)
+        finalizing_checks = [
+            check
+            for check in decision_checks
+            if check.failure_reason == "node_decision_finalize"
+        ]
+        if finalizing_checks and pending:
+            failed_ids = ", ".join(
+                str(check.spawned_subgraph.get("node_id", check.node_id))
+                for check in finalizing_checks
+                if isinstance(check.spawned_subgraph, dict)
+            )
+            for node in list(pending.values()):
+                results.append(
+                    WorkerNodeResult(
+                        node_id=node.node_id,
+                        status="blocked",
+                        summary=f"Skipped because node decision check requested finalization: {failed_ids}.",
+                        failure_reason="blocked_by_node_decision_check",
+                    )
+                )
+                final_status[node.node_id] = "blocked"
+                pending.pop(node.node_id, None)
+
     return TaskExecutionRound(graph=graph, node_results=results)
 
 
@@ -2140,6 +2005,13 @@ def decide_supervisor_step(
     *,
     max_rounds: int = 2,
 ) -> SupervisorDecision:
+    finalizing_nodes = _node_decision_finalizing_nodes(round_result)
+    if finalizing_nodes:
+        return SupervisorDecision(
+            decision="stop",
+            reason="Node decision check requested finalization.",
+            failed_nodes=finalizing_nodes,
+        )
     if (
         round_result.failed_count == 0
         and round_result.blocked_count == 0
@@ -2167,3 +2039,169 @@ def decide_supervisor_step(
         reason="Replan to retry unresolved nodes.",
         failed_nodes=failed_nodes,
     )
+
+
+def _evaluate_node_decision(*, node: TaskNode, result: WorkerResult) -> WorkerNodeResult | None:
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    if not metadata.get("decision_check"):
+        return None
+    action, reason = _node_decision_action(node=node, result=result)
+    if action == "continue":
+        return None
+    return WorkerNodeResult(
+        node_id=f"check_{node.node_id}",
+        status="partial",
+        summary=reason,
+        evidence=[result.summary],
+        failure_reason="node_decision_finalize",
+        spawned_subgraph={
+            "node_id": node.node_id,
+            "action": action,
+            "reason": reason,
+            "status": result.status,
+        },
+    )
+
+
+def _node_decision_action(
+    *,
+    node: TaskNode,
+    result: WorkerResult,
+) -> tuple[NodeDecisionAction, str]:
+    if result.status in {"failed", "blocked"}:
+        return (
+            "finalize",
+            f"{node.node_id} ended with status {result.status}; downstream work would not be reliable.",
+        )
+
+    if node.node_id == "init_generic":
+        payload = result.spawned_subgraph
+        if not isinstance(payload, dict) or not isinstance(payload.get("nodes"), list) or not payload.get("nodes"):
+            return (
+                "continue",
+                "init_generic completed without a usable spawned_subgraph.nodes plan; downstream generic fallback planning can still continue.",
+            )
+
+    if node.node_id in {"register", "retry_register"}:
+        payload = result.spawned_subgraph
+        if not isinstance(payload, dict):
+            return (
+                "finalize",
+                f"{node.node_id} completed without structured benchmark registration details.",
+            )
+        selected_tools = payload.get("selected_tools")
+        blocked_tools = payload.get("blocked_tools")
+        has_selected = isinstance(selected_tools, list) and bool(selected_tools)
+        has_blocked = isinstance(blocked_tools, list) and bool(blocked_tools)
+        if not (has_selected or has_blocked):
+            return (
+                "finalize",
+                f"{node.node_id} completed but did not identify selected or blocked benchmark tools.",
+            )
+
+    if node.node_id == "init_report":
+        if result.status == "partial":
+            return (
+                "finalize",
+                "init_report was only partial, so the report contract is not reliable enough for evidence lanes.",
+            )
+        has_artifact = bool(result.artifacts)
+        has_evidence = bool(result.evidence)
+        mentions_contract = "contract" in result.summary.casefold() or "报告" in result.summary
+        if not (has_artifact or has_evidence or mentions_contract):
+            return (
+                "finalize",
+                "init_report completed but did not expose a report contract, artifact, or evidence note.",
+            )
+
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    if (
+        str(metadata.get("task_type", "")).strip() == "github2workspace"
+        and node.node_id in {"wdl", "retry_wdl"}
+        and result.status == "completed"
+    ):
+        if not _github2workspace_has_verified_main_wdl_run_evidence(metadata):
+            return (
+                "finalize",
+                f"{node.node_id} reported completed, but no successful main-function miniwdl run evidence was found; a checked WDL file alone is not enough.",
+            )
+        if _github2workspace_has_only_smoke_wdl_evidence(metadata):
+            return (
+                "finalize",
+                f"{node.node_id} reported completed, but only smoke-level WDL evidence was found; the main operator workflow is not yet validated.",
+            )
+
+    return "continue", "Node outcome is sufficient to continue."
+
+
+def _node_decision_finalizing_nodes(round_result: TaskExecutionRound) -> list[str]:
+    nodes: list[str] = []
+    for result in round_result.node_results:
+        if result.failure_reason != "node_decision_finalize":
+            continue
+        payload = result.spawned_subgraph
+        if isinstance(payload, dict) and isinstance(payload.get("node_id"), str):
+            nodes.append(str(payload["node_id"]))
+        else:
+            nodes.append(result.node_id)
+    return nodes
+
+
+def _github2workspace_has_only_smoke_wdl_evidence(metadata: dict[str, object]) -> bool:
+    run_dir_raw = metadata.get("run_dir")
+    if not isinstance(run_dir_raw, str) or not run_dir_raw.strip():
+        return False
+    run_dir = Path(run_dir_raw)
+    workspace_root = run_dir.parent.parent if run_dir.parent.name == "orchestration_runs" else run_dir.parent
+    primary_outputs = workspace_root / "results" / "wdl_result" / "outputs.json"
+    if primary_outputs.exists() and primary_outputs.stat().st_size > 0:
+        return False
+    smoke_root = run_dir / "wdl_smoke_run"
+    if not smoke_root.exists():
+        return False
+    for workflow_dir in smoke_root.iterdir():
+        if not workflow_dir.is_dir():
+            continue
+        outputs_path = workflow_dir / "outputs.json"
+        workflow_log = workflow_dir / "workflow.log"
+        if not outputs_path.exists() or outputs_path.stat().st_size == 0 or not workflow_log.exists():
+            continue
+        try:
+            log_text = workflow_log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "exit_code: 0" in log_text:
+            return True
+    return False
+
+
+def _github2workspace_has_verified_main_wdl_run_evidence(metadata: dict[str, object]) -> bool:
+    run_dir_raw = metadata.get("run_dir")
+    if not isinstance(run_dir_raw, str) or not run_dir_raw.strip():
+        return False
+    run_dir = Path(run_dir_raw)
+    workspace_root = run_dir.parent.parent if run_dir.parent.name == "orchestration_runs" else run_dir.parent
+
+    primary_outputs = workspace_root / "results" / "wdl_result" / "outputs.json"
+    if primary_outputs.exists() and primary_outputs.stat().st_size > 0:
+        return True
+
+    for outputs_path in sorted(run_dir.rglob("outputs.json")):
+        parent = outputs_path.parent
+        if "wdl_smoke_run" in outputs_path.parts:
+            continue
+        if outputs_path.stat().st_size == 0:
+            continue
+        workflow_log = parent / "workflow.log"
+        if not workflow_log.exists():
+            workflow_log = parent.parent / "workflow.log"
+        if not workflow_log.exists():
+            continue
+        try:
+            log_text = workflow_log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "exit_code: 0" in log_text or "done" in log_text.casefold():
+            return True
+
+    return False

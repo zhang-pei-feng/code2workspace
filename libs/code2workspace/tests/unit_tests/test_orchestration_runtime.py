@@ -20,6 +20,7 @@ from code2workspace.orchestration_runtime import (
     WorkerResult,
     classify_task,
     classify_task_with_model,
+    decide_supervisor_step,
     execute_graph_round,
 )
 
@@ -47,6 +48,9 @@ def test_planner_creates_github2workspace_graph() -> None:
     assert graph.nodes[1].capability_bundles == ["docker_build_run", "validate"]
     assert graph.nodes[2].capability_bundles == ["wdl_run", "validate"]
     assert graph.nodes[3].capability_bundles == ["summarize"]
+    assert graph.nodes[0].metadata["decision_check"] is True
+    assert graph.nodes[1].metadata["decision_check"] is True
+    assert graph.nodes[2].metadata["decision_check"] is True
 
 
 @pytest.mark.asyncio
@@ -358,28 +362,7 @@ def test_planner_creates_report_graph() -> None:
 def test_planner_excludes_explicitly_forbidden_benchmark_tools() -> None:
     planner = HeuristicSupervisorPlanner()
     benchmark_root = Path.cwd() / "workspace" / "test-benchmark-catalog-exclude"
-    catalog_path = benchmark_root / "datasets" / "benchmark_catalog.json"
-    catalog_path.parent.mkdir(parents=True, exist_ok=True)
-    catalog_path.write_text(
-        json.dumps(
-            {
-                "datasets": {
-                    "shared-dataset": {
-                        "dataset_id": "shared-dataset",
-                        "description": "shared benchmark fixture",
-                        "shared_between": ["spades", "megahit", "canu", "Flye"],
-                    }
-                },
-                "repo_cases": {
-                    "spades": {"dataset_key": "shared-dataset"},
-                    "megahit": {"dataset_key": "shared-dataset"},
-                    "canu": {"dataset_key": "shared-dataset"},
-                    "Flye": {"dataset_key": "shared-dataset"},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
+    benchmark_root.mkdir(parents=True, exist_ok=True)
 
     graph = planner.plan_round(
         task=(
@@ -391,39 +374,18 @@ def test_planner_excludes_explicitly_forbidden_benchmark_tools() -> None:
     )
 
     assert graph.task_type == "benchmark"
-    assert graph.nodes[0].metadata["selected_tools"] == ["canu", "Flye"]
+    assert graph.nodes[0].metadata["selected_tools"] == []
     assert sorted(graph.nodes[0].metadata["excluded_tools"]) == ["megahit", "spades"]
 
 
-def test_planner_selects_benchmark_tools_from_catalog_dataset() -> None:
+def test_planner_detects_benchmark_root_from_task_path() -> None:
     planner = HeuristicSupervisorPlanner()
     benchmark_root = Path.cwd() / "workspace" / "test-benchmark-catalog"
-    catalog_path = benchmark_root / "datasets" / "benchmark_catalog.json"
-    catalog_path.parent.mkdir(parents=True, exist_ok=True)
-    dataset_key = "short-read-ecoli-srr001666"
-    expected_tools = ["assembler-a", "assembler-b"]
-    catalog_path.write_text(
-        json.dumps(
-            {
-                "datasets": {
-                    dataset_key: {
-                        "dataset_id": "SRR001666",
-                        "description": "short read fixture",
-                        "shared_between": expected_tools,
-                    }
-                },
-                "repo_cases": {
-                    "assembler-a": {"dataset_key": dataset_key},
-                    "assembler-b": {"dataset_key": dataset_key},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
+    benchmark_root.mkdir(parents=True, exist_ok=True)
 
     graph = planner.plan_round(
         task=(
-            f"我想评估 {benchmark_root} 里的 {dataset_key} 数据集在不同组装工具上的表现。"
+            f"我想评估 {benchmark_root} 里的 short-read-ecoli-srr001666 数据集在不同组装工具上的表现。"
             "请你自己决定应该跑哪些合适的工具，最后比较 contig_count、assembly_size、n50。"
         ),
         retrieved_cases=[],
@@ -432,10 +394,11 @@ def test_planner_selects_benchmark_tools_from_catalog_dataset() -> None:
 
     assert graph.task_type == "benchmark"
     assert [node.node_id for node in graph.nodes] == ["register"]
-    assert graph.nodes[0].metadata["selected_tools"] == expected_tools
+    assert graph.nodes[0].metadata["selected_tools"] == []
+    assert graph.nodes[0].metadata["benchmark_root"] == str(benchmark_root.resolve())
 
 
-def test_planner_discovers_shared_benchmark_tools_without_catalog(tmp_path: Path) -> None:
+def test_planner_keeps_register_shape_for_benchmark_asset_paths(tmp_path: Path) -> None:
     planner = HeuristicSupervisorPlanner()
     benchmark_root = tmp_path / "arbitrary-benchmark-assets"
     canu_dir = benchmark_root / "新冠病毒组装" / "002_canu"
@@ -463,11 +426,11 @@ def test_planner_discovers_shared_benchmark_tools_without_catalog(tmp_path: Path
     )
 
     assert graph.task_type == "benchmark"
-    assert graph.nodes[0].metadata["selected_tools"] == ["Flye", "canu"]
+    assert graph.nodes[0].metadata["selected_tools"] == []
     assert graph.nodes[0].metadata["excluded_tools"] == []
 
 
-def test_planner_selects_multiple_tools_from_family_hint_when_datasets_are_not_shared(
+def test_planner_keeps_register_shape_for_family_hint_paths(
     tmp_path: Path,
 ) -> None:
     planner = HeuristicSupervisorPlanner()
@@ -504,7 +467,7 @@ def test_planner_selects_multiple_tools_from_family_hint_when_datasets_are_not_s
     )
 
     assert graph.task_type == "benchmark"
-    assert graph.nodes[0].metadata["selected_tools"] == ["ACValidator", "AutoCirc"]
+    assert graph.nodes[0].metadata["selected_tools"] == []
 
 
 def test_planner_expands_benchmark_workers_after_register_selects_tools() -> None:
@@ -535,7 +498,7 @@ def test_planner_expands_benchmark_workers_after_register_selects_tools() -> Non
         prior_rounds=[prior_round],
     )
 
-    assert [node.node_id for node in graph.nodes] == ["prebuild_canu", "prebuild_Flye"]
+    assert [node.node_id for node in graph.nodes] == ["canu", "Flye", "summarize"]
 
 
 def test_planner_expands_benchmark_workers_after_partial_register_with_ready_tools() -> None:
@@ -572,49 +535,8 @@ def test_planner_expands_benchmark_workers_after_partial_register_with_ready_too
     )
 
     assert [node.node_id for node in graph.nodes] == [
-        "prebuild_ACValidator",
-        "prebuild_AutoCirc",
-    ]
-
-
-def test_planner_expands_benchmark_runs_after_prebuild_ready_tools() -> None:
-    planner = HeuristicSupervisorPlanner()
-    prior_round_graph = TaskGraph(
-        graph_id="benchmark-r2",
-        task_type="benchmark",
-        round_index=2,
-        nodes=[
-            TaskNode(
-                node_id="prebuild_ACValidator",
-                title="Prebuild ACValidator",
-                objective="prebuild",
-                capability_bundles=["docker_build_run", "validate"],
-            ),
-            TaskNode(
-                node_id="prebuild_AutoCirc",
-                title="Prebuild AutoCirc",
-                objective="prebuild",
-                capability_bundles=["docker_build_run", "validate"],
-            ),
-        ],
-        edges=[],
-    )
-    prior_round = awaitable_round(
-        graph=prior_round_graph,
-        statuses={
-            "prebuild_ACValidator": "completed",
-            "prebuild_AutoCirc": "blocked",
-        },
-    )
-
-    graph = planner.plan_round(
-        task="我想评估 circRNA benchmark 数据集在不同工具上的表现。",
-        retrieved_cases=[],
-        prior_rounds=[prior_round],
-    )
-
-    assert [node.node_id for node in graph.nodes] == [
         "ACValidator",
+        "AutoCirc",
         "summarize",
     ]
 
@@ -654,37 +576,6 @@ def test_planner_summarizes_when_partial_register_has_only_blocked_tools() -> No
     )
 
     assert [node.node_id for node in graph.nodes] == ["summarize"]
-
-
-def test_planner_summarizes_when_prebuild_has_only_blocked_tools() -> None:
-    planner = HeuristicSupervisorPlanner()
-    prior_round_graph = TaskGraph(
-        graph_id="benchmark-r2",
-        task_type="benchmark",
-        round_index=2,
-        nodes=[
-            TaskNode(
-                node_id="prebuild_ACValidator",
-                title="Prebuild ACValidator",
-                objective="prebuild",
-                capability_bundles=["docker_build_run", "validate"],
-            )
-        ],
-        edges=[],
-    )
-    prior_round = awaitable_round(
-        graph=prior_round_graph,
-        statuses={"prebuild_ACValidator": "blocked"},
-    )
-
-    graph = planner.plan_round(
-        task="我想评估 circRNA benchmark 数据集在不同工具上的表现。",
-        retrieved_cases=[],
-        prior_rounds=[prior_round],
-    )
-
-    assert [node.node_id for node in graph.nodes] == ["summarize"]
-
 
 @pytest.mark.asyncio
 async def test_execute_graph_round_marks_failed_dependencies_blocked() -> None:
@@ -803,6 +694,90 @@ async def test_execute_graph_round_allows_partial_dependencies_to_continue() -> 
     assert by_node["canu"].status == "partial"
     assert by_node["Flye"].status == "completed"
     assert by_node["summarize"].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_execute_graph_round_stops_after_node_decision_check() -> None:
+    graph = TaskGraph(
+        graph_id="graph-decision-stop",
+        task_type="github2workspace",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="inspect",
+                title="Inspect",
+                objective="inspect repo",
+                capability_bundles=["repo_fetch"],
+                metadata={"decision_check": True},
+            ),
+            TaskNode(
+                node_id="summarize",
+                title="Summarize",
+                objective="summarize outcome",
+                capability_bundles=["summarize"],
+            ),
+        ],
+        edges=[TaskEdge(source="inspect", target="summarize")],
+    )
+    seen: list[str] = []
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        seen.append(node.node_id)
+        if node.node_id == "inspect":
+            return WorkerResult(
+                status="failed",
+                summary="inspect failed",
+                failure_reason="network",
+            )
+        raise AssertionError("summarize should not run after a finalizing node decision check")
+
+    result = await execute_graph_round(graph, worker_runner)
+    decision = decide_supervisor_step(result)
+
+    by_node = {item.node_id: item for item in result.node_results}
+    assert seen == ["inspect"]
+    assert by_node["inspect"].status == "failed"
+    assert by_node["check_inspect"].status == "partial"
+    assert by_node["summarize"].status == "blocked"
+    assert by_node["summarize"].failure_reason == "blocked_by_node_decision_check"
+    assert decision.decision == "stop"
+    assert decision.reason == "Node decision check requested finalization."
+    assert decision.failed_nodes == ["inspect"]
+
+
+@pytest.mark.asyncio
+async def test_node_decision_check_allows_fallback_for_unusable_generic_plan() -> None:
+    graph = TaskGraph(
+        graph_id="graph-decision-check",
+        task_type="generic",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="init_generic",
+                title="Plan generic graph",
+                objective="plan",
+                capability_bundles=["plan", "validate"],
+                metadata={"decision_check": True},
+            )
+        ],
+        edges=[],
+    )
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:  # noqa: ARG001
+        return WorkerResult(
+            status="completed",
+            summary="I finished, but forgot to return spawned_subgraph.",
+        )
+
+    result = await execute_graph_round(graph, worker_runner)
+    decision = decide_supervisor_step(result)
+
+    by_node = {item.node_id: item for item in result.node_results}
+    assert by_node["init_generic"].status == "completed"
+    assert decision.decision == "stop"
+    assert decision.reason == "All nodes completed."
+    assert "check_init_generic" not in by_node
+    assert decision.failed_nodes == []
 
 
 @pytest.mark.asyncio

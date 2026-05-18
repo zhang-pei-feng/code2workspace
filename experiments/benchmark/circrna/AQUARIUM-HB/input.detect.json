@@ -1,0 +1,15 @@
+{
+  "AQUARIUM_HB_Workflow.mode": "detect",
+  "AQUARIUM_HB_Workflow.fastq1": "/path/to/sample_1.fastq.gz",
+  "AQUARIUM_HB_Workflow.fastq2": "/path/to/sample_2.fastq.gz",
+  "AQUARIUM_HB_Workflow.reference_fasta": "/path/to/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa",
+  "AQUARIUM_HB_Workflow.reference_gtf": "/path/to/Homo_sapiens.GRCh38.94.chr.gtf",
+  "AQUARIUM_HB_Workflow.reference_fasta_bwt": "/path/to/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.bwt",
+  "AQUARIUM_HB_Workflow.reference_fasta_pac": "/path/to/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.pac",
+  "AQUARIUM_HB_Workflow.reference_fasta_ann": "/path/to/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.ann",
+  "AQUARIUM_HB_Workflow.reference_fasta_amb": "/path/to/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.amb",
+  "AQUARIUM_HB_Workflow.reference_fasta_sa": "/path/to/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa.sa",
+  "AQUARIUM_HB_Workflow.cpu": 4,
+  "AQUARIUM_HB_Workflow.memory": "16GB",
+  "AQUARIUM_HB_Workflow.docker_image": "benchmark/aquarium-hb:zpf_v0"
+}

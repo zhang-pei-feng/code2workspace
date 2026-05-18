@@ -97,8 +97,9 @@ RUN sed -i 's|SAMTOOLSPATH = "/packages/samtools/1.4.1/bin/samtools"|SAMTOOLSPAT
 # Install ACValidator
 RUN python2.7 -m pip install .
 
-# Create reference directory
-RUN mkdir -p /data/reference
+# Create reference directory and keep it writable when miniwdl runs the
+# container as the invoking host user via --as-me.
+RUN mkdir -p /data/reference && chmod 0777 /data /data/reference
 
 # Set working directory
 WORKDIR /work

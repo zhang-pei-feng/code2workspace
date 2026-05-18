@@ -448,6 +448,94 @@ class TestToolDisplayInLogs:
         assert "Task completed" not in stderr
         assert "Running task" not in stderr
 
+    def test_process_ai_message_hides_leaked_classifier_prefix(self) -> None:
+        """Leading supervisor classifier JSON should not become user-visible text."""
+        console = Console(file=io.StringIO(), force_terminal=False, color_system=None)
+        state = StreamState(quiet=True, stream=False)
+
+        classifier_msg = MagicMock(spec=AIMessage)
+        classifier_msg.usage_metadata = None
+        classifier_msg.content_blocks = [
+            {
+                "type": "text",
+                "text": (
+                    '{"task_type":"generic","confidence":0.98,"reason":"quick reply",'
+                    '"matched_signals":["口头判断"]}'
+                ),
+            }
+        ]
+        final_msg = MagicMock(spec=AIMessage)
+        final_msg.usage_metadata = None
+        final_msg.content_blocks = [{"type": "text", "text": "先说结论。"}]
+
+        _process_ai_message(classifier_msg, state, console)
+        _process_ai_message(final_msg, state, console)
+
+        assert "".join(state.full_response) == "先说结论。"
+
+    async def test_quiet_stdout_hides_leaked_classifier_prefix(self) -> None:
+        """Quiet stdout should suppress leaked classifier JSON before final text."""
+        classifier_msg = MagicMock(spec=AIMessage)
+        classifier_msg.content_blocks = [
+            {
+                "type": "text",
+                "text": (
+                    '{"task_type":"generic","confidence":0.98,"reason":"quick reply",'
+                    '"matched_signals":["口头判断"]}'
+                ),
+            }
+        ]
+        final_msg = MagicMock(spec=AIMessage)
+        final_msg.content_blocks = [{"type": "text", "text": "口头判断：大概率会抬升。"}]
+        stream_chunks = [
+            ("", "messages", (classifier_msg, {})),
+            ("", "messages", (final_msg, {})),
+        ]
+
+        stdout_buf = io.StringIO()
+        stderr_buf = io.StringIO()
+
+        mock_agent = MagicMock()
+        mock_agent.astream = MagicMock(return_value=_async_iter(stream_chunks))
+        mock_server_proc = MagicMock()
+
+        with (
+            patch(
+                "code2workspace_cli.non_interactive.create_model",
+                return_value=ModelResult(
+                    model=MagicMock(),
+                    model_name="test-model",
+                    provider="test",
+                ),
+            ),
+            patch(
+                "code2workspace_cli.non_interactive.generate_thread_id",
+                return_value="test-thread",
+            ),
+            patch(
+                "code2workspace_cli.non_interactive.settings",
+            ) as mock_settings,
+            patch(
+                "code2workspace_cli.non_interactive.build_langsmith_thread_url",
+                return_value=None,
+            ),
+            patch(
+                "code2workspace_cli.server_manager.start_server_and_get_agent",
+                new_callable=AsyncMock,
+                return_value=(mock_agent, mock_server_proc, None),
+            ),
+            patch.object(sys, "stdout", stdout_buf),
+            patch.object(sys, "stderr", stderr_buf),
+        ):
+            mock_settings.shell_allow_list = None
+            mock_settings.has_tavily = False
+            mock_settings.model_name = None
+
+            await run_non_interactive(message="test", quiet=True)
+
+        assert stdout_buf.getvalue() == "口头判断：大概率会抬升。\n"
+        assert '"task_type":"generic"' not in stdout_buf.getvalue()
+
     def test_write_todos_tool_message_emits_plan_summary(self) -> None:
         console_output = io.StringIO()
         console = Console(file=console_output, force_terminal=False, color_system=None)

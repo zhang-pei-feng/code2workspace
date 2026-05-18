@@ -1,9 +1,21 @@
 # Monitoring Lane Guidance
 
 - Focus on official surveillance and operational monitoring only.
+- Establish scope before depth: identify the topic, geography, time window, required freshness, and minimum source coverage before searching or fetching.
+- Use this source priority order unless the report contract says otherwise:
+  - user-specified sources
+  - whitelisted official or primary sources
+  - curated project skills, local catalogs, structured APIs, and local data stores
+  - targeted search within trusted domains
+  - full-web search only for source discovery or evidence-gap fallback
+- Default to D2 evidence depth: targeted trusted-source search plus fetching/reading the concrete page, PDF, CSV, JSON, dashboard export, or report needed to support each finding.
+- Escalate to D3 when the task asks for trends, recent change, watch items, or time-series comparison; inspect report collections or historical records over the explicit time window.
+- Escalate to D4 only for high-stakes, highly uncertain, contested, or user-requested comprehensive monitoring tasks; use full-web discovery plus cross-source confirmation.
+- Do not treat full-web search hits as strong evidence unless they lead to official, primary, academic, or otherwise clearly reliable sources, or unless multiple reliable sources corroborate the same claim.
 - Minimum output is:
   - one lane brief
   - 2-4 source-backed monitoring findings
+  - source priority and depth actually used
   - explicit evidence-strength note
   - explicit uncertainty note
 - As soon as the minimum lane brief exists, stop and return structured JSON.

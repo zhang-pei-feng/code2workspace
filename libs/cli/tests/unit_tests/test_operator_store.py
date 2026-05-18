@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path  # noqa: TC003
 
+import code2workspace_cli.operator_store as operator_store_mod
 from code2workspace_cli.operator_store import (
     OperatorSearchFilter,
     OperatorStore,
@@ -59,14 +60,29 @@ def test_operator_store_writes_manifest_and_queries_index(tmp_path: Path) -> Non
     )
     assert rows == [
         {
-            "id": "benchmark:spades:run-1",
+            "id": "benchmark:spades",
             "name": "spades",
             "family": "benchmark",
             "version": "run-1",
             "status": "registered_ready",
             "manifest_path": str(manifest_path),
+            "operator_path": str(
+                tmp_path / "operator_store" / "operators" / "benchmark-spades" / "operator.json"
+            ),
+            "validation_path": str(
+                tmp_path / "operator_store" / "operators" / "benchmark-spades" / "validations" / "run-1.json"
+            ),
         }
     ]
+    assert (
+        tmp_path / "operator_store" / "operators" / "benchmark-spades" / "operator.json"
+    ).exists()
+    assert (
+        tmp_path / "operator_store" / "operators" / "benchmark-spades" / "versions" / "run-1.json"
+    ).exists()
+    assert (
+        tmp_path / "operator_store" / "operators" / "benchmark-spades" / "validations" / "run-1.json"
+    ).exists()
 
 
 def test_operator_store_rebuilds_index_from_file_manifests(tmp_path: Path) -> None:
@@ -111,6 +127,7 @@ def test_operator_store_rebuilds_index_from_file_manifests(tmp_path: Path) -> No
 
     assert count == 1
     rows = rebuilt.search(OperatorSearchFilter(status="blocked"))
+    assert rows[0]["id"] == "benchmark:esm"
     assert rows[0]["manifest_path"] == str(manifest_path)
 
 
@@ -145,7 +162,7 @@ def test_github2workspace_manifest_indexes_docker_product(tmp_path: Path) -> Non
             tag="github2workspace",
         )
     )
-    assert rows[0]["id"] == "github2workspace:spades:run-1"
+    assert rows[0]["id"] == "github2workspace:spades"
     assert rows[0]["manifest_path"] == str(manifest_path)
 
 
@@ -175,3 +192,112 @@ def test_github2workspace_manifest_marks_synthetic_input_tag(tmp_path: Path) -> 
     )
 
     assert "synthetic-inputs" in manifest["tags"]
+
+
+def test_operator_store_search_supports_text_query(tmp_path: Path) -> None:
+    store = OperatorStore(tmp_path / "operator_store")
+    run_dir = tmp_path / "workspace" / "orchestration_runs" / "run-1"
+    case_dir = run_dir / "cases" / "megahit"
+    case_dir.mkdir(parents=True)
+    manifest = build_benchmark_operator_manifest(
+        product_id="benchmark:megahit:run-1",
+        name="megahit",
+        version="run-1",
+        run_dir=run_dir,
+        case_dir=case_dir,
+        case_manifest={
+            "repo_name": "megahit",
+            "dataset_key": "short-read-ecoli",
+            "metric_keys": ["n50"],
+            "expected_outputs": ["contigs.fasta"],
+            "selected_input_files": {
+                "reads_1": "/data/reads_1.fastq.gz",
+                "reads_2": "/data/reads_2.fastq.gz",
+            },
+        },
+        ready_payload={
+            "ready": True,
+            "runtime_image": "benchmark/megahit:test",
+            "wdl_path": "/work/megahit.wdl",
+            "inputs_json_path": "/work/input.json",
+        },
+        status="registered_ready",
+        validation_summary="Short-read assembler for metagenomic contig generation.",
+    )
+
+    store.write_manifest(manifest)
+    rows = store.search(
+        OperatorSearchFilter(
+            query="metagenomic contig assembler",
+            family="benchmark",
+            input_media_type="fastq",
+            output_media_type="fasta",
+        )
+    )
+
+    assert rows
+    assert rows[0]["id"] == "benchmark:megahit"
+
+
+def test_operator_store_search_supports_semantic_query(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = OperatorStore(tmp_path / "operator_store")
+    run_dir = tmp_path / "workspace" / "orchestration_runs" / "run-1"
+    case_dir = run_dir / "cases" / "spades"
+    case_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        operator_store_mod,
+        "_embed_documents",
+        lambda texts: ([[0.1, 0.2, 0.3] for _ in texts], "mock-embedding"),
+    )
+    monkeypatch.setattr(
+        operator_store_mod,
+        "_embed_query",
+        lambda text: ([0.1, 0.2, 0.3], "mock-embedding"),
+    )
+
+    manifest = build_benchmark_operator_manifest(
+        product_id="benchmark:spades:run-1",
+        name="spades",
+        version="run-1",
+        run_dir=run_dir,
+        case_dir=case_dir,
+        case_manifest={
+            "repo_name": "spades",
+            "dataset_key": "short-read-ecoli",
+            "metric_keys": ["n50"],
+            "expected_outputs": ["contigs.fasta"],
+            "selected_input_files": {
+                "reads_1": "/data/reads_1.fastq.gz",
+                "reads_2": "/data/reads_2.fastq.gz",
+            },
+        },
+        ready_payload={
+            "ready": True,
+            "runtime_image": "benchmark/spades:test",
+            "wdl_path": "/work/spades.wdl",
+            "inputs_json_path": "/work/input.json",
+        },
+        status="registered_ready",
+        validation_summary="Iterative de Bruijn graph assembler.",
+    )
+
+    store.write_manifest(manifest)
+    assert (
+        tmp_path / "operator_store" / "operators" / "benchmark-spades" / "embedding.json"
+    ).exists()
+
+    rows = store.search(
+        OperatorSearchFilter(
+            query="latent semantic retrieval probe",
+            family="benchmark",
+            input_media_type="fastq",
+            output_media_type="fasta",
+        )
+    )
+
+    assert rows
+    assert rows[0]["id"] == "benchmark:spades"

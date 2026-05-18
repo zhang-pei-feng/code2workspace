@@ -22,7 +22,11 @@ from typing import Any
 SHARED_HELPER_DIR = Path(__file__).resolve().parents[3] / "_shared-superagent-helpers" / "scripts"
 if str(SHARED_HELPER_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_HELPER_DIR))
+CLI_LIB_DIR = Path(__file__).resolve().parents[5] / "libs" / "cli"
+if str(CLI_LIB_DIR) not in sys.path:
+    sys.path.insert(0, str(CLI_LIB_DIR))
 
+from code2workspace_cli.benchmark_result_store import BenchmarkResultStore
 from common import create_skill_run_dir, ensure_dir, read_json, write_json, write_text
 
 
@@ -1028,6 +1032,11 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_jsonable(value: object) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _fasta_stats(path: Path) -> dict[str, Any]:
     lengths: list[int] = []
     current = 0
@@ -1105,6 +1114,213 @@ def _analysis_for_case(case_dir: Path, case_manifest: dict[str, Any]) -> dict[st
         "artifact_checksums": checksums,
         "metrics": metrics,
     }
+
+
+def _benchmark_comparison_history_store_root_for_run_dir(run_dir: Path) -> Path:
+    if run_dir.parent.name == "orchestration_runs":
+        return run_dir.parent.parent / "benchmark_comparison_history_store"
+    return run_dir.parent / "benchmark_comparison_history_store"
+
+
+def _benchmark_workflow_signature_from_manifest(case_manifest: dict[str, Any]) -> str:
+    workflow_path_raw = case_manifest.get("wdl_path")
+    if not isinstance(workflow_path_raw, str) or not workflow_path_raw.strip():
+        return ""
+    workflow_path = Path(workflow_path_raw.strip())
+    if not workflow_path.exists():
+        return ""
+    return _sha256(workflow_path)
+
+
+def _benchmark_input_signature_from_manifest(case_manifest: dict[str, Any]) -> str:
+    selected_input_files = case_manifest.get("selected_input_files", {})
+    if isinstance(selected_input_files, dict) and selected_input_files:
+        normalized = {str(key): str(value) for key, value in selected_input_files.items()}
+        return _sha256_jsonable(normalized)
+    inputs_path_raw = case_manifest.get("inputs_path")
+    if isinstance(inputs_path_raw, str) and inputs_path_raw.strip():
+        inputs_path = Path(inputs_path_raw.strip())
+        if inputs_path.exists():
+            return _sha256(inputs_path)
+    return ""
+
+
+def _selected_input_names(selected_input_files: dict[str, str]) -> list[str]:
+    return sorted(str(name) for name in selected_input_files.keys())
+
+
+def _history_record_status_payload(case_dir: Path) -> tuple[dict[str, Any], str]:
+    run_status_path = case_dir / "run" / "status.json"
+    wdl_status_path = case_dir / "wdl" / "status.json"
+    run_status = read_json(run_status_path) if run_status_path.exists() else {}
+    wdl_status = read_json(wdl_status_path) if wdl_status_path.exists() else {}
+
+    if bool(wdl_status.get("success")) or (not run_status and wdl_status):
+        payload = dict(wdl_status)
+        payload.setdefault("status_path", str(wdl_status_path))
+        payload.setdefault("execution_mode", "wdl")
+        return payload, "wdl"
+    if run_status:
+        payload = dict(run_status)
+        payload.setdefault("status_path", str(run_status_path))
+        payload.setdefault("execution_mode", "repo_native")
+        return payload, "repo_native"
+    if wdl_status:
+        payload = dict(wdl_status)
+        payload.setdefault("status_path", str(wdl_status_path))
+        payload.setdefault("execution_mode", "wdl")
+        return payload, "wdl"
+    return {}, "none"
+
+
+def _write_wdl_result_manifest(
+    *,
+    case_dir: Path,
+    case_manifest: dict[str, Any],
+    status_payload: dict[str, Any],
+    analysis_payload: dict[str, Any],
+) -> Path:
+    result_manifest_path = case_dir / "wdl" / "result_manifest.json"
+    artifact_paths = [
+        Path(item)
+        for item in analysis_payload.get("artifact_paths", [])
+        if isinstance(item, str) and item.strip()
+    ]
+    expected_outputs = {
+        path.name: {
+            "path": str(path),
+            "exists": path.exists(),
+            "size_bytes": path.stat().st_size if path.exists() else None,
+        }
+        for path in artifact_paths
+    }
+    payload = {
+        "repo": case_manifest.get("repo_name"),
+        "dataset_key": case_manifest.get("dataset_key"),
+        "status": "completed" if bool(status_payload.get("success")) else "failed",
+        "success": bool(status_payload.get("success")),
+        "returncode": status_payload.get("returncode"),
+        "elapsed_seconds": status_payload.get("elapsed_seconds"),
+        "command": status_payload.get("command"),
+        "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
+        "output_dir": str(case_dir / "wdl"),
+        "expected_outputs": expected_outputs,
+        "lightweight_evidence": {
+            "wdl_outputs": {
+                "path": str(case_dir / "wdl" / "outputs.json"),
+                "size_bytes": (case_dir / "wdl" / "outputs.json").stat().st_size
+                if (case_dir / "wdl" / "outputs.json").exists()
+                else None,
+            },
+            "artifact_paths": [str(path) for path in artifact_paths],
+        },
+        "failure_reason": status_payload.get("failure_reason"),
+    }
+    write_json(result_manifest_path, payload)
+    return result_manifest_path
+
+
+def _materialize_benchmark_comparison_history_record(
+    *,
+    run_dir: Path,
+    repo: str,
+    case_manifest: dict[str, Any],
+    analysis_payload: dict[str, Any],
+    analysis_markdown: str,
+) -> Path | None:
+    case_dir = _case_dir(run_dir, repo)
+    status_payload, execution_mode = _history_record_status_payload(case_dir)
+    if not status_payload:
+        return None
+
+    selected_input_files = case_manifest.get("selected_input_files", {})
+    selected_input_files_payload = (
+        {str(key): str(value) for key, value in selected_input_files.items()}
+        if isinstance(selected_input_files, dict)
+        else {}
+    )
+    result_manifest_path = case_dir / "run" / "result_manifest.json"
+    if execution_mode == "wdl" and not result_manifest_path.exists():
+        result_manifest_path = _write_wdl_result_manifest(
+            case_dir=case_dir,
+            case_manifest=case_manifest,
+            status_payload=status_payload,
+            analysis_payload=analysis_payload,
+        )
+    result_manifest = read_json(result_manifest_path) if result_manifest_path.exists() else {}
+    metrics = analysis_payload.get("metrics", {}) if isinstance(analysis_payload.get("metrics"), dict) else {}
+    canonical_parts = [
+        repo,
+        str(case_manifest.get("operator_id", "")).strip(),
+        str(case_manifest.get("dataset_key", "")).strip(),
+        str(case_manifest.get("wdl_workflow_name", "")).strip(),
+        str(case_manifest.get("wdl_path", "")).strip(),
+        " ".join(_selected_input_names(selected_input_files_payload)),
+        " ".join(str(key) for key in metrics.keys()),
+        json.dumps(selected_input_files_payload, ensure_ascii=False, sort_keys=True),
+        execution_mode,
+    ]
+    record = {
+        "record_id": f"benchmark-result:{repo}:{run_dir.name}",
+        "repo": repo,
+        "operator_id": str(case_manifest.get("operator_id", "")).strip(),
+        "dataset_key": str(case_manifest.get("dataset_key", "")).strip(),
+        "benchmark_root": str(case_manifest.get("source_case_dir", "")).strip(),
+        "workflow_path": str(case_manifest.get("wdl_path", "")).strip(),
+        "workflow_signature": _benchmark_workflow_signature_from_manifest(case_manifest),
+        "inputs_json_path": str(case_manifest.get("inputs_path", "")).strip(),
+        "input_signature": _benchmark_input_signature_from_manifest(case_manifest),
+        "selected_input_files": selected_input_files_payload,
+        "selected_input_names": _selected_input_names(selected_input_files_payload),
+        "result_files": [
+            str(item)
+            for item in analysis_payload.get("artifact_paths", [])
+            if isinstance(item, str) and Path(item).exists()
+        ],
+        "metrics": metrics,
+        "success": bool(status_payload.get("success")),
+        "returncode": status_payload.get("returncode"),
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir),
+        "case_dir": str(case_dir),
+        "status_path": str(status_payload.get("status_path", "")),
+        "wdl_status_path": str(case_dir / "wdl" / "status.json"),
+        "result_manifest_path": str(result_manifest_path),
+        "analysis_path": str(case_dir / "analysis.json"),
+        "status_payload": status_payload,
+        "wdl_status_payload": read_json(case_dir / "wdl" / "status.json") if (case_dir / "wdl" / "status.json").exists() else {},
+        "result_manifest": result_manifest,
+        "analysis_payload": analysis_payload,
+        "analysis_markdown": analysis_markdown,
+        "canonical_text": "\n".join(part for part in canonical_parts if part),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    store = BenchmarkResultStore(_benchmark_comparison_history_store_root_for_run_dir(run_dir))
+    return store.write_record(record)
+
+
+def _materialize_benchmark_comparison_history_for_run(run_dir: Path) -> list[str]:
+    manifest = _load_root_manifest(run_dir)
+    record_paths: list[str] = []
+    for repo in manifest.get("case_order", []):
+        case_manifest = _load_case_manifest(run_dir, repo)
+        case_dir = _case_dir(run_dir, repo)
+        analysis_payload = read_json(case_dir / "analysis.json") if (case_dir / "analysis.json").exists() else _analysis_for_case(case_dir, case_manifest)
+        analysis_markdown = (
+            (case_dir / "analysis.md").read_text(encoding="utf-8")
+            if (case_dir / "analysis.md").exists()
+            else ""
+        )
+        record_path = _materialize_benchmark_comparison_history_record(
+            run_dir=run_dir,
+            repo=repo,
+            case_manifest=case_manifest,
+            analysis_payload=analysis_payload,
+            analysis_markdown=analysis_markdown,
+        )
+        if record_path is not None:
+            record_paths.append(str(record_path))
+    return record_paths
 
 
 def _run_build_command(command: list[str], *, cwd: Path, log_path: Path, timeout_seconds: int) -> dict[str, Any]:
@@ -1943,6 +2159,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
         case_manifest = _load_case_manifest(run_dir, repo)
         case_dir = _case_dir(run_dir, repo)
         analysis_payload = _analysis_for_case(case_dir, case_manifest)
+        analysis_status = "completed" if analysis_payload["artifact_paths"] else "empty"
         write_json(case_dir / "analysis.json", analysis_payload)
         write_text(
             case_dir / "analysis.md",
@@ -1970,7 +2187,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
             "family": case_manifest["family"],
             "dataset_key": case_manifest["dataset_key"],
             "dataset_download_dir": case_manifest.get("dataset_download_dir"),
-            "analysis_status": case_manifest["phase_status"].get("analysis"),
+            "analysis_status": analysis_status,
             "image_build_success": summary["image_build_success"],
             "benchmark_run_success": summary["benchmark_run_success"],
             "wdl_success": summary["wdl_success"],
@@ -1981,7 +2198,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
             "metrics": analysis_payload["metrics"],
         }
         rows.append(row)
-        case_manifest["phase_status"]["analysis"] = "completed" if analysis_payload["artifact_paths"] else "empty"
+        case_manifest["phase_status"]["analysis"] = analysis_status
         case_manifest["phase_status"]["summary"] = "completed"
         _save_case_manifest(run_dir, repo, case_manifest)
         write_json(case_dir / "benchmark_table.json", {"rows": [row]})
@@ -2002,6 +2219,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
         "status": overall_status,
         "rows": rows,
     }
+    payload["benchmark_comparison_history_records"] = _materialize_benchmark_comparison_history_for_run(run_dir)
     write_json(run_dir / "benchmark_table.json", {"rows": rows})
     write_json(run_dir / "summary.json", payload)
     lines = [

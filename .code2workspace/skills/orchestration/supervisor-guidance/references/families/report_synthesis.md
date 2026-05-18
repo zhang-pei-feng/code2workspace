@@ -10,3 +10,19 @@
 - For latest, recent, monitoring, or trend-sensitive report tasks, establish the current time window explicitly before drawing conclusions.
 - Prefer absolute dates and date ranges in report artifacts instead of relying only on words like today, this week, or recently.
 - If freshness materially affects the answer, verify the newest available source timestamps and state when the evidence was last updated.
+- Evidence depth is determined by the evidence need, not by whether the task is report or generic. Monitoring and source-backed judgment tasks should default to D2 evidence collection: targeted trusted-source search plus fetching/reading the concrete source artifacts behind claims.
+- For report monitoring lanes, prioritize user-specified sources, whitelisted official/primary sources, curated project skills or structured APIs, trusted-domain search, and only then full-web discovery for gaps.
+- Escalate monitoring depth to D3 for trend/change/watch-item analysis, and to D4 only for high-stakes, contested, highly uncertain, or explicitly comprehensive requests.
+- Follow a report template by default: title, executive summary, scope/time window, key findings, evidence analysis, uncertainty and limitations, recommendations or next steps when applicable, and sources/evidence appendix.
+- Write in the same language as the user's report request unless the user explicitly asks otherwise.
+- Use Markdown heading hierarchy consistently: one `#` title, `##` major sections, and `###` subsections only when needed.
+- Do not expose worker names, internal node names, or orchestration diagnostics in the final report body unless they are necessary artifact references for auditability.
+- When external sources are used, keep citations/source references consistent and end with a compact source list or evidence appendix; when only local artifacts are used, list the local artifact paths that directly support the report.
+- Treat the final report as the primary deliverable: be comprehensive, but make the structure easy to scan.
+- If the report is comparative, include a compact comparison table and define the comparison criteria before drawing a conclusion.
+- If the report is a risk assessment, include risk dimensions, evidence strength, uncertainty, and practical implications.
+- If the report is a monitoring brief, include current status, recent change, affected scope, source freshness, and watch items.
+- If the report is a technical benchmark or evaluation report, include dataset/input scope, methods, metrics, results, limitations, and reproducibility notes.
+- Do not claim a source-backed fact without either a citation/source note or a clear local artifact reference.
+- Do not silently merge conflicting evidence; surface the conflict and explain which source is more direct, fresher, or more relevant.
+- Keep recommendations traceable: every recommendation should follow from a preceding finding or explicitly stated uncertainty.

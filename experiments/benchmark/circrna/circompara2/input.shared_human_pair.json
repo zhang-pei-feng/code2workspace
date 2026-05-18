@@ -1,0 +1,14 @@
+{
+  "CirComPara2Workflow.meta_file": "/path/to/meta.csv",
+  "CirComPara2Workflow.genome_fasta": "/path/to/Homo_sapiens.GRCh38.dna_sm.chromosomes.fa",
+  "CirComPara2Workflow.annotation_gtf": "/path/to/Homo_sapiens.GRCh38.94.chr.gtf",
+  "CirComPara2Workflow.reads_files": [
+    "/path/to/sample_1.fastq.gz",
+    "/path/to/sample_2.fastq.gz"
+  ],
+  "CirComPara2Workflow.sample_name": "human_pair_shared",
+  "CirComPara2Workflow.cpus": 2,
+  "CirComPara2Workflow.circrna_methods": "ciri,find_circ,dcc",
+  "CirComPara2Workflow.min_reads": 2,
+  "CirComPara2Workflow.min_methods": 2
+}

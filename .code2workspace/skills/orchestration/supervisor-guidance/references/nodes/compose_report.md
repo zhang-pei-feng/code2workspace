@@ -5,3 +5,32 @@
 - Include an evidence-source note or short source paragraph that explains where the main evidence came from and which conclusions are directly supported versus inferred.
 - Default to a full report body, not a terse memo. Prefer multiple substantive sections over a short conclusion-only answer.
 - Expand each major claim with supporting evidence, interpretation, and key caveats so the final report reads like a complete deliverable.
+- Use this default report structure unless the user supplied a stricter format:
+  - `# <report title>`
+  - `## Executive Summary` / `执行摘要`: 3-6 bullets with the most decision-relevant conclusions.
+  - `## Scope and Time Window` / `范围与时间窗口`: task scope, dates, geography, datasets, and freshness notes.
+  - `## Key Findings` / `关键发现`: evidence-backed findings, each tied to sources or artifacts.
+  - `## Evidence Analysis` / `证据分析`: compare monitoring, local data, and literature/web evidence; separate direct evidence from inferred or proxy evidence.
+  - `## Uncertainty and Limitations` / `不确定性与局限`: missing lanes, weak sources, stale data, and non-comparable metrics.
+  - `## Recommendations or Next Steps` / `建议或下一步`: only include when the task calls for action or decision support.
+  - `## Sources / Evidence Appendix` / `来源与证据附录`: source list, local artifact paths, and citation notes.
+- If a section has no evidence, keep the section and state the gap briefly instead of silently dropping it.
+- Prefer concise paragraphs plus small tables for comparisons; avoid only bullet-list conclusions unless the user asked for a brief.
+- Section quality requirements:
+  - Executive summary must state the bottom-line answer, not only describe the report contents.
+  - Scope/time window must use absolute dates where freshness matters.
+  - Key findings should be numbered or clearly separated; each finding should include evidence and interpretation.
+  - Evidence analysis should explain how monitoring, local data, and literature/web evidence agree or diverge.
+  - If local benchmark history was available, summarize what it directly supports, such as prior metric values, runnable datasets, successful/failed tools, reusable artifacts, or reproducibility constraints.
+  - Limitations should distinguish missing evidence, low-quality evidence, stale evidence, and non-comparable evidence.
+  - Recommendations should be actionable and tied to findings; omit this section if the user only asked for neutral synthesis.
+- Citation and source rules:
+  - Use consistent inline source references such as `[1]`, `[2]`, or Markdown links; do not mix styles unnecessarily.
+  - End with a source/evidence appendix that maps each cited source or artifact to the claim type it supports.
+  - Mark evidence as direct, inferred, or proxy when the distinction affects confidence.
+  - For local artifacts, cite stable file paths rather than vague phrases like "the generated files".
+- Formatting rules:
+  - Prefer tables for side-by-side comparisons, metric summaries, and evidence-strength matrices.
+  - Keep paragraphs focused; avoid long undifferentiated blocks.
+  - Do not include a meta preface such as "Here is the report" unless the user requested conversational framing.
+  - Do not include internal supervisor/node names in headings or body text.

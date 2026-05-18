@@ -1,0 +1,162 @@
+{
+  "benchmark_root": "experiments/benchmark/免疫逃逸",
+  "catalog_file": "experiments/benchmark/免疫逃逸/datasets/benchmark_catalog.json",
+  "dataset_root": "experiments/benchmark/datasets",
+  "downloads_root": "experiments/benchmark/datasets/downloads",
+  "datasets": {
+    "immune-escape-covabdab-structural-bundle": {
+      "dataset_id": "immune-escape-covabdab-structural-bundle",
+      "family": "unknown",
+      "description": "Shared structural and sequence bundle for AutoDock-Vina, esm, and ImaPEp.",
+      "source": "local benchmark dataset directory",
+      "source_urls": [],
+      "shared_between": [
+        "AutoDock-Vina",
+        "esm",
+        "ImaPEp"
+      ],
+      "files": [
+        {
+          "logical_name": "input_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/few_proteins.fasta",
+          "filename": "few_proteins.fasta"
+        },
+        {
+          "logical_name": "input_fasta_large",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/some_proteins.fasta",
+          "filename": "some_proteins.fasta"
+        },
+        {
+          "logical_name": "reference_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/P62593.fasta",
+          "filename": "P62593.fasta"
+        },
+        {
+          "logical_name": "receptor_file",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1iep_receptor.pdbqt",
+          "filename": "1iep_receptor.pdbqt"
+        },
+        {
+          "logical_name": "ligand_file",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1iep_ligand.pdbqt",
+          "filename": "1iep_ligand.pdbqt"
+        },
+        {
+          "logical_name": "config_file",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1iep_receptor.box.txt",
+          "filename": "1iep_receptor.box.txt"
+        },
+        {
+          "logical_name": "pdb_file_1",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1h0d_BA_C.pdb",
+          "filename": "1h0d_BA_C.pdb"
+        },
+        {
+          "logical_name": "pdb_file_2",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1a14_HL_N.pdb",
+          "filename": "1a14_HL_N.pdb"
+        },
+        {
+          "logical_name": "job_file",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/job.txt",
+          "filename": "job.txt"
+        },
+        {
+          "logical_name": "receptor_structure_pdb",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1iep_receptorH.pdb",
+          "filename": "1iep_receptorH.pdb"
+        }
+      ],
+      "local_candidates": [
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/few_proteins.fasta",
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/some_proteins.fasta",
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/P62593.fasta",
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1iep_receptor.pdbqt",
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1iep_ligand.pdbqt",
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1iep_receptor.box.txt",
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1h0d_BA_C.pdb",
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1a14_HL_N.pdb",
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/job.txt",
+        "experiments/benchmark/datasets/downloads/immune-escape-covabdab-structural-bundle/1iep_receptorH.pdb"
+      ],
+      "fallback_urls": []
+    },
+    "immune-escape-immunebuilder-sequence-bundle": {
+      "dataset_id": "immune-escape-immunebuilder-sequence-bundle",
+      "family": "unknown",
+      "description": "Reference sequence and metadata bundle prepared for ImmuneBuilder-style immune protein inputs.",
+      "source": "local benchmark dataset directory",
+      "source_urls": [],
+      "shared_between": [
+        "ImmuneBuilder",
+        "esm"
+      ],
+      "files": [
+        {
+          "logical_name": "antibody_heavy_chain_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/antibody_heavy_chain.fasta",
+          "filename": "antibody_heavy_chain.fasta"
+        },
+        {
+          "logical_name": "antibody_light_chain_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/antibody_light_chain.fasta",
+          "filename": "antibody_light_chain.fasta"
+        },
+        {
+          "logical_name": "nanobody_heavy_chain_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/nanobody_heavy_chain.fasta",
+          "filename": "nanobody_heavy_chain.fasta"
+        },
+        {
+          "logical_name": "tcr_alpha_chain_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/tcr_alpha_chain.fasta",
+          "filename": "tcr_alpha_chain.fasta"
+        },
+        {
+          "logical_name": "tcr_beta_chain_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/tcr_beta_chain.fasta",
+          "filename": "tcr_beta_chain.fasta"
+        },
+        {
+          "logical_name": "antibody_metadata_csv",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/antibody_data.csv",
+          "filename": "antibody_data.csv"
+        },
+        {
+          "logical_name": "nanobody_metadata_csv",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/nanobody_data.csv",
+          "filename": "nanobody_data.csv"
+        },
+        {
+          "logical_name": "tcr_metadata_csv",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/tcr_data.csv",
+          "filename": "tcr_data.csv"
+        },
+        {
+          "logical_name": "esm_example_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/few_proteins.fasta",
+          "filename": "few_proteins.fasta"
+        },
+        {
+          "logical_name": "esm_reference_fasta",
+          "uri": "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/P62593.fasta",
+          "filename": "P62593.fasta"
+        }
+      ],
+      "local_candidates": [
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/antibody_heavy_chain.fasta",
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/antibody_light_chain.fasta",
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/nanobody_heavy_chain.fasta",
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/tcr_alpha_chain.fasta",
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/tcr_beta_chain.fasta",
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/antibody_data.csv",
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/nanobody_data.csv",
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/tcr_data.csv",
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/few_proteins.fasta",
+        "experiments/benchmark/datasets/downloads/immune-escape-immunebuilder-sequence-bundle/P62593.fasta"
+      ],
+      "fallback_urls": []
+    }
+  },
+  "repo_cases": {}
+}

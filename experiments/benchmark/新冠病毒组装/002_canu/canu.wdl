@@ -12,28 +12,35 @@ task CanuAssembly {
     command <<<
         set -e
         
-        mkdir -p /output
+        out_dir="canu_output"
+        mkdir -p "${out_dir}"
         
         canu \
             -p ~{prefix} \
-            -d /output \
+            -d "${out_dir}" \
             genomeSize=~{genome_size} \
             useGrid=false \
             maxThreads=~{max_threads} \
             maxMemory=~{max_memory} \
-            minInputCoverage=5 \
+            minInputCoverage=0 \
+            stopOnLowCoverage=0 \
             bamOutput=false \
             -nanopore ~{reads_fastq}
         
-        cp -r /output/* .
+        cp "${out_dir}/~{prefix}.contigs.fasta" contigs.fasta
+        cp "${out_dir}/~{prefix}.report" assembly.report
+        if [ -f "${out_dir}/~{prefix}.unassembled.fasta" ]; then
+            cp "${out_dir}/~{prefix}.unassembled.fasta" unassembled.fasta
+        fi
         
         ls -lh
     >>>
     
     output {
+        File contigs = "contigs.fasta"
+        File assembly_report = "assembly.report"
+        File? unassembled = "unassembled.fasta"
         Array[File] output_files = glob("*")
-        File? assembly_report = prefix + ".report"
-        File? contigs = prefix + ".contigs.fasta"
     }
     
     runtime {
@@ -62,6 +69,9 @@ workflow CanuWorkflow {
     }
     
     output {
+        File contigs = CanuAssembly.contigs
+        File assembly_report = CanuAssembly.assembly_report
+        File? unassembled = CanuAssembly.unassembled
         Array[File] assembly_files = CanuAssembly.output_files
     }
 }
