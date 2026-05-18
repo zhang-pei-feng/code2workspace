@@ -26,6 +26,24 @@ and evidence-backed completion judgment.
 
 ### 2026-05-18
 
+- Added the first generic harness evaluation layer on top of Supervisor Graph
+  artifacts:
+  - `evaluation.json` now supports generic runs with staged levels `D0-D6`
+    covering classification, graph planning, node execution, worker trace
+    availability, final-answer availability, and evidence-boundary preservation
+  - `generic_trace_summary.json` records compact harness metrics and scores:
+    graph shape, node and edge counts, node statuses, raw trace coverage,
+    worker message count, tool activity counts, unknown tool events, duration by
+    node, source URLs, final-answer length, evidence-boundary/audit-summary
+    signals, and six deterministic scores
+  - the design is documented in
+    `docs/overview/generic-harness-evaluation-plan.zh.md` so later prompt or
+    guidance optimization can cite a stable artifact contract rather than
+    reading verbose raw traces directly
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_evaluation.py`
+    -> `6 passed`
+
 - Extended local data reuse from report-only history lookup to report/generic
   local computation support:
   - report `local_data_lane` and generic evidence/computation workers now

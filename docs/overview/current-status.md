@@ -225,6 +225,18 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
   search plus concrete source fetching, escalates to D3 for trend/watch-item
   analysis, and reserves D4 full-web discovery for high-stakes, contested,
   highly uncertain, or explicitly comprehensive requests.
+- Generic runs now have a harness-facing artifact evaluation layer:
+  - `evaluation.json` supports generic task family levels `D0-D6`, from missing
+    artifacts through classified/planned/executed/traced/final-answer/evidence
+    boundary states
+  - `generic_trace_summary.json` condenses verbose traces into graph shape,
+    node status, tool activity, raw trace coverage, duration, source URL,
+    answer-boundary, score, and finding fields for harness comparison
+  - the first implementation is deterministic and artifact-based; it is meant
+    to rank and triage generic orchestration candidates before adding any
+    optional LLM judge
+  - implementation plan is documented in
+    `docs/overview/generic-harness-evaluation-plan.zh.md`
 - Fresh generic real-case rerun after the monitoring-policy update completed
   the three previous COVID/respiratory generic examples with return code 0
   under

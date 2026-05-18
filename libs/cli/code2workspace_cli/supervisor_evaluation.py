@@ -37,6 +37,16 @@ BENCHMARK_LEVELS = {
     10: "B10.result_reusable",
 }
 
+GENERIC_LEVELS = {
+    0: "D0.no_generic_artifacts",
+    1: "D1.classified_generic",
+    2: "D2.graph_planned",
+    3: "D3.nodes_executed",
+    4: "D4.worker_trace_available",
+    5: "D5.final_answer_written",
+    6: "D6.evidence_boundary_preserved",
+}
+
 
 @dataclass(slots=True)
 class EvaluationResult:
@@ -56,6 +66,9 @@ class EvaluationResult:
     dataset_consistency: str | None = None
     comparison_valid: bool | None = None
     history_reuse: bool = False
+    generic_scores: dict[str, int] = field(default_factory=dict)
+    generic_metrics: dict[str, object] = field(default_factory=dict)
+    generic_findings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -81,6 +94,14 @@ class EvaluationResult:
                     "history_reuse": self.history_reuse,
                 }
             )
+        if self.task_family == "generic":
+            payload.update(
+                {
+                    "generic_scores": self.generic_scores,
+                    "generic_metrics": self.generic_metrics,
+                    "generic_findings": self.generic_findings,
+                }
+            )
         return payload
 
 
@@ -91,6 +112,26 @@ def write_evaluation_for_run(run_dir: Path) -> EvaluationResult:
         json.dumps(result.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    if result.task_family == "generic":
+        (run_dir / "generic_trace_summary.json").write_text(
+            json.dumps(
+                {
+                    "task_family": result.task_family,
+                    "completion_status": result.completion_status,
+                    "completion_level": result.completion_level,
+                    "metrics": result.generic_metrics,
+                    "scores": result.generic_scores,
+                    "findings": result.generic_findings,
+                    "required_evidence_missing": result.required_evidence_missing,
+                    "evidence_paths": result.evidence_paths,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     return result
 
 
@@ -100,6 +141,8 @@ def evaluate_supervisor_run(run_dir: Path) -> EvaluationResult:
         return evaluate_github2workspace_run(run_dir)
     if task_family == "benchmark":
         return evaluate_benchmark_run(run_dir)
+    if task_family == "generic":
+        return evaluate_generic_run(run_dir)
     return EvaluationResult(
         task_family=task_family,
         completion_status="invalid",
@@ -298,6 +341,68 @@ def evaluate_benchmark_run(run_dir: Path) -> EvaluationResult:
         dataset_consistency=dataset_consistency,
         comparison_valid=comparison_valid,
         history_reuse=history_reuse,
+    )
+
+
+def evaluate_generic_run(run_dir: Path) -> EvaluationResult:
+    """Summarize and score generic Supervisor Graph traces for harness optimization."""
+
+    metrics = _generic_trace_metrics(run_dir)
+    evidence: list[Path] = []
+    for relative in (
+        "request.json",
+        "task_classification.json",
+        "final_decision.json",
+        "final_response.md",
+        "tool_activity.jsonl",
+    ):
+        path = run_dir / relative
+        if path.exists():
+            evidence.append(path)
+    evidence.extend(sorted((run_dir / "node_traces").glob("*.json")))
+    evidence.extend(sorted((run_dir / "raw_worker_traces").glob("*.jsonl")))
+
+    level = 0
+    if metrics["classified_generic"]:
+        level = max(level, 1)
+    if metrics["round_count"] > 0 and metrics["node_count"] > 0:
+        level = max(level, 2)
+    if metrics["executed_node_count"] > 0:
+        level = max(level, 3)
+    if metrics["raw_trace_file_count"] > 0 or metrics["tool_event_count"] > 0:
+        level = max(level, 4)
+    if metrics["final_answer_length"] > 0:
+        level = max(level, 5)
+    if metrics["has_evidence_boundary"] or metrics["has_audit_summary"]:
+        level = max(level, 6)
+
+    required_missing = _generic_required_missing(metrics, level)
+    scores = _generic_scores(metrics)
+    findings = _generic_findings(metrics, scores)
+    failed_nodes = metrics["failed_nodes"]
+    blocked_nodes = metrics["blocked_nodes"]
+    partial_nodes = metrics["partial_nodes"]
+    if failed_nodes:
+        status = "failed"
+    elif required_missing or blocked_nodes or partial_nodes:
+        status = "partial"
+    else:
+        status = "completed"
+    failure_stage, failure_reason = _generic_failure(metrics, required_missing)
+
+    return EvaluationResult(
+        task_family="generic",
+        completion_status=status,
+        completion_level=GENERIC_LEVELS[level],
+        false_positive=False,
+        evidence_paths=_stringify_paths(evidence),
+        required_evidence_missing=required_missing,
+        failure_stage=failure_stage,
+        failure_reason=failure_reason,
+        reproducible=level >= 5 and metrics["raw_trace_file_count"] > 0,
+        generic_scores=scores,
+        generic_metrics=metrics,
+        generic_findings=findings,
     )
 
 
@@ -583,6 +688,345 @@ def _has_benchmark_result_record(run_dir: Path, selected_tools: list[str]) -> bo
             if list((store_root / "records" / _safe_part(tool) / _safe_part(run_id)).glob("benchmark_result_record.json")):
                 return True
     return False
+
+
+def _generic_trace_metrics(run_dir: Path) -> dict[str, Any]:
+    classification = _read_json(run_dir / "task_classification.json")
+    final_decision = _read_json(run_dir / "final_decision.json")
+    final_response = _read_text(run_dir / "final_response.md")
+    graph_paths = sorted(run_dir.glob("graph_round_*.json"))
+    graphs = [_read_json(path) for path in graph_paths]
+    graph_nodes: list[dict[str, Any]] = []
+    edge_count = 0
+    graph_shapes: list[dict[str, object]] = []
+    for graph in graphs:
+        nodes = graph.get("nodes")
+        edges = graph.get("edges")
+        node_ids: list[str] = []
+        if isinstance(nodes, list):
+            graph_nodes.extend(node for node in nodes if isinstance(node, dict))
+            node_ids = [
+                str(node.get("node_id", "")).strip()
+                for node in nodes
+                if isinstance(node, dict) and str(node.get("node_id", "")).strip()
+            ]
+        if isinstance(edges, list):
+            edge_count += len(edges)
+        graph_shapes.append(
+            {
+                "round_index": graph.get("round_index"),
+                "graph_id": graph.get("graph_id"),
+                "node_ids": node_ids,
+                "edge_count": len(edges) if isinstance(edges, list) else 0,
+            }
+        )
+
+    worker_results: dict[str, dict[str, Any]] = {}
+    for path in sorted((run_dir / "worker_outputs").glob("*.json")):
+        payload = _read_json(path)
+        result = payload.get("result")
+        if isinstance(result, dict):
+            worker_results[path.stem] = result
+    status_counts: dict[str, int] = {}
+    failed_nodes: list[str] = []
+    blocked_nodes: list[str] = []
+    partial_nodes: list[str] = []
+    for node_id, result in worker_results.items():
+        status = str(result.get("status", "")).strip() or "unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
+        if status == "failed":
+            failed_nodes.append(node_id)
+        elif status == "blocked":
+            blocked_nodes.append(node_id)
+        elif status == "partial":
+            partial_nodes.append(node_id)
+
+    tool_counts, unknown_tool_events = _generic_tool_activity_metrics(run_dir / "tool_activity.jsonl")
+    raw_metrics = _generic_raw_trace_metrics(run_dir / "raw_worker_traces")
+    source_urls = _dedupe_strings(
+        [
+            *raw_metrics["source_urls"],
+            *_extract_urls(final_response),
+            *_generic_urls_from_worker_results(worker_results),
+        ]
+    )
+    has_fetch_after_search = bool(tool_counts.get("worker_tool_result", 0)) and _tool_activity_has_fetch_after_search(
+        run_dir / "tool_activity.jsonl"
+    )
+    final_text = final_response.casefold()
+    has_evidence_boundary = _contains_any(
+        final_text,
+        ("证据边界", "不确定", "局限", "uncertain", "uncertainty", "evidence gap", "直接", "推断"),
+    )
+    has_audit_summary = "判断轨迹" in final_response or "可审计摘要" in final_response
+    message_count = int(raw_metrics["worker_message_count"])
+    raw_trace_file_count = int(raw_metrics["raw_trace_file_count"])
+    node_count = len(graph_nodes)
+    executed_node_count = len(worker_results)
+    duration_by_node = raw_metrics["duration_by_node"]
+    total_duration_seconds = round(sum(duration_by_node.values()), 3)
+    graph_shape_label = _generic_graph_shape_label(graph_shapes)
+    return {
+        "classified_generic": str(classification.get("task_type", "")).strip() == "generic"
+        or str(final_decision.get("task_type", "")).strip() == "generic",
+        "round_count": len(graph_paths),
+        "node_count": node_count,
+        "edge_count": edge_count,
+        "executed_node_count": executed_node_count,
+        "graph_shapes": graph_shapes,
+        "graph_shape_label": graph_shape_label,
+        "status_counts": status_counts,
+        "failed_nodes": failed_nodes,
+        "blocked_nodes": blocked_nodes,
+        "partial_nodes": partial_nodes,
+        "tool_event_counts": tool_counts,
+        "tool_event_count": sum(tool_counts.values()),
+        "unknown_tool_events": unknown_tool_events,
+        "raw_trace_file_count": raw_trace_file_count,
+        "raw_worker_message_count": message_count,
+        "raw_output_record_count": raw_metrics["raw_output_record_count"],
+        "duration_by_node": duration_by_node,
+        "total_duration_seconds": total_duration_seconds,
+        "source_url_count": len(source_urls),
+        "source_urls": source_urls[:50],
+        "has_fetch_after_search": has_fetch_after_search,
+        "final_answer_length": len(final_response.strip()),
+        "has_evidence_boundary": has_evidence_boundary,
+        "has_audit_summary": has_audit_summary,
+        "final_decision": str(final_decision.get("decision", "")).strip(),
+    }
+
+
+def _generic_tool_activity_metrics(path: Path) -> tuple[dict[str, int], int]:
+    counts: dict[str, int] = {}
+    unknown_tool_events = 0
+    for event in _read_jsonl(path):
+        name = str(event.get("event", "")).strip() or "unknown"
+        counts[name] = counts.get(name, 0) + 1
+        if event.get("tool_name") == "unknown":
+            unknown_tool_events += 1
+    return counts, unknown_tool_events
+
+
+def _generic_raw_trace_metrics(raw_trace_root: Path) -> dict[str, Any]:
+    source_urls: list[str] = []
+    duration_by_node: dict[str, float] = {}
+    worker_message_count = 0
+    raw_output_record_count = 0
+    raw_files = sorted(raw_trace_root.glob("*.jsonl")) if raw_trace_root.exists() else []
+    for path in raw_files:
+        node_id = path.stem
+        for event in _read_jsonl(path):
+            if event.get("event") == "worker_message":
+                worker_message_count += 1
+            if event.get("raw_output"):
+                raw_output_record_count += 1
+            urls = event.get("source_urls")
+            if isinstance(urls, list):
+                source_urls.extend(str(item) for item in urls if isinstance(item, str))
+            if event.get("event") == "node_finished":
+                duration = event.get("duration_seconds")
+                if isinstance(duration, int | float):
+                    duration_by_node[node_id] = float(duration)
+    return {
+        "raw_trace_file_count": len(raw_files),
+        "worker_message_count": worker_message_count,
+        "raw_output_record_count": raw_output_record_count,
+        "duration_by_node": duration_by_node,
+        "source_urls": _dedupe_strings(source_urls),
+    }
+
+
+def _generic_urls_from_worker_results(worker_results: dict[str, dict[str, Any]]) -> list[str]:
+    urls: list[str] = []
+    for result in worker_results.values():
+        urls.extend(_extract_urls(json.dumps(result, ensure_ascii=False, default=str)))
+    return _dedupe_strings(urls)
+
+
+def _tool_activity_has_fetch_after_search(path: Path) -> bool:
+    saw_search = False
+    for event in _read_jsonl(path):
+        tool_name = str(event.get("tool_name", "")).casefold()
+        if "search" in tool_name:
+            saw_search = True
+        if saw_search and ("fetch" in tool_name or "read" in tool_name):
+            return True
+    return False
+
+
+def _generic_graph_shape_label(graph_shapes: list[dict[str, object]]) -> str:
+    node_ids = [
+        str(node_id)
+        for shape in graph_shapes
+        for node_id in shape.get("node_ids", [])
+        if isinstance(shape.get("node_ids"), list)
+    ]
+    if not node_ids:
+        return "missing_graph"
+    if len(node_ids) <= 2:
+        return "direct_or_minimal"
+    if any("context" in node_id or "evidence" in node_id or "inspect" in node_id for node_id in node_ids):
+        if any("compose" in node_id or "summarize" in node_id for node_id in node_ids):
+            return "evidence_then_synthesis"
+    if any("fix" in node_id or "repair" in node_id or "verify" in node_id for node_id in node_ids):
+        return "inspect_fix_verify"
+    return "multi_node_generic"
+
+
+def _generic_required_missing(metrics: dict[str, Any], level: int) -> list[str]:
+    missing: list[str] = []
+    if level < 1:
+        missing.append("task_classification.json or final_decision.json marking task_type=generic")
+    if level < 2:
+        missing.append("at least one graph_round_*.json with planned nodes")
+    if level < 3:
+        missing.append("worker_outputs/*.json for executed generic nodes")
+    if level < 4:
+        missing.append("raw_worker_traces/*.jsonl or tool_activity.jsonl")
+    if level < 5:
+        missing.append("final_response.md with a user-facing answer")
+    if metrics["unknown_tool_events"]:
+        missing.append("normalized tool names for all worker tool activity events")
+    if metrics["raw_trace_file_count"] < metrics["executed_node_count"]:
+        missing.append("raw trace file for every executed worker node")
+    return missing
+
+
+def _generic_scores(metrics: dict[str, Any]) -> dict[str, int]:
+    routing = 100 if metrics["classified_generic"] else 0
+    graph_fit = 40
+    if metrics["round_count"] >= 1 and metrics["node_count"] >= 1:
+        graph_fit = 70
+    if metrics["graph_shape_label"] in {"evidence_then_synthesis", "inspect_fix_verify", "direct_or_minimal"}:
+        graph_fit = 85
+    if metrics["node_count"] > 8:
+        graph_fit -= 15
+    traceability = 0
+    if metrics["executed_node_count"]:
+        traceability += 25
+    if metrics["raw_trace_file_count"] >= metrics["executed_node_count"] and metrics["executed_node_count"]:
+        traceability += 35
+    if metrics["raw_output_record_count"]:
+        traceability += 20
+    if metrics["duration_by_node"]:
+        traceability += 10
+    if metrics["tool_event_count"]:
+        traceability += 10
+    traceability = min(100, traceability)
+    evidence = 40
+    if metrics["source_url_count"]:
+        evidence += 20
+    if metrics["has_fetch_after_search"]:
+        evidence += 20
+    if metrics["has_evidence_boundary"]:
+        evidence += 20
+    answer = 40
+    if metrics["final_answer_length"] > 0:
+        answer += 30
+    if metrics["has_audit_summary"]:
+        answer += 20
+    if metrics["has_evidence_boundary"]:
+        answer += 10
+    efficiency = 100
+    if metrics["node_count"] > 6:
+        efficiency -= 15
+    if metrics["tool_event_count"] > 80:
+        efficiency -= 15
+    if metrics["total_duration_seconds"] > 300:
+        efficiency -= 20
+    return {
+        "routing_score": max(0, min(100, routing)),
+        "graph_fit_score": max(0, min(100, graph_fit)),
+        "traceability_score": max(0, min(100, traceability)),
+        "evidence_score": max(0, min(100, evidence)),
+        "answer_score": max(0, min(100, answer)),
+        "efficiency_score": max(0, min(100, efficiency)),
+    }
+
+
+def _generic_findings(metrics: dict[str, Any], scores: dict[str, int]) -> list[str]:
+    findings: list[str] = []
+    if not metrics["classified_generic"]:
+        findings.append("Task was not classified as generic.")
+    if metrics["node_count"] == 0:
+        findings.append("No generic graph nodes were planned.")
+    if metrics["raw_trace_file_count"] < metrics["executed_node_count"]:
+        findings.append("Some executed nodes do not have raw worker trace files.")
+    if metrics["unknown_tool_events"]:
+        findings.append("tool_activity.jsonl contains worker tool events with unknown tool names.")
+    if scores["efficiency_score"] < 80:
+        findings.append("Trace suggests possible over-orchestration or high tool/runtime cost.")
+    if metrics["source_url_count"] and not metrics["has_evidence_boundary"]:
+        findings.append("Sources were collected, but final answer did not clearly preserve evidence boundaries.")
+    if not findings:
+        findings.append("Generic trace is complete enough for harness comparison.")
+    return findings
+
+
+def _generic_failure(
+    metrics: dict[str, Any],
+    required_missing: list[str],
+) -> tuple[str | None, str | None]:
+    if metrics["failed_nodes"]:
+        return "worker_execution", f"failed nodes: {', '.join(metrics['failed_nodes'])}"
+    if metrics["blocked_nodes"]:
+        return "worker_execution", f"blocked nodes: {', '.join(metrics['blocked_nodes'])}"
+    if not required_missing:
+        return None, None
+    first = required_missing[0]
+    if "task_classification" in first:
+        return "task_classification", first
+    if "graph_round" in first:
+        return "planning", first
+    if "worker_outputs" in first or "raw trace" in first:
+        return "worker_execution", first
+    if "final_response" in first:
+        return "final_response", first
+    return "trace_quality", first
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    return rows
+
+
+def _extract_urls(text: str) -> list[str]:
+    candidates = re.findall(r"https?://[^\s<>)\"']+", text)
+    urls: list[str] = []
+    for candidate in candidates:
+        cleaned = _clean_url(candidate)
+        if cleaned:
+            urls.append(cleaned)
+    return _dedupe_strings(urls)
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        normalized = _clean_url(value) if value.startswith(("http://", "https://")) else value.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _clean_url(value: str) -> str:
+    cleaned = value.strip().split("\\n", 1)[0].split("\n", 1)[0]
+    return cleaned.rstrip("`.,;:]}）】-")
 
 
 def _safe_part(value: str) -> str:

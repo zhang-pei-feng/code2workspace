@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from code2workspace_cli.supervisor_evaluation import evaluate_supervisor_run
+from code2workspace_cli.supervisor_evaluation import evaluate_supervisor_run, write_evaluation_for_run
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -21,6 +21,14 @@ def _write_worker(run_dir: Path, node_id: str, result: dict[str, object]) -> Non
             "node": {"node_id": node_id},
             "result": result,
         },
+    )
+
+
+def _append_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
     )
 
 
@@ -187,3 +195,135 @@ def test_evaluate_benchmark_flags_false_fair_comparison_claim(
     assert result.false_positive is True
     assert "final response claims multi-operator comparison with fewer than two completed operators" in result.unsupported_claims
     assert "final response claims a valid/fair comparison without comparable multi-operator evidence" in result.unsupported_claims
+
+
+def test_evaluate_generic_run_summarizes_trace_for_harness(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-generic"
+    run_dir.mkdir(parents=True)
+    _write_json(run_dir / "request.json", {"task": "先给我一个口头判断"})
+    _write_json(run_dir / "task_classification.json", {"task_type": "generic"})
+    _write_json(
+        run_dir / "final_decision.json",
+        {"task_type": "generic", "decision": "stop"},
+    )
+    _write_json(
+        run_dir / "graph_round_1.json",
+        {
+            "graph_id": "generic-r1",
+            "round_index": 1,
+            "nodes": [{"node_id": "init_generic"}],
+            "edges": [],
+        },
+    )
+    _write_json(
+        run_dir / "graph_round_2.json",
+        {
+            "graph_id": "generic-r2",
+            "round_index": 2,
+            "nodes": [
+                {"node_id": "inspect_sources"},
+                {"node_id": "summarize"},
+            ],
+            "edges": [{"source": "inspect_sources", "target": "summarize"}],
+        },
+    )
+    _write_worker(
+        run_dir,
+        "init_generic",
+        {"status": "completed", "summary": "planned graph"},
+    )
+    _write_worker(
+        run_dir,
+        "inspect_sources",
+        {
+            "status": "completed",
+            "summary": "checked source https://example.org/source",
+            "evidence": ["https://example.org/source"],
+        },
+    )
+    _write_worker(
+        run_dir,
+        "summarize",
+        {"status": "completed", "summary": "answer keeps evidence boundary"},
+    )
+    (run_dir / "final_response.md").write_text(
+        "口头判断：可以。证据边界：只基于本次 trace。\n\n判断轨迹（可审计摘要）\n- checked artifacts",
+        encoding="utf-8",
+    )
+    _append_jsonl(
+        run_dir / "tool_activity.jsonl",
+        [
+            {"event": "node_started", "node_id": "inspect_sources"},
+            {"event": "worker_tool_call", "node_id": "inspect_sources", "tool_name": "web_search"},
+            {"event": "worker_tool_result", "node_id": "inspect_sources", "tool_name": "web_search"},
+            {"event": "worker_tool_call", "node_id": "inspect_sources", "tool_name": "fetch_url"},
+            {"event": "worker_tool_result", "node_id": "inspect_sources", "tool_name": "fetch_url"},
+            {"event": "node_finished", "node_id": "inspect_sources", "status": "completed"},
+        ],
+    )
+    for node_id in ("init_generic", "inspect_sources", "summarize"):
+        _append_jsonl(
+            run_dir / "raw_worker_traces" / f"{node_id}.jsonl",
+            [
+                {"event": "worker_message", "node_id": node_id, "message": {"content": "hello"}},
+                {
+                    "event": "worker_invocation_finished",
+                    "node_id": node_id,
+                    "raw_output": '{"status":"completed","summary":"ok"}',
+                    "source_urls": ["https://example.org/source"] if node_id == "inspect_sources" else [],
+                },
+                {
+                    "event": "node_finished",
+                    "node_id": node_id,
+                    "status": "completed",
+                    "duration_seconds": 1.5,
+                },
+            ],
+        )
+
+    result = write_evaluation_for_run(run_dir)
+
+    assert result.task_family == "generic"
+    assert result.completion_status == "completed"
+    assert result.completion_level == "D6.evidence_boundary_preserved"
+    assert result.generic_metrics["graph_shape_label"] == "evidence_then_synthesis"
+    assert result.generic_metrics["source_url_count"] == 1
+    assert result.generic_scores["traceability_score"] == 100
+    assert "Generic trace is complete enough for harness comparison." in result.generic_findings
+    summary_payload = json.loads((run_dir / "generic_trace_summary.json").read_text(encoding="utf-8"))
+    assert summary_payload["scores"]["routing_score"] == 100
+    assert summary_payload["metrics"]["raw_trace_file_count"] == 3
+
+
+def test_evaluate_generic_run_flags_trace_quality_gaps(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-generic-gaps"
+    run_dir.mkdir(parents=True)
+    _write_json(run_dir / "task_classification.json", {"task_type": "generic"})
+    _write_json(run_dir / "final_decision.json", {"task_type": "generic", "decision": "stop"})
+    _write_json(
+        run_dir / "graph_round_1.json",
+        {
+            "graph_id": "generic-r1",
+            "round_index": 1,
+            "nodes": [{"node_id": "answer"}],
+            "edges": [],
+        },
+    )
+    _write_worker(run_dir, "answer", {"status": "completed", "summary": "done"})
+    (run_dir / "final_response.md").write_text("简短回答。", encoding="utf-8")
+    _append_jsonl(
+        run_dir / "tool_activity.jsonl",
+        [{"event": "worker_tool_call", "node_id": "answer", "tool_name": "unknown"}],
+    )
+
+    result = evaluate_supervisor_run(run_dir)
+
+    assert result.completion_status == "partial"
+    assert result.completion_level == "D5.final_answer_written"
+    assert "normalized tool names for all worker tool activity events" in result.required_evidence_missing
+    assert "raw trace file for every executed worker node" in result.required_evidence_missing
+    assert result.generic_scores["traceability_score"] < 100
