@@ -45,9 +45,11 @@ from code2workspace.orchestration_runtime import (
     execute_graph_round,
 )
 from code2workspace_cli.benchmark_result_store import (
+    BENCHMARK_RECORD_NAME,
     BenchmarkResultSearchFilter,
     BenchmarkResultStore,
 )
+from code2workspace_cli.dataset_store import DatasetSearchFilter, DatasetStore
 from code2workspace_cli.operator_store import (
     OperatorSearchFilter,
     OperatorStore,
@@ -58,6 +60,7 @@ from code2workspace_cli.supervisor_evaluation import write_evaluation_for_run
 from code2workspace_cli.supervisor_capabilities import (
     describe_capabilities,
     family_guidance_lines,
+    generic_experience_guidance_lines,
     node_guidance_lines,
 )
 
@@ -152,6 +155,12 @@ class SupervisorWorkerRunner:
         )
         if agentic is not None:
             return agentic
+        if _is_agent_owned_benchmark_case_node(node):
+            return await _invoke_worker_runnable(
+                agent=self._select_runnable(node),
+                node=node,
+                workspace_root=self._workspace_root,
+            )
         await _maybe_run_agentic_benchmark_case_repair(
             agent=self._select_runnable(node),
             node=node,
@@ -218,10 +227,12 @@ _LOCAL_REPO_SEARCH_MAX_DEPTH = 4
 _CODE_REPOSITORY_ROOT = Path(__file__).resolve().parents[3] / "code_repository"
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _SHARED_OPERATOR_STORE_ROOT_ENV = "CODE2WORKSPACE_SHARED_OPERATOR_STORE_ROOT"
+_SHARED_DATASET_STORE_ROOT_ENV = "CODE2WORKSPACE_SHARED_DATASET_STORE_ROOT"
 _BENCHMARK_COMPARISON_HISTORY_STORE_DIR = "benchmark_comparison_history_store"
 _SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT_ENV = (
     "CODE2WORKSPACE_SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT"
 )
+_BENCHMARK_HISTORY_BACKFILL_ATTEMPTED: set[Path] = set()
 
 
 class SQLiteCaseIndex:
@@ -459,6 +470,7 @@ async def run_supervisor_orchestration(
             "final_response_path": str(run_dir / "final_response.md"),
         },
     )
+    _write_supervisor_evaluation(run_dir)
     if task_type == "github2workspace":
         _materialize_github2workspace_operator_product(
             task=task,
@@ -467,7 +479,6 @@ async def run_supervisor_orchestration(
             rounds=rounds,
             final_decision=final_decision,
         )
-    _write_supervisor_evaluation(run_dir)
     _emit_supervisor_event(
         kind="run_finished",
         decision=final_decision.decision,
@@ -1038,6 +1049,12 @@ async def _invoke_worker_agent(*, agent, node: TaskNode, workspace_root: Path) -
     )
     if agentic is not None:
         return agentic
+    if _is_agent_owned_benchmark_case_node(node):
+        return await _invoke_worker_runnable(
+            agent=agent,
+            node=node,
+            workspace_root=workspace_root,
+        )
     await _maybe_run_agentic_benchmark_case_repair(
         agent=agent,
         node=node,
@@ -1701,6 +1718,8 @@ def _maybe_run_deterministic_worker(*, node: TaskNode, workspace_root: Path) -> 
         return _run_deterministic_benchmark_summary(node=node, workspace_root=workspace_root)
     if _looks_like_user_delivery_node(node.node_id):
         return None
+    if _is_agent_owned_benchmark_case_node(node):
+        return None
     repo = _benchmark_repo_from_node_id(node.node_id)
     if repo is not None:
         return _run_deterministic_benchmark_case(
@@ -1709,6 +1728,25 @@ def _maybe_run_deterministic_worker(*, node: TaskNode, workspace_root: Path) -> 
             repo=repo,
         )
     return None
+
+
+def _is_agent_owned_benchmark_case_node(node: TaskNode) -> bool:
+    """Return True when a benchmark per-operator node should be owned by an agent.
+
+    Register and summarize remain deterministic orchestration adapters, but the
+    actual per-operator case execution is an agent responsibility. The agent may
+    still choose to run the checked-in helper command as one tool action, but
+    supervisor no longer short-circuits the whole case through helper code.
+    """
+
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    if metadata.get("task_type") != "benchmark":
+        return False
+    if node.node_id in {"register", "retry_register", "summarize"}:
+        return False
+    if _looks_like_user_delivery_node(node.node_id):
+        return False
+    return _benchmark_repo_from_node_id(node.node_id) is not None
 
 
 async def _maybe_run_agentic_benchmark_register(
@@ -2573,6 +2611,26 @@ def _candidate_operator_store_roots(workspace_root: Path) -> list[Path]:
 
     add(workspace_root / "operator_store")
     shared_root = os.environ.get(_SHARED_OPERATOR_STORE_ROOT_ENV, "").strip()
+    if shared_root:
+        add(Path(shared_root))
+    return roots
+
+
+def _candidate_dataset_store_roots(workspace_root: Path) -> list[Path]:
+    roots: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path | None) -> None:
+        if path is None or not path.exists() or not path.is_dir():
+            return
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        roots.append(resolved)
+
+    add(workspace_root / "dataset_store")
+    shared_root = os.environ.get(_SHARED_DATASET_STORE_ROOT_ENV, "").strip()
     if shared_root:
         add(Path(shared_root))
     return roots
@@ -4507,6 +4565,27 @@ def _materialize_benchmark_result_record(
     status_payload: dict[str, object],
     result_manifest: dict[str, object],
 ) -> Path | None:
+    return _materialize_benchmark_result_record_to_store(
+        repo=repo,
+        run_dir=run_dir,
+        case_dir=case_dir,
+        manifest=manifest,
+        status_payload=status_payload,
+        result_manifest=result_manifest,
+        store_root=_benchmark_result_store_root_for_run_dir(run_dir),
+    )
+
+
+def _materialize_benchmark_result_record_to_store(
+    *,
+    repo: str,
+    run_dir: Path,
+    case_dir: Path,
+    manifest: dict[str, object],
+    status_payload: dict[str, object],
+    result_manifest: dict[str, object],
+    store_root: Path,
+) -> Path | None:
     analysis_path = case_dir / "analysis.json"
     analysis_md_path = case_dir / "analysis.md"
     analysis_payload = (
@@ -4531,7 +4610,7 @@ def _materialize_benchmark_result_record(
         analysis_markdown=analysis_markdown,
     )
     try:
-        return store.write_record(record)
+        return BenchmarkResultStore(store_root).write_record(record)
     except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error):
         return None
 
@@ -4550,6 +4629,7 @@ def _try_reuse_benchmark_result_record(
     dataset_key = str(manifest.get("dataset_key", "")).strip()
     operator_id = str(manifest.get("operator_id", "")).strip()
     query = _benchmark_result_query(repo=repo, task=task, manifest=manifest)
+    _ensure_workspace_benchmark_history_backfilled(workspace_root)
     filters = BenchmarkResultSearchFilter(
         query=query,
         repo=repo,
@@ -5012,6 +5092,13 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
         guidance_lines.extend(node_guidance_lines("benchmark_case"))
     if isinstance(guidance_ids, list):
         guidance_lines.extend(family_guidance_lines([str(item) for item in guidance_ids]))
+        if isinstance(node.metadata, dict):
+            guidance_lines.extend(
+                generic_experience_guidance_lines(
+                    task=str(node.metadata.get("task", "")),
+                    guidance_ids=[str(item) for item in guidance_ids],
+                )
+            )
     if "report" in node.node_id or "lane" in node.node_id:
         guidance_lines.append(
             "For report-oriented nodes, prefer writing concrete report artifacts into the workspace such as request notes, lane notes, evidence summaries, or final_report.md when relevant."
@@ -5134,15 +5221,18 @@ def _local_computation_context_material(*, node: TaskNode, workspace_root: Path)
         return ""
 
     task = str(metadata.get("task", "")).strip()
+    _ensure_workspace_benchmark_history_backfilled(workspace_root)
     history_roots = _candidate_benchmark_result_store_roots(workspace_root)
     operator_roots = _candidate_operator_store_roots(workspace_root)
+    dataset_roots = _candidate_dataset_store_roots(workspace_root)
     header = "Report local data source context:" if is_report_local_data else "Local computation context:"
     footer = "End report local data source context." if is_report_local_data else "End local computation context."
-    if not history_roots and not operator_roots:
+    if not history_roots and not operator_roots and not dataset_roots:
         return (
             f"{header}\n"
-            "- Local data lane split: existing_data comes from local databases, registries, APIs, cached run artifacts, or history records; computed_data must be produced by selecting a local operator plus a compatible dataset/input bundle and running it.\n"
-            "- No operator_store directory was found under the current workspace or configured shared store.\n"
+            "- Local data lane split: existing_data comes from local databases, registries, APIs, cached run artifacts, dataset_store records, or history records; computed_data must be produced by selecting a local operator plus a compatible dataset/input bundle and running it.\n"
+            "- Decision order: first judge whether existing_data is already sufficient for this node; only if a concrete evidence gap remains should you treat it as computed_data.\n"
+            "- No operator_store or dataset_store directory was found under the current workspace or configured shared stores.\n"
             "- No local history store was found either; this is optional and should not block operator-store computation.\n"
             "- If the task needs prediction, simulation, scoring, metric calculation, or other computed evidence, explicitly report that no local operator/data library was available.\n"
             f"{footer}\n"
@@ -5168,21 +5258,34 @@ def _local_computation_context_material(*, node: TaskNode, workspace_root: Path)
         workspace_root=workspace_root,
         limit=8,
     )
+    dataset_store_candidates = _rank_local_dataset_store_candidates(
+        task=task,
+        workspace_root=workspace_root,
+        limit=10,
+    )
     dataset_candidates = _local_dataset_candidates(
         history_rows=ranked,
         operator_candidates=operator_candidates,
+        dataset_store_candidates=dataset_store_candidates,
     )
     lines = [
         header,
         "- Local data lane split:",
-        "  - existing_data: already materialized local database rows, registries, APIs, cached run artifacts, and optional history records.",
-        "  - computed_data: values that do not exist yet and must be produced by retrieving a compatible local operator and dataset/input bundle, running the operator, then citing its new result artifacts.",
+        "  - existing_data: already materialized local database rows, registries, APIs, cached run artifacts, dataset_store records, and optional history records.",
+        "  - computed_data: values that do not exist yet and must be produced by retrieving a compatible local operator and dataset_store/input bundle, running the operator, then citing its new result artifacts.",
+        "- Decision order:",
+        "  1. First judge whether existing_data already answers the local-data need well enough.",
+        "  2. Only if a concrete evidence gap remains, decide whether computed_data is actually required.",
+        "  3. Only if new computation is truly required, search for a compatible operator and dataset/input bundle.",
         "- Prioritize operator_store records as the local operator library for prediction, simulation, scoring, metric calculation, benchmark reruns, or other computed evidence.",
+        "- Use dataset_store records as the preferred local dataset/input-bundle library before falling back to operator input hints or old benchmark history.",
         "- Treat benchmark_comparison_history_store records as optional existing_data only when they are directly relevant; do not let history lookup distract from selecting and running a needed local operator.",
-        "- When computed_data is needed, first choose the operator and dataset/input bundle, inspect the operator runtime fields, run the concrete WDL/Docker/entrypoint path if available, then record command, inputs, outputs, status, and metrics as evidence.",
+        "- Do not run an operator by default just because operator_store candidates exist.",
+        "- When computed_data is needed, first explain why existing_data is insufficient, then choose the operator and dataset_store/input bundle, inspect the operator runtime fields, run the concrete WDL/Docker/entrypoint path if available, and record command, inputs, outputs, status, and metrics as evidence.",
         "- Keep local existing/computed evidence distinct from external web/literature evidence and cite record_path/run_id/operator_path/dataset/input paths when used.",
         f"- benchmark_comparison_history_store_roots: {', '.join(str(root) for root in history_roots) or 'none'}",
         f"- operator_store_roots: {', '.join(str(root) for root in operator_roots) or 'none'}",
+        f"- dataset_store_roots: {', '.join(str(root) for root in dataset_roots) or 'none'}",
     ]
     if not ranked:
         lines.append(
@@ -5229,6 +5332,23 @@ def _local_computation_context_material(*, node: TaskNode, workspace_root: Path)
                 f"input_paths={input_paths}, "
                 f"output_paths={output_paths}, "
                 f"operator_path={candidate.get('operator_path') or ''}"
+            )
+    if not dataset_store_candidates:
+        lines.append(
+            "- No matching dataset_store records were returned. Use operator input hints or history records as secondary candidate input bundles."
+        )
+    else:
+        lines.append("- Candidate dataset_store records:")
+        for index, candidate in enumerate(dataset_store_candidates[:10], start=1):
+            files_preview = _dataset_store_files_preview(candidate)
+            lines.append(
+                "  "
+                f"{index}. dataset_id={candidate.get('dataset_id') or 'unknown'}, "
+                f"name={candidate.get('name') or 'unknown'}, "
+                f"domain={candidate.get('domain') or 'unknown'}, "
+                f"version={candidate.get('version') or 'unknown'}, "
+                f"files={files_preview}, "
+                f"record_path={candidate.get('record_path') or ''}"
             )
     if dataset_candidates:
         lines.append("- Candidate local datasets/input bundles:")
@@ -5287,6 +5407,80 @@ def _rank_local_operator_candidates(
         key=lambda item: (-item[0], item[1], str(item[2].get("name", "")).casefold()),
     )
     return [item[2] for item in ranked[: max(1, limit)]]
+
+
+def _rank_local_dataset_store_candidates(
+    *,
+    task: str,
+    workspace_root: Path,
+    limit: int,
+) -> list[dict[str, object]]:
+    candidates: dict[str, tuple[int, int, dict[str, object]]] = {}
+    query = task.strip()
+    for store_root in _candidate_dataset_store_roots(workspace_root):
+        try:
+            store = DatasetStore(store_root)
+            rows = store.search_datasets(DatasetSearchFilter(query=query, limit=max(limit * 2, 12)))
+        except sqlite3.Error:
+            rows = []
+        if not rows:
+            try:
+                store = DatasetStore(store_root)
+                rows = store.search_datasets(DatasetSearchFilter(limit=max(limit * 2, 12)))
+            except sqlite3.Error:
+                rows = []
+        for rank, row in enumerate(rows):
+            dataset_id = str(row.get("dataset_id", "")).strip()
+            if not dataset_id:
+                continue
+            candidate = _local_dataset_candidate_from_search_row(row)
+            searchable = "\n".join(
+                [
+                    str(candidate.get("name", "")),
+                    str(candidate.get("summary", "")),
+                    str(candidate.get("domain", "")),
+                    str(candidate.get("canonical_text", "")),
+                ]
+            )
+            score = 4 * _benchmark_query_overlap_score(query=query, searchable_text=searchable)
+            current = candidates.get(dataset_id)
+            if current is None or score > current[0] or (score == current[0] and rank < current[1]):
+                candidates[dataset_id] = (score, rank, candidate)
+    ranked = sorted(
+        candidates.values(),
+        key=lambda item: (-item[0], item[1], str(item[2].get("name", "")).casefold()),
+    )
+    return [item[2] for item in ranked[: max(1, limit)]]
+
+
+def _local_dataset_candidate_from_search_row(row: dict[str, object]) -> dict[str, object]:
+    record_path_raw = str(row.get("record_path", "")).strip()
+    payload: dict[str, object] = {}
+    if record_path_raw:
+        try:
+            payload = json.loads(Path(record_path_raw).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+    return {
+        "dataset_id": str(payload.get("dataset_id", row.get("dataset_id", ""))).strip(),
+        "name": str(payload.get("name", row.get("name", ""))).strip(),
+        "version": str(payload.get("version", row.get("version", ""))).strip(),
+        "domain": str(payload.get("domain", row.get("domain", ""))).strip(),
+        "summary": str(payload.get("summary", row.get("summary", ""))).strip(),
+        "canonical_text": str(payload.get("canonical_text", row.get("canonical_text", ""))).strip(),
+        "files": [item for item in payload.get("files", []) if isinstance(item, dict)],
+        "tags": [
+            str(tag).strip()
+            for tag in payload.get("tags", [])
+            if isinstance(tag, str) and tag.strip()
+        ],
+        "compatible_operator_ids": [
+            str(item).strip()
+            for item in payload.get("compatible_operator_ids", [])
+            if isinstance(item, str) and item.strip()
+        ],
+        "record_path": record_path_raw,
+    }
 
 
 def _local_operator_candidate_from_search_row(row: dict[str, object]) -> dict[str, object] | None:
@@ -5362,10 +5556,34 @@ def _preview_io_paths(items: list[object], *, max_items: int = 4) -> str:
     return "; ".join(compact)
 
 
+def _dataset_store_files_preview(candidate: dict[str, object], *, max_items: int = 4) -> str:
+    files = candidate.get("files") if isinstance(candidate.get("files"), list) else []
+    previews: list[str] = []
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        uri = str(item.get("uri", "")).strip()
+        name = str(item.get("name", "")).strip()
+        media_type = str(item.get("media_type", "")).strip()
+        label = uri or name
+        if not label:
+            continue
+        if media_type:
+            label = f"{label} ({media_type})"
+        previews.append(label)
+    if not previews:
+        return "none"
+    compact = previews[:max_items]
+    if len(previews) > max_items:
+        compact.append(f"... {len(previews) - max_items} more")
+    return "; ".join(compact)
+
+
 def _local_dataset_candidates(
     *,
     history_rows: list[dict[str, object]],
     operator_candidates: list[dict[str, object]],
+    dataset_store_candidates: list[dict[str, object]],
 ) -> list[str]:
     seen: set[str] = set()
     candidates: list[str] = []
@@ -5396,6 +5614,12 @@ def _local_dataset_candidates(
             add(f"operator {name} inputs_json={inputs_json}, input_paths={input_paths}")
         elif input_paths != "none":
             add(f"operator {name} input_paths={input_paths}")
+    for candidate in dataset_store_candidates:
+        dataset_id = str(candidate.get("dataset_id", "")).strip() or "unknown"
+        files_preview = _dataset_store_files_preview(candidate)
+        add(
+            f"dataset_store dataset_id={dataset_id}, name={candidate.get('name') or 'unknown'}, files={files_preview}, record_path={candidate.get('record_path') or ''}"
+        )
     return candidates
 
 
@@ -6030,6 +6254,7 @@ def _materialize_github2workspace_operator_product(
         status=status,
         source_repo=source_repo,
         validation_summary=summary,
+        evaluation=_github2workspace_evaluation_payload(run_dir),
     )
     try:
         return store.write_manifest(
@@ -6050,6 +6275,15 @@ def _materialize_github2workspace_operator_product(
             },
         )
         return None
+
+
+def _github2workspace_evaluation_payload(run_dir: Path) -> dict[str, object]:
+    evaluation_path = run_dir / "evaluation.json"
+    try:
+        payload = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _github2workspace_product_name(*, task: str, workspace_root: Path) -> str | None:
@@ -6217,6 +6451,171 @@ def _candidate_benchmark_result_store_roots(workspace_root: Path) -> list[Path]:
     if shared_root:
         add(Path(shared_root))
     return roots
+
+
+def _ensure_workspace_benchmark_history_backfilled(workspace_root: Path) -> list[Path]:
+    target_root = (workspace_root / _BENCHMARK_COMPARISON_HISTORY_STORE_DIR).resolve()
+    if target_root in _BENCHMARK_HISTORY_BACKFILL_ATTEMPTED:
+        return []
+    _BENCHMARK_HISTORY_BACKFILL_ATTEMPTED.add(target_root)
+    if _history_store_has_records(target_root):
+        return []
+    return _backfill_workspace_benchmark_history(workspace_root=workspace_root, store_root=target_root)
+
+
+def _history_store_has_records(store_root: Path) -> bool:
+    records_dir = store_root / "records"
+    if not records_dir.exists():
+        return False
+    return any(records_dir.glob(f"**/{BENCHMARK_RECORD_NAME}"))
+
+
+def _backfill_workspace_benchmark_history(
+    *,
+    workspace_root: Path,
+    store_root: Path,
+) -> list[Path]:
+    written: list[Path] = []
+    for run_dir in _discover_workspace_benchmark_run_dirs(workspace_root):
+        root_manifest = _read_json_file(run_dir / "manifest.json")
+        if not isinstance(root_manifest, dict):
+            continue
+        case_order = root_manifest.get("case_order", [])
+        if not isinstance(case_order, list):
+            continue
+        for repo_value in case_order:
+            repo = str(repo_value).strip()
+            if not repo:
+                continue
+            record_path = _backfill_benchmark_history_record_for_case(
+                workspace_root=workspace_root,
+                store_root=store_root,
+                run_dir=run_dir,
+                repo=repo,
+            )
+            if record_path is not None:
+                written.append(record_path)
+    return written
+
+
+def _discover_workspace_benchmark_run_dirs(workspace_root: Path) -> list[Path]:
+    discovered: list[Path] = []
+    seen: set[Path] = set()
+    for root, dirnames, filenames in os.walk(workspace_root, topdown=True):
+        dirnames[:] = [name for name in dirnames if name != _BENCHMARK_COMPARISON_HISTORY_STORE_DIR]
+        if "cases" not in dirnames or "manifest.json" not in filenames:
+            continue
+        run_dir = Path(root)
+        try:
+            resolved = run_dir.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        discovered.append(resolved)
+        if "cases" in dirnames:
+            dirnames.remove("cases")
+    discovered.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0.0, reverse=True)
+    return discovered
+
+
+def _backfill_benchmark_history_record_for_case(
+    *,
+    workspace_root: Path,
+    store_root: Path,
+    run_dir: Path,
+    repo: str,
+) -> Path | None:
+    if store_root.resolve() == _benchmark_result_store_root_for_run_dir(run_dir).resolve():
+        existing_record = store_root / "records" / _safe_benchmark_store_part(repo) / _safe_benchmark_store_part(run_dir.name) / BENCHMARK_RECORD_NAME
+        if existing_record.exists():
+            return existing_record
+    case_dir = run_dir / "cases" / repo
+    manifest = _read_json_file(case_dir / "manifest.json")
+    if not isinstance(manifest, dict):
+        return None
+    run_status = _read_json_file(case_dir / "run" / "status.json")
+    wdl_status = _read_json_file(case_dir / "wdl" / "status.json")
+    status_payload: dict[str, object] | None = None
+    if isinstance(run_status, dict):
+        status_payload = dict(run_status)
+    elif isinstance(wdl_status, dict):
+        status_payload = _benchmark_status_payload_from_wdl_status(
+            repo=repo,
+            case_dir=case_dir,
+            wdl_status=wdl_status,
+        )
+        (case_dir / "run").mkdir(parents=True, exist_ok=True)
+        _write_json(case_dir / "run" / "status.json", status_payload)
+    if status_payload is None:
+        return None
+    result_manifest_path = case_dir / "run" / "result_manifest.json"
+    result_manifest = _read_json_file(result_manifest_path)
+    if not isinstance(result_manifest, dict):
+        result_manifest = _write_benchmark_result_manifest(
+            repo=repo,
+            case_dir=case_dir,
+            status_payload=status_payload,
+        )
+    if not (case_dir / "analysis.json").exists():
+        return None
+    return _materialize_benchmark_result_record_to_store(
+        repo=repo,
+        run_dir=run_dir,
+        case_dir=case_dir,
+        manifest=manifest,
+        status_payload=status_payload,
+        result_manifest=result_manifest,
+        store_root=store_root,
+    )
+
+
+def _benchmark_status_payload_from_wdl_status(
+    *,
+    repo: str,
+    case_dir: Path,
+    wdl_status: dict[str, object],
+) -> dict[str, object]:
+    wdl_output_dir = case_dir / "wdl" / "run_outputs"
+    output_dir_raw = wdl_status.get("output_dir")
+    if isinstance(output_dir_raw, str) and output_dir_raw.strip():
+        wdl_output_dir = Path(output_dir_raw.strip())
+    copied_artifacts = [
+        str(path)
+        for path in _benchmark_expected_output_paths(
+            repo=repo,
+            case_dir=case_dir,
+            status_payload={"output_dir": str(wdl_output_dir), "output_artifacts": wdl_status.get("output_artifacts", [])},
+        )
+        if path.exists()
+    ]
+    if not copied_artifacts:
+        copied_artifacts = [
+            str(Path(str(artifact)))
+            for artifact in wdl_status.get("output_artifacts", [])
+            if isinstance(artifact, str) and Path(artifact).exists()
+        ]
+    return {
+        "attempted": True,
+        "completed": True,
+        "success": bool(wdl_status.get("success")),
+        "returncode": wdl_status.get("returncode"),
+        "started_at": wdl_status.get("started_at"),
+        "finished_at": wdl_status.get("finished_at"),
+        "elapsed_seconds": wdl_status.get("elapsed_seconds"),
+        "command": ["run-wdl", repo],
+        "log_path": wdl_status.get("log_path"),
+        "output_dir": str(wdl_output_dir),
+        "output_artifacts": copied_artifacts,
+        "failure_reason": wdl_status.get("failure_reason"),
+        "execution_mode": "wdl_only",
+    }
+
+
+def _safe_benchmark_store_part(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    return normalized.strip("-") or "unknown"
 
 
 def _write_metric_plan(*, run_dir: Path, selected_tools: list[str]) -> dict[str, object]:

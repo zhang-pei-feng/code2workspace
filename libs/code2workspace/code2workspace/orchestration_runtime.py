@@ -309,13 +309,15 @@ _GENERIC_FORMAL_NEGATIVE_MARKERS = (
     "区分证据和猜测",
 )
 
+_GENERIC_GUIDANCE_IDS = ["generic_qa"]
+
 
 def classify_task(task: str) -> TaskClassification:
     """Classify a task and attach any matched guidance ids."""
 
     lowered = task.casefold()
     if any(marker.casefold() in lowered for marker in _GENERIC_FORMAL_NEGATIVE_MARKERS):
-        return TaskClassification(primary_type="generic", guidance_ids=[])
+        return TaskClassification(primary_type="generic", guidance_ids=list(_GENERIC_GUIDANCE_IDS))
     guidance_ids: list[str] = []
     primary_type: TaskType = "generic"
     for guidance in _TASK_GUIDANCE_REGISTRY:
@@ -323,6 +325,12 @@ def classify_task(task: str) -> TaskClassification:
             guidance_ids.append(guidance.guidance_id)
             if primary_type == "generic":
                 primary_type = guidance.task_type
+    if primary_type == "generic":
+        guidance_ids.extend(
+            guidance_id
+            for guidance_id in _GENERIC_GUIDANCE_IDS
+            if guidance_id not in guidance_ids
+        )
     return TaskClassification(primary_type=primary_type, guidance_ids=guidance_ids)
 
 
@@ -436,6 +444,12 @@ def classification_for_task_type(task_type: TaskType) -> TaskClassification:
         for guidance in _TASK_GUIDANCE_REGISTRY
         if guidance.task_type == task_type
     ]
+    if task_type == "generic":
+        guidance_ids.extend(
+            guidance_id
+            for guidance_id in _GENERIC_GUIDANCE_IDS
+            if guidance_id not in guidance_ids
+        )
     return TaskClassification(primary_type=task_type, guidance_ids=guidance_ids)
 
 
@@ -632,9 +646,11 @@ class HeuristicSupervisorPlanner:
                     objective=(
                         "Analyze the generic user request and create a flexible execution graph for the next round. "
                         "Do not assume a fixed template. Choose the smallest useful graph for the task: direct answer, "
-                        "sequential investigation, parallel evidence lanes, code inspect/fix/verify, data inspect/analyze/recommend, "
-                        "or any other shape that fits. Research and evidence-judgment questions are the main scenario; scale "
-                        "their graph by complexity, from one synthesis node to parallel source/evidence lanes when needed. "
+                        "serial evidence gathering, code inspect/fix/verify, data inspect/analyze/recommend, "
+                        "or any other shape that fits. Prefer serial generic graphs by default: gather evidence, check whether "
+                        "information is still missing, gather targeted additional evidence only if needed, then summarize once "
+                        "the evidence is sufficient. Use parallel source/evidence lanes only when the user explicitly asks for "
+                        "parallel work or when independent branches are clearly necessary. "
                         "If the generic request needs prediction, simulation, scoring, metric calculation, or other computed "
                         "evidence, plan a worker that searches the local operator_store for candidate operators and compatible "
                         "datasets/input bundles, runs the selected operator when available, and returns the computed artifact "

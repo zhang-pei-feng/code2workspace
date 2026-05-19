@@ -153,7 +153,7 @@ def test_planner_creates_generic_graph_for_unknown_task() -> None:
         "init_generic",
     ]
     assert graph.nodes[0].metadata["planner_role"] == "generic_dynamic_graph_planner"
-    assert graph.metadata["guidance_ids"] == []
+    assert graph.metadata["guidance_ids"] == ["generic_qa"]
 
 
 def test_planner_uses_spawned_generic_subgraph() -> None:
@@ -331,6 +331,25 @@ def test_rule_classifier_keeps_oral_judgment_request_generic() -> None:
     )
 
     assert classification.primary_type == "generic"
+    assert classification.guidance_ids == ["generic_qa"]
+
+
+@pytest.mark.asyncio
+async def test_classify_task_with_model_generic_attaches_generic_qa_guidance() -> None:
+    class _Model:
+        async def ainvoke(self, _messages):
+            return AIMessage(
+                content='{"task_type":"generic","confidence":0.92,"reason":"Direct local-code explanation request.","matched_signals":["只基于本地代码","简短结论"]}'
+            )
+
+    classification, details = await classify_task_with_model(
+        model=_Model(),
+        task="请只基于本地代码，给我一个简短结论：generic harness 现在是真的在做 skill 进化了吗？",
+    )
+
+    assert classification.primary_type == "generic"
+    assert classification.guidance_ids == ["generic_qa"]
+    assert details["guidance_ids"] == ["generic_qa"]
 
 
 def test_planner_creates_report_graph() -> None:

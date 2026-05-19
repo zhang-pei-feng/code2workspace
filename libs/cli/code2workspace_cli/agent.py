@@ -253,6 +253,53 @@ class ShellAllowListMiddleware(AgentMiddleware):
         return await handler(request)
 
 
+class ExecuteTimeoutClampMiddleware(AgentMiddleware):
+    """Clamp oversized execute-tool timeouts to the supported maximum."""
+
+    def __init__(self, *, max_timeout_seconds: int = 3600) -> None:
+        super().__init__()
+        self._max_timeout_seconds = max_timeout_seconds
+
+    def _clamp_timeout(self, request: ToolCallRequest) -> None:
+        if request.tool_call.get("name") != "execute":
+            return
+        args = request.tool_call.get("args")
+        if not isinstance(args, dict):
+            return
+        raw_timeout = args.get("timeout")
+        if raw_timeout is None:
+            return
+        try:
+            timeout = int(raw_timeout)
+        except (TypeError, ValueError):
+            return
+        if timeout <= self._max_timeout_seconds:
+            return
+        logger.info(
+            "Clamping execute timeout from %ss to %ss for tool call %s",
+            timeout,
+            self._max_timeout_seconds,
+            request.tool_call.get("id"),
+        )
+        args["timeout"] = self._max_timeout_seconds
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
+    ) -> ToolMessage | Command[Any]:
+        self._clamp_timeout(request)
+        return handler(request)
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+    ) -> ToolMessage | Command[Any]:
+        self._clamp_timeout(request)
+        return await handler(request)
+
+
 def load_async_subagents(config_path: Path | None = None) -> list[AsyncSubAgent]:
     """Load async subagent definitions from `config.toml`.
 
@@ -1370,6 +1417,7 @@ def create_cli_agent(
 
     from code2workspace.middleware.summarization import create_summarization_tool_middleware
 
+    agent_middleware.append(ExecuteTimeoutClampMiddleware())
     agent_middleware.append(
         create_summarization_tool_middleware(model, composite_backend)
     )

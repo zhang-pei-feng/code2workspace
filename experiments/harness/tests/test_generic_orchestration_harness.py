@@ -301,6 +301,10 @@ proposal.write_text("# Proposal\\n\\n- Summary: improve generic scores\\n", enco
         "experiments.harness.generic_orchestration_harness.runner.evaluate_case",
         fake_evaluate_case,
     )
+    monkeypatch.setattr(
+        "experiments.harness.generic_orchestration_harness.runner._export_accepted_candidate_experience",
+        lambda **_kwargs: [],
+    )
 
     try:
         report = run_experiment(experiment=experiment, max_iterations=1)

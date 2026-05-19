@@ -1,36 +1,96 @@
 # Compose Report Node Guidance
 
-- Compose only from lane evidence already gathered or explicitly note which lanes remain incomplete.
-- Preserve uncertainty rather than smoothing over missing evidence.
-- Include an evidence-source note or short source paragraph that explains where the main evidence came from and which conclusions are directly supported versus inferred.
-- Default to a full report body, not a terse memo. Prefer multiple substantive sections over a short conclusion-only answer.
-- Expand each major claim with supporting evidence, interpretation, and key caveats so the final report reads like a complete deliverable.
-- Use this default report structure unless the user supplied a stricter format:
+- Treat the report body as the primary deliverable. Write the report itself, not a process memo, execution diary, or chat reply.
+- Compose only from lane evidence already gathered. If one lane is incomplete, keep the relevant section and state the evidence gap briefly instead of inventing filler.
+- Preserve uncertainty instead of smoothing over it. Every strong conclusion should be traceable to direct evidence or an explicitly labeled inference.
+- Default to a substantial report body, not a terse memo. Prefer complete sections with evidence, interpretation, and caveats over short conclusion-only output.
+- Write in the same language as the user's request unless the user explicitly asked otherwise.
+- Report-Level Writing Contract:
+
+- The report should read like a polished deliverable for a decision-maker or reviewer, not like agent output.
+- Do not narrate your own actions. Avoid phrases such as "I searched", "the lane found", "this node analyzed", "here is the report", or "based on the tool outputs" unless a direct artifact audit note genuinely requires that wording.
+- Do not expose internal supervisor/node names in headings or body text. Convert them into user-facing source categories such as local artifacts, monitoring evidence, benchmark history, or literature/web evidence.
+- Expand major claims with three layers whenever relevant:
+  - what the evidence directly shows
+  - what can reasonably be inferred from it
+  - what remains uncertain or unsupported
+- Prefer prose-first exposition. Use bullets only for summaries, recommendations, or compact enumerations; use tables for side-by-side comparisons, metrics, or evidence-strength matrices.
+- Keep the structure easy to scan:
+  - one `#` title
+  - `##` major sections
+  - `###` subsections only when they improve readability
+- Use absolute dates and explicit time windows wherever freshness matters.
+- Choose The Report Shape:
+
+- Use the user's requested format when explicit. If the user asked for fixed section names or a mandated structure, that requirement is authoritative.
+- Otherwise, choose the closest structure archetype below and adapt it to the evidence:
+  - comparison report:
+    - define the comparison target and criteria early
+    - include a compact comparison table
+    - explain where the compared evidence is not directly comparable
+  - monitoring or situation report:
+    - open with current status and recent change
+    - state the time window, source freshness, and watch items
+    - separate current facts from forward-looking implications
+  - risk or assessment report:
+    - define what is being assessed
+    - separate observed evidence, risk interpretation, and uncertainty
+    - keep recommendations tied to explicit findings
+  - benchmark or technical evaluation report:
+    - state dataset/input scope, methods, metrics, results, limitations, and reproducibility notes
+    - distinguish historical outcomes from newly generated outcomes
+  - local evidence report:
+    - distinguish direct local artifacts, historical summaries, reusable run products, and optional computed evidence
+    - state clearly when a conclusion is supported by local artifact reuse rather than fresh recomputation
+- Default Section Template:
+
+- Use this default structure unless the user supplied a stricter format:
   - `# <report title>`
-  - `## Executive Summary` / `执行摘要`: 3-6 bullets with the most decision-relevant conclusions.
-  - `## Scope and Time Window` / `范围与时间窗口`: task scope, dates, geography, datasets, and freshness notes.
-  - `## Key Findings` / `关键发现`: evidence-backed findings, each tied to sources or artifacts.
-  - `## Evidence Analysis` / `证据分析`: compare monitoring, local data, and literature/web evidence; separate direct evidence from inferred or proxy evidence.
-  - `## Uncertainty and Limitations` / `不确定性与局限`: missing lanes, weak sources, stale data, and non-comparable metrics.
-  - `## Recommendations or Next Steps` / `建议或下一步`: only include when the task calls for action or decision support.
-  - `## Sources / Evidence Appendix` / `来源与证据附录`: source list, local artifact paths, and citation notes.
-- If a section has no evidence, keep the section and state the gap briefly instead of silently dropping it.
-- Prefer concise paragraphs plus small tables for comparisons; avoid only bullet-list conclusions unless the user asked for a brief.
-- Section quality requirements:
-  - Executive summary must state the bottom-line answer, not only describe the report contents.
-  - Scope/time window must use absolute dates where freshness matters.
-  - Key findings should be numbered or clearly separated; each finding should include evidence and interpretation.
-  - Evidence analysis should explain how monitoring, local data, and literature/web evidence agree or diverge.
-  - If local benchmark history was available, summarize what it directly supports, such as prior metric values, runnable datasets, successful/failed tools, reusable artifacts, or reproducibility constraints.
-  - Limitations should distinguish missing evidence, low-quality evidence, stale evidence, and non-comparable evidence.
-  - Recommendations should be actionable and tied to findings; omit this section if the user only asked for neutral synthesis.
-- Citation and source rules:
-  - Use consistent inline source references such as `[1]`, `[2]`, or Markdown links; do not mix styles unnecessarily.
-  - End with a source/evidence appendix that maps each cited source or artifact to the claim type it supports.
-  - Mark evidence as direct, inferred, or proxy when the distinction affects confidence.
-  - For local artifacts, cite stable file paths rather than vague phrases like "the generated files".
-- Formatting rules:
-  - Prefer tables for side-by-side comparisons, metric summaries, and evidence-strength matrices.
-  - Keep paragraphs focused; avoid long undifferentiated blocks.
-  - Do not include a meta preface such as "Here is the report" unless the user requested conversational framing.
-  - Do not include internal supervisor/node names in headings or body text.
+  - `## Executive Summary` / `执行摘要`
+  - `## Scope and Time Window` / `范围与时间窗口`
+  - `## Key Findings` / `关键发现`
+  - `## Evidence Analysis` / `证据分析`
+  - `## Uncertainty and Limitations` / `不确定性与限制`
+  - `## Recommendations or Next Steps` / `建议或下一步` when the task calls for action or decision support
+  - `## Sources / Evidence Appendix` / `来源与证据附录`
+- If a section has no usable evidence, keep the section and say what is missing.
+- Section Quality Rules:
+
+- Executive summary:
+  - state the bottom-line answer first
+  - include only the most decision-relevant conclusions
+  - do not merely describe what the report contains
+- Scope and time window:
+  - define the task boundary, geography/repository boundary, datasets, and evidence freshness
+  - say what is out of scope when that materially affects interpretation
+- Key findings:
+  - separate findings clearly with subsections, numbering, or tables
+  - each finding should connect claim, evidence, interpretation, and caveat
+  - if the report is comparative, make the comparison rule explicit before the conclusion
+- Evidence analysis:
+  - compare how local data, monitoring evidence, literature/web evidence, benchmark history, or computed evidence agree or diverge
+  - distinguish direct evidence from inferred or proxy evidence whenever that changes confidence
+  - if local benchmark history was available, summarize what it directly supports: prior metric values, successful or failed tools, reusable artifacts, reproducibility notes, or dataset/input compatibility
+- Uncertainty and limitations:
+  - distinguish missing evidence, stale evidence, low-quality evidence, and non-comparable evidence
+  - do not hide conflicts; surface them and explain which evidence is more direct, fresher, or more relevant
+- Recommendations or next steps:
+  - include only when useful for the task
+  - make each recommendation traceable to a prior finding or explicit uncertainty
+  - do not recommend recomputation by default; say why new computation would be needed if you recommend it
+- Citation And Source Rules:
+
+- Use one consistent inline source style throughout the report, preferably bracketed references such as `[1]`, `[2]`, `[3]`.
+- Keep numbering stable and sequential. If a source is reused, reuse its existing number instead of renumbering it.
+- End with a `Sources / Evidence Appendix` that maps each cited source or artifact to the kind of claim it supports.
+- For local artifacts, cite stable file paths rather than vague labels like "generated files" or "the output above".
+- Mark evidence as direct, inferred, or proxy when that distinction materially affects confidence.
+- If sources disagree, do not average them away. Explain the conflict and why one source is preferred, or leave the conclusion unresolved.
+- Forbidden Patterns:
+
+- Do not write the report as a chat message.
+- Do not add meta prefaces such as "Here is the report" unless the user explicitly asked for conversational framing.
+- Do not dump raw lane summaries without synthesis.
+- Do not rely on bullets alone when the report needs interpretation.
+- Do not silently convert a weak or proxy signal into a strong factual claim.
+- Do not claim that new computation was necessary unless the report also explains why existing evidence was insufficient.

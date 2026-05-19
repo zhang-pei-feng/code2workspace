@@ -2049,6 +2049,67 @@ class TestShellAllowListMiddleware:
             ShellAllowListMiddleware(allow_list=SHELL_ALLOW_ALL)
 
 
+class TestExecuteTimeoutClampMiddleware:
+    """Tests for execute-timeout clamping middleware."""
+
+    def test_clamps_oversized_execute_timeout_sync(self) -> None:
+        from code2workspace_cli.agent import ExecuteTimeoutClampMiddleware
+
+        middleware = ExecuteTimeoutClampMiddleware(max_timeout_seconds=3600)
+        request = Mock()
+        request.tool_call = {
+            "name": "execute",
+            "args": {"command": "miniwdl run foo.wdl", "timeout": 7200},
+            "id": "tc-timeout-sync",
+        }
+        handler = Mock(return_value="ok")
+
+        result = middleware.wrap_tool_call(request, handler)
+
+        assert result == "ok"
+        handler.assert_called_once_with(request)
+        assert request.tool_call["args"]["timeout"] == 3600
+
+    @pytest.mark.asyncio
+    async def test_leaves_small_execute_timeout_unchanged(self) -> None:
+        from unittest.mock import AsyncMock
+
+        from code2workspace_cli.agent import ExecuteTimeoutClampMiddleware
+
+        middleware = ExecuteTimeoutClampMiddleware(max_timeout_seconds=3600)
+        request = Mock()
+        request.tool_call = {
+            "name": "execute",
+            "args": {"command": "docker --version", "timeout": 120},
+            "id": "tc-timeout-async",
+        }
+        handler = AsyncMock(return_value="ok")
+
+        result = await middleware.awrap_tool_call(request, handler)
+
+        assert result == "ok"
+        handler.assert_awaited_once_with(request)
+        assert request.tool_call["args"]["timeout"] == 120
+
+    def test_ignores_non_execute_tools(self) -> None:
+        from code2workspace_cli.agent import ExecuteTimeoutClampMiddleware
+
+        middleware = ExecuteTimeoutClampMiddleware(max_timeout_seconds=3600)
+        request = Mock()
+        request.tool_call = {
+            "name": "read_file",
+            "args": {"file_path": "/tmp/x", "timeout": 7200},
+            "id": "tc-non-execute",
+        }
+        handler = Mock(return_value="ok")
+
+        result = middleware.wrap_tool_call(request, handler)
+
+        assert result == "ok"
+        handler.assert_called_once_with(request)
+        assert request.tool_call["args"]["timeout"] == 7200
+
+
 class TestCreateCliAgentShellMiddlewareWiring:
     """Verify `create_cli_agent` wires `ShellAllowListMiddleware` correctly."""
 

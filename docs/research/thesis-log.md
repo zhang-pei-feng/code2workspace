@@ -26,6 +26,138 @@ and evidence-backed completion judgment.
 
 ### 2026-05-19
 
+- Reworked the report composition prompt to align more closely with the
+  Open Deep Research-style final-report writer pattern:
+  - `compose_report.md` no longer acts mainly as a rigid section checklist
+  - it now defines a stronger report-level writing contract, task-type report
+    shape archetypes, section quality rules, citation/source rules, and
+    forbidden meta-writing patterns
+  - the new prompt keeps this repo's evidence-layer requirements, especially
+    direct vs inferred vs proxy evidence and local-artifact citation, while
+    reducing the "fill in a template" feel of the previous report writer
+  - updated the compose-report worker-prompt test accordingly
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k test_build_worker_prompt_compose_report_includes_template_guidance`
+    -> `1 passed`
+
+- Tightened the local-computation decision contract for report and generic
+  evidence workers:
+  - report `local_data_lane`, generic `worker_context`, and generic
+    `init_generic` now explicitly follow `existing_data sufficiency check ->
+    decide whether computed_data is truly required -> only then retrieve and
+    run a compatible operator`
+  - Supervisor worker prompt assembly now injects the same three-step decision
+    order directly into the local computation context so model workers do not
+    treat the presence of `operator_store` candidates as an automatic rerun
+    instruction
+  - this keeps reusable benchmark history, cached artifacts, local APIs, and
+    dataset records as first-class evidence rather than merely prelude to a new
+    computation
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k "test_build_worker_prompt_local_data_report_includes_benchmark_history or test_build_worker_prompt_init_generic_plans_operator_store_computation"`
+    -> `2 passed`
+
+- Changed benchmark fan-out execution so each selected operator case is owned
+  by a parallel `worker_agent` node instead of being short-circuited through the
+  deterministic case helper:
+  - `register` and `summarize` remain deterministic/helper-backed orchestration
+    adapters where appropriate
+  - per-tool case nodes now enter the normal worker runnable, so the agent owns
+    reading case artifacts, choosing repo-native helper vs WDL path, bounded
+    repair, output verification, and analysis artifact creation
+  - `benchmark_workflow.py` remains available as a concrete command the worker
+    can invoke, but it is no longer the supervisor-level default for executing
+    the whole case
+  - updated benchmark case guidance and the Chinese Supervisor Agent flow note
+    to reflect the new agent-owned per-operator execution design
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+    -> `87 passed`
+
+- Added a runtime-side timeout guard for agent-owned benchmark case execution:
+  - introduced `ExecuteTimeoutClampMiddleware` in the CLI/workspace agent stack
+    so oversized `execute` tool calls are clamped to the supported 3600-second
+    ceiling before reaching the tool layer
+  - strengthened benchmark case guidance so workers explicitly shorten copied
+    or inferred timeouts instead of reusing helper-scale values that exceed the
+    interactive tool contract
+  - this addresses the first regression discovered after switching benchmark
+    fan-out from helper-owned execution to agent-owned execution: historical
+    `Flye`/`canu` and immune-escape case reruns had started to fail at the tool
+    boundary with `timeout exceeds maximum allowed (3600s)` rather than at the
+    scientific workflow itself
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_agent.py -q`
+    -> `92 passed`
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'benchmark_case or benchmark_workers_run_in_parallel or supervisor_worker_runner_sends_benchmark_case' -q`
+    -> `9 passed`
+
+- Re-ran a historical full virus-assembly benchmark prompt after the timeout
+  clamp:
+  - run directory:
+    `workspace/20260519144221/orchestration_runs/20260519T064229698498Z`
+  - the agent-owned `Flye` case completed successfully and produced structured
+    result/analysis artifacts plus primary assembly outputs
+  - the agent-owned `canu` case now reached real `miniwdl` execution and a
+    bounded WDL-side retry instead of dying at the tool layer; the remaining
+    failure became domain-meaningful and evidence-backed (`229` reads loaded,
+    `0` usable overlaps, no corrected/trimmed reads for assembly, no
+    `contigs.fasta`)
+  - final evaluation reported `B8.metrics_extracted`, `comparison_valid=false`,
+    and `false_positive=false`, which is the desired outcome for a partially
+    successful multi-operator benchmark where one operator finishes and the
+    other fails for workflow/data reasons rather than orchestration/runtime
+    reasons
+
+- Added a first implementation of a local `dataset_store` so the local
+  computation layer now has three reusable evidence libraries:
+  - `operator_store` for executable tools/workflows
+  - `dataset_store` for datasets and input bundles
+  - `benchmark_comparison_history_store` for previous comparison outcomes
+- The new dataset library stores canonical `dataset.json` records under
+  `dataset_store/datasets/<dataset_id>/`, builds a rebuildable SQLite index,
+  records file/media/tag/operator-compatibility metadata, and optionally writes
+  `embedding.json` for semantic retrieval using the same embedding helper path
+  as the operator/history stores.
+- Supervisor report/generic local-computation prompts now surface
+  `dataset_store` roots and candidates, instructing workers to choose a
+  compatible operator plus dataset/input bundle for computed evidence before
+  falling back to older benchmark-history hints.
+- Validation:
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_dataset_store.py libs/cli/tests/unit_tests/test_operator_store.py libs/cli/tests/unit_tests/test_benchmark_workflow_history.py libs/cli/tests/unit_tests/test_supervisor_runtime.py::test_build_worker_prompt_local_data_report_includes_benchmark_history libs/cli/tests/unit_tests/test_supervisor_runtime.py::test_build_worker_prompt_init_generic_plans_operator_store_computation -q`
+  -> `13 passed`
+- Consolidated previously collected/used benchmark datasets into
+  `workspace/dataset_store/`:
+  - materialized 30 dataset records and 126 files under one local dataset
+    repository
+  - generated 30 real `text-embedding-3-small` embedding records through the
+    configured OpenAI-compatible `/embeddings` gateway
+  - updated `DatasetStore` to call `/embeddings` directly before falling back
+    to the LangChain adapter or local hash vectors, because the gateway serves
+    `/embeddings` but does not expose `/models`
+  - smoke query `immune escape protein docking fasta` returned the immune
+    escape bundles first
+
+- Shifted generic harness learning from prompt-only surface evolution toward
+  skill evolution:
+  - added `.code2workspace/skills/orchestration/generic-experience/` as a
+    runtime-owned experience memory for generic orchestration
+  - accepted generic harness candidates now write structured experience records
+    that preserve problem classification, problem abstraction, abstracted
+    instance, trajectory, trajectory explanation, trajectory effect,
+    applicability, and confidence
+  - each accepted write also rebuilds a distilled skill artifact at
+    `generic-experience/generated/generic_orchestration_experience.md`
+  - generic worker prompts now inject both the distilled experience skill and
+    top matching historical experiences as planning hints when `generic_qa`
+    guidance is active
+  - this creates a first real `case -> experience record -> distilled skill ->
+    next generic orchestration` loop, which is closer to the thesis goal of
+    evidence-backed orchestration capability growth than repeatedly editing one
+    static prompt fragment
+  - design note:
+    `docs/overview/generic-experience-skill-evolution-plan.zh.md`
+
 - Implemented the first end-to-end generic orchestration harness loop:
   - added `experiments/harness/generic_orchestration_harness/` with a real
     baseline/candidate keep-discard loop over Supervisor Graph generic runs
@@ -1739,6 +1871,23 @@ and evidence-backed completion judgment.
     (`30 passed`)
   - `test_supervisor_runtime.py` plus `test_orchestration_runtime.py` passed
     together (`55 passed`)
+
+- Supervisor runtime now lazily backfills `benchmark_comparison_history_store`
+  from existing workspace benchmark run artifacts:
+  - when report `local_data_lane` or benchmark result reuse needs history and
+    the current workspace store is empty, runtime scans historical run
+    directories that expose root `manifest.json` plus `cases/`
+  - it reconstructs canonical benchmark result records from per-case
+    `manifest.json`, `run/status.json` or synthesized WDL-only status,
+    `run/result_manifest.json`, and `analysis.json`
+  - synthesized backfill writes standard
+    `records/<repo>/<run_id>/benchmark_result_record.json` entries into the
+    current workspace root so old benchmark results become queryable as local
+    evidence without manual migration
+  - validation: targeted `test_supervisor_runtime.py` cases passed, including
+    a report-local-data prompt test that starts with an empty store, auto-
+    backfills a historical Flye run, and then surfaces that record inside the
+    worker prompt
 
 - A live retest exposed and then fixed two benchmark outcome-reporting gaps:
   - the natural virus-assembly prompt excluding `spades`/`megahit` selected

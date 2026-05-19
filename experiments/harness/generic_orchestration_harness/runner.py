@@ -15,6 +15,11 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from code2workspace_cli.generic_experience_store import (
+    build_experience_record,
+    rebuild_distilled_guidance,
+    write_record,
+)
 from code2workspace_cli.supervisor_evaluation import write_evaluation_for_run
 
 from experiments.harness.generic_orchestration_harness.agent import propose_variant
@@ -234,6 +239,113 @@ def run_split(*, experiment: Experiment, layout: RunLayout, split: str, variant)
     return result
 
 
+def _export_accepted_candidate_experience(
+    *,
+    experiment: Experiment,
+    layout: RunLayout,
+    candidate: CandidateEvaluation,
+    previous_train: SplitScore,
+    previous_holdout: SplitScore,
+) -> list[Path]:
+    case_lookup = {case.case_id: case for case in experiment.cases}
+    split_baselines = {
+        "train": previous_train.mean_score,
+        "holdout": previous_holdout.mean_score,
+    }
+    split_candidates = {
+        "train": candidate.train.mean_score,
+        "holdout": candidate.holdout.mean_score,
+    }
+    written: list[Path] = []
+    for outcome in (*candidate.train.outcomes, *candidate.holdout.outcomes):
+        case = case_lookup.get(outcome.case_id)
+        if case is None:
+            continue
+        summary_path = Path(outcome.generic_trace_summary_path)
+        run_dir = Path(outcome.run_dir)
+        if not summary_path.exists() or not run_dir.exists():
+            continue
+        generic_trace_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        record = build_experience_record(
+            case_id=case.case_id,
+            prompt=case.prompt,
+            split=case.split,
+            variant=candidate.variant,
+            harness_run_root=layout.run_root,
+            orchestration_run_dir=run_dir,
+            generic_trace_summary=generic_trace_summary,
+            baseline_split_mean_score=split_baselines.get(case.split, 0.0),
+            candidate_split_mean_score=split_candidates.get(case.split, 0.0),
+        )
+        written.append(write_record(record))
+    rebuild_distilled_guidance()
+    return written
+
+
+def sync_experience_skill_from_run_root(run_root: Path) -> list[Path]:
+    manifest_path = run_root / "manifest.json"
+    report_path = run_root / "report.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"missing manifest.json under {run_root}")
+    if not report_path.exists():
+        raise FileNotFoundError(f"missing report.json under {run_root}")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    case_lookup = {
+        str(item["case_id"]): item
+        for item in manifest.get("cases", [])
+        if isinstance(item, dict) and item.get("case_id")
+    }
+    previous_train = float(report.get("baseline_train", {}).get("mean_score", 0.0))
+    previous_holdout = float(report.get("baseline_holdout", {}).get("mean_score", 0.0))
+    written: list[Path] = []
+    for iteration in report.get("iterations", []):
+        if not isinstance(iteration, dict):
+            continue
+        candidate = iteration.get("candidate")
+        if not isinstance(candidate, dict) or not candidate.get("accepted"):
+            continue
+        variant = str(candidate.get("variant", "candidate"))
+        train = dict(candidate.get("train") or {})
+        holdout = dict(candidate.get("holdout") or {})
+        current_train = float(train.get("mean_score", previous_train))
+        current_holdout = float(holdout.get("mean_score", previous_holdout))
+        for split_name, split_payload, previous_mean, current_mean in (
+            ("train", train, previous_train, current_train),
+            ("holdout", holdout, previous_holdout, current_holdout),
+        ):
+            for outcome in split_payload.get("outcomes", []):
+                if not isinstance(outcome, dict):
+                    continue
+                case_id = str(outcome.get("case_id", ""))
+                case = case_lookup.get(case_id)
+                if not isinstance(case, dict):
+                    continue
+                summary_path = Path(str(outcome.get("generic_trace_summary_path", "")))
+                orchestration_run_dir = Path(str(outcome.get("run_dir", "")))
+                if not summary_path.exists() or not orchestration_run_dir.exists():
+                    continue
+                summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+                record = build_experience_record(
+                    case_id=case_id,
+                    prompt=str(case.get("prompt", "")),
+                    split=split_name,
+                    variant=variant,
+                    harness_run_root=run_root,
+                    orchestration_run_dir=orchestration_run_dir,
+                    generic_trace_summary=summary_payload,
+                    baseline_split_mean_score=previous_mean,
+                    candidate_split_mean_score=current_mean,
+                    created_at=str(report.get("created_at", "")) or None,
+                )
+                written.append(write_record(record))
+        previous_train = current_train
+        previous_holdout = current_holdout
+    rebuild_distilled_guidance()
+    return written
+
+
 def run_baseline(*, experiment: Experiment, split: str | None = None, output_root: Path | None = None) -> Path:
     layout = RunLayout(
         output_root=output_root or experiment.output_root,
@@ -352,6 +464,13 @@ def run_experiment(
             )
         )
         if accepted:
+            _export_accepted_candidate_experience(
+                experiment=experiment,
+                layout=layout,
+                candidate=candidate,
+                previous_train=current_train,
+                previous_holdout=current_holdout,
+            )
             current = candidate_variant
             current_train = train
             current_holdout = holdout
@@ -388,11 +507,21 @@ def parse_args() -> argparse.Namespace:
     optimize.add_argument("config", type=Path)
     optimize.add_argument("--max-iterations", type=int)
 
+    sync_skill = subparsers.add_parser(
+        "sync-skill",
+        help="Backfill generic experience skill records from a completed harness run root",
+    )
+    sync_skill.add_argument("run_root", type=Path)
+
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.command == "sync-skill":
+        written = sync_experience_skill_from_run_root(args.run_root)
+        print(len(written))
+        return
     experiment = load_experiment(args.config)
     if args.command == "validate":
         print(args.config)

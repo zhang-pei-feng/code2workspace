@@ -152,6 +152,14 @@ def test_github2workspace_manifest_indexes_docker_product(tmp_path: Path) -> Non
         status="docker_validated",
         source_repo="https://github.com/ablab/spades",
         validation_summary="Docker succeeded; WDL partial.",
+        evaluation={
+            "false_positive": True,
+            "completion_level": "G4.environment_built",
+            "unsupported_claims": ["claimed smoke success without smoke evidence"],
+            "required_evidence_missing": [
+                "wdl_smoke_run/*/outputs.json plus successful workflow.log"
+            ],
+        },
     )
     manifest_path = store.write_manifest(manifest)
 
@@ -164,6 +172,30 @@ def test_github2workspace_manifest_indexes_docker_product(tmp_path: Path) -> Non
     )
     assert rows[0]["id"] == "github2workspace:spades"
     assert rows[0]["manifest_path"] == str(manifest_path)
+    assert "false-positive" in manifest["tags"]
+    assert "false-positive:true" in manifest["tags"]
+    assert "completion:G4.environment_built" in manifest["tags"]
+
+    operator_record = json.loads(
+        (store.root / "operators" / "github2workspace-spades" / "operator.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert operator_record["false_positive"] is True
+    assert operator_record["completion_level"] == "G4.environment_built"
+    assert operator_record["unsupported_claims"] == ["claimed smoke success without smoke evidence"]
+
+    validation_record = json.loads(
+        (
+            store.root
+            / "operators"
+            / "github2workspace-spades"
+            / "validations"
+            / "run-1.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert validation_record["false_positive"] is True
+    assert validation_record["completion_level"] == "G4.environment_built"
 
 
 def test_github2workspace_manifest_marks_synthetic_input_tag(tmp_path: Path) -> None:

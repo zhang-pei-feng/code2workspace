@@ -1094,9 +1094,11 @@ def build_github2workspace_operator_manifest(
     status: str,
     source_repo: str,
     validation_summary: str,
+    evaluation: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build a manifest for one github2workspace product."""
     created_at = _utc_now()
+    evaluation_payload = _github_workspace_evaluation_payload(evaluation)
     dockerfile_path = workspace_root / f"{name}_Dockerfile"
     wdl_path = workspace_root / f"{name}.wdl"
     inputs_path = workspace_root / "inputs.json"
@@ -1139,7 +1141,9 @@ def build_github2workspace_operator_manifest(
             "run_dir": str(run_dir),
             "summary": validation_summary,
             "created_at": created_at,
+            **evaluation_payload,
         },
+        "evaluation": evaluation_payload,
         "artifacts": {
             "dockerfile": str(dockerfile_path) if dockerfile_path.exists() else "",
             "wdl": workflow_path,
@@ -1156,6 +1160,7 @@ def build_github2workspace_operator_manifest(
             uses_synthetic_inputs=_github_workspace_uses_synthetic_inputs(
                 workspace_root=workspace_root,
             ),
+            evaluation=evaluation_payload,
         ),
     }
 
@@ -1220,6 +1225,8 @@ def _build_operator_record_payload(
         )
     source = payload.get("source")
     source_payload = source if isinstance(source, dict) else {}
+    validation = payload.get("validation")
+    validation_payload = validation if isinstance(validation, dict) else {}
     created_at = (
         str(existing_operator.get("created_at", "")).strip()
         if isinstance(existing_operator, dict)
@@ -1251,6 +1258,14 @@ def _build_operator_record_payload(
         "output_media_types": _unique_media_types(payload.get("outputs")),
         "expected_outputs": _output_names(payload.get("outputs")),
         "validation_status": str(payload.get("status", "")),
+        "false_positive": _bool_value(validation_payload.get("false_positive")),
+        "completion_level": str(validation_payload.get("completion_level", "")),
+        "unsupported_claims": _list_of_strings(
+            validation_payload.get("unsupported_claims")
+        ),
+        "required_evidence_missing": _list_of_strings(
+            validation_payload.get("required_evidence_missing")
+        ),
         "latest_validation_id": normalized["validation_id"],
         "created_at": created_at,
         "updated_at": normalized["updated_at"],
@@ -1314,7 +1329,17 @@ def _build_validation_record_payload(
         "dataset_id": str(validation_payload.get("dataset_id", "")),
         "run_dir": str(validation_payload.get("run_dir", "")),
         "summary": str(validation_payload.get("summary") or normalized["summary"]),
-        "created_at": str(validation_payload.get("created_at") or normalized["created_at"]),
+        "created_at": str(
+            validation_payload.get("created_at") or normalized["created_at"]
+        ),
+        "false_positive": _bool_value(validation_payload.get("false_positive")),
+        "completion_level": str(validation_payload.get("completion_level", "")),
+        "unsupported_claims": _list_of_strings(
+            validation_payload.get("unsupported_claims")
+        ),
+        "required_evidence_missing": _list_of_strings(
+            validation_payload.get("required_evidence_missing")
+        ),
         "artifacts": payload.get("artifacts", {}),
         "metrics": _list_of_dicts(payload.get("metrics")),
         "runtime": payload.get("runtime", {}),
@@ -1540,8 +1565,10 @@ def _github_workspace_tags(
     has_wdl: bool,
     has_wdl_outputs: bool,
     uses_synthetic_inputs: bool,
+    evaluation: dict[str, object] | None = None,
 ) -> list[str]:
     tags = {"github2workspace", status}
+    evaluation_payload = evaluation or {}
     if has_dockerfile:
         tags.add("docker")
     if has_wdl:
@@ -1550,7 +1577,34 @@ def _github_workspace_tags(
         tags.add("wdl-completed")
     if uses_synthetic_inputs:
         tags.add("synthetic-inputs")
+    false_positive = _bool_value(evaluation_payload.get("false_positive"))
+    tags.add(f"false-positive:{str(false_positive).lower()}")
+    completion_level = str(evaluation_payload.get("completion_level", "")).strip()
+    if completion_level:
+        tags.add(f"completion:{completion_level}")
+    if false_positive:
+        tags.add("false-positive")
     return sorted(tags)
+
+
+def _github_workspace_evaluation_payload(
+    evaluation: dict[str, object] | None,
+) -> dict[str, object]:
+    if not isinstance(evaluation, dict) or not evaluation:
+        return {
+            "false_positive": False,
+            "completion_level": "",
+            "unsupported_claims": [],
+            "required_evidence_missing": [],
+        }
+    return {
+        "false_positive": _bool_value(evaluation.get("false_positive")),
+        "completion_level": str(evaluation.get("completion_level", "")),
+        "unsupported_claims": _list_of_strings(evaluation.get("unsupported_claims")),
+        "required_evidence_missing": _list_of_strings(
+            evaluation.get("required_evidence_missing")
+        ),
+    }
 
 
 def _github_workspace_uses_synthetic_inputs(*, workspace_root: Path) -> bool:
@@ -1624,6 +1678,16 @@ def _list_of_dicts(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _list_of_strings(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, str) and item.strip()]
+
+
+def _bool_value(value: object) -> bool:
+    return value is True
 
 
 def _unique_media_types(value: object) -> list[str]:

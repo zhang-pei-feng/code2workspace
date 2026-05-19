@@ -31,6 +31,7 @@ from code2workspace_cli.benchmark_result_store import (
     BenchmarkResultSearchFilter,
     BenchmarkResultStore,
 )
+from code2workspace_cli.dataset_store import DatasetStore
 from code2workspace_cli.operator_store import OperatorSearchFilter, OperatorStore
 from code2workspace_cli.supervisor_runtime import (
     _build_worker_invoke_request,
@@ -187,12 +188,26 @@ async def test_run_supervisor_orchestration_writes_artifacts_and_stops_on_node_d
 
     final_payload = json.loads((run_dir / "final_decision.json").read_text())
     evaluation_payload = json.loads((run_dir / "evaluation.json").read_text())
+    operator_manifest = json.loads(
+        (
+            workspace
+            / "operator_store"
+            / "objects"
+            / "github2workspace"
+            / "spades"
+            / run_dir.name
+            / "operator_product.json"
+        ).read_text(encoding="utf-8")
+    )
     assert final_payload["decision"] == "stop"
     assert final_payload["reason"] == "Node decision check requested finalization."
     assert final_payload["failed_nodes"] == ["build"]
     assert evaluation_payload["task_family"] == "github2workspace"
     assert evaluation_payload["completion_status"] == "partial"
     assert evaluation_payload["false_positive"] is False
+    assert operator_manifest["validation"]["false_positive"] is False
+    assert operator_manifest["validation"]["completion_level"] == evaluation_payload["completion_level"]
+    assert "false-positive:false" in operator_manifest["tags"]
     assert result.round_count == 1
 
 
@@ -926,11 +941,15 @@ def test_build_worker_prompt_compose_report_includes_template_guidance() -> None
         workspace_root=Path("/tmp/supervisor-workspace"),
     )
 
-    assert "Use this default report structure" in prompt
-    assert "Executive Summary" in prompt
-    assert "Section quality requirements" in prompt
-    assert "Citation and source rules" in prompt
-    assert "If the report is a risk assessment" in prompt
+    assert "Report-Level Writing Contract" in prompt
+    assert "Choose The Report Shape" in prompt
+    assert "Default Section Template" in prompt
+    assert "Section Quality Rules" in prompt
+    assert "Citation And Source Rules" in prompt
+    assert "Forbidden Patterns" in prompt
+    assert "Do not narrate your own actions" in prompt
+    assert "comparison report" in prompt
+    assert "local evidence report" in prompt
 
 
 def test_build_worker_prompt_monitoring_lane_includes_source_priority_and_depth_policy() -> None:
@@ -1007,6 +1026,7 @@ def test_build_worker_prompt_init_generic_plans_operator_store_computation() -> 
     )
 
     assert "searches operator_store for candidate operators" in prompt
+    assert "first plan for a judgment about whether existing local evidence is already sufficient" in prompt
     assert "selects a compatible local dataset/input bundle" in prompt
     assert "runs the concrete WDL/Docker/entrypoint path" in prompt
     assert "metric_compute" in prompt
@@ -1104,6 +1124,25 @@ def test_build_worker_prompt_local_data_report_includes_benchmark_history(
             "tags": ["benchmark", "execution-ready", "long-read"],
         }
     )
+    dataset_store = DatasetStore(tmp_path / "dataset_store")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "long-read-pacbio",
+            "name": "Long read PacBio input bundle",
+            "domain": "genome_assembly",
+            "summary": "PacBio FASTQ reads for long-read assembly benchmark computation.",
+            "files": [
+                {
+                    "name": "pacbio_reads",
+                    "role": "reads",
+                    "media_type": "fastq",
+                    "uri": str(reads_path),
+                }
+            ],
+            "tags": ["long-read", "benchmark"],
+            "compatible_operator_ids": ["benchmark:Flye"],
+        }
+    )
     node = TaskNode(
         node_id="local_data_lane",
         title="Local data lane",
@@ -1121,15 +1160,113 @@ def test_build_worker_prompt_local_data_report_includes_benchmark_history(
     assert "Report local data source context:" in prompt
     assert "existing_data" in prompt
     assert "computed_data" in prompt
+    assert "Decision order:" in prompt
+    assert "First judge whether existing_data already answers the local-data need well enough." in prompt
+    assert "Do not run an operator by default just because operator_store candidates exist." in prompt
+    assert "first explain why existing_data is insufficient" in prompt
     assert "operator_store records as the local operator library" in prompt
+    assert "dataset_store records as the preferred local dataset/input-bundle library" in prompt
+    assert "dataset_store_roots:" in prompt
     assert "Candidate local operators for computed_data:" in prompt
     assert "operator_id=benchmark:Flye" in prompt
     assert "inputs_json=" in prompt
+    assert "Candidate dataset_store records:" in prompt
+    assert "dataset_id=long-read-pacbio" in prompt
+    assert str(reads_path) in prompt
     assert "Candidate local datasets/input bundles:" in prompt
     assert "repo=Flye" in prompt
     assert "dataset_key=long-read-pacbio" in prompt
     assert '"n50": 1234' in prompt
     assert "record_path=" in prompt
+
+
+def test_build_worker_prompt_local_data_report_backfills_workspace_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CODE2WORKSPACE_OPERATOR_STORE_EMBEDDINGS_ENABLED", "0")
+    run_dir = tmp_path / "20260518_history_backfill"
+    case_dir = run_dir / "cases" / "Flye"
+    wdl_dir = case_dir / "wdl"
+    run_output_dir = wdl_dir / "run_outputs"
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+    assembly = run_output_dir / "assembly.fasta"
+    assembly.write_text(">contig\nACGT\n", encoding="utf-8")
+    workflow_path = tmp_path / "flye.wdl"
+    workflow_path.write_text("workflow FlyeWorkflow {}", encoding="utf-8")
+    inputs_path = tmp_path / "inputs.json"
+    inputs_path.write_text(json.dumps({"FlyeWorkflow.reads": "pacbio.fastq.gz"}), encoding="utf-8")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"case_order": ["Flye"]}),
+        encoding="utf-8",
+    )
+    (case_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "repo_name": "Flye",
+                "operator_id": "github2workspace:Flye",
+                "dataset_key": "long-read-pacbio",
+                "family": "long-read-assembly",
+                "metric_keys": ["n50"],
+                "expected_outputs": ["assembly.fasta"],
+                "wdl_path": str(workflow_path),
+                "inputs_path": str(inputs_path),
+                "wdl_workflow_name": "FlyeWorkflow",
+                "selected_input_files": {"reads": str(tmp_path / "pacbio.fastq.gz")},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (case_dir / "wdl" / "status.json").write_text(
+        json.dumps(
+            {
+                "success": True,
+                "returncode": 0,
+                "output_dir": str(run_output_dir),
+                "output_artifacts": [str(assembly)],
+                "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    (case_dir / "analysis.json").write_text(
+        json.dumps(
+            {
+                "family": "long-read-assembly",
+                "artifact_paths": [str(assembly)],
+                "artifact_checksums": {},
+                "metrics": {"n50": 1234},
+            }
+        ),
+        encoding="utf-8",
+    )
+    node = TaskNode(
+        node_id="local_data_lane",
+        title="Local data lane",
+        objective="Collect local structured evidence.",
+        capability_bundles=["db_access", "api_call", "validate"],
+        metadata={
+            "task": "请写一份 Flye PacBio benchmark 报告",
+            "task_type": "report",
+            "guidance_ids": ["report_synthesis"],
+        },
+    )
+
+    prompt = _build_worker_prompt(node=node, workspace_root=tmp_path)
+
+    record_path = (
+        tmp_path
+        / "benchmark_comparison_history_store"
+        / "records"
+        / "Flye"
+        / "20260518_history_backfill"
+        / "benchmark_result_record.json"
+    )
+    assert record_path.exists()
+    assert "Candidate benchmark history records:" in prompt
+    assert "repo=Flye" in prompt
+    assert "dataset_key=long-read-pacbio" in prompt
+    assert str(record_path) in prompt
 
 
 def test_build_worker_prompt_generic_context_includes_local_computation_context(
@@ -4295,13 +4432,41 @@ async def test_invoke_worker_agent_falls_back_to_wdl_when_repo_native_command_is
             "run_dir": str(run_dir),
         },
     )
-    agent = AsyncMock()
-    agent.ainvoke.side_effect = AssertionError("deterministic worker should bypass the model")
+    async def fake_agent_run(*args, **kwargs):
+        fake_helper([], cwd=workspace_root, phase="run-wdl:circompara2")
+        (case_dir / "run" / "status.json").write_text(
+            json.dumps(
+                {
+                    "execution_mode": "wdl_only",
+                    "success": True,
+                    "returncode": 0,
+                    "output_artifacts": [str(case_dir / "wdl" / "circompara2.out")],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "messages": [
+                AIMessage(
+                    content=json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "circompara2 benchmark completed via agent-owned WDL path.",
+                            "artifacts": [str(case_dir / "wdl" / "status.json")],
+                            "evidence": [str(case_dir / "run" / "status.json")],
+                        }
+                    )
+                )
+            ]
+        }
 
-    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_helper):
-        result = await _invoke_worker_agent(agent=agent, node=node, workspace_root=workspace_root)
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = fake_agent_run
+
+    result = await _invoke_worker_agent(agent=agent, node=node, workspace_root=workspace_root)
 
     assert result.status == "completed"
+    assert agent.ainvoke.await_count == 1
     assert (case_dir / "run" / "status.json").exists()
     run_status = json.loads((case_dir / "run" / "status.json").read_text(encoding="utf-8"))
     assert run_status["execution_mode"] == "wdl_only"
@@ -4309,7 +4474,7 @@ async def test_invoke_worker_agent_falls_back_to_wdl_when_repo_native_command_is
 
 
 @pytest.mark.asyncio
-async def test_invoke_worker_agent_uses_deterministic_benchmark_repo_helper(
+async def test_invoke_worker_agent_uses_agent_owned_benchmark_case(
     tmp_path: Path,
 ) -> None:
     workspace_root = tmp_path / "workspace"
@@ -4388,9 +4553,6 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_repo_helper(
             "run_dir": str(run_dir),
         },
     )
-    agent = AsyncMock()
-    agent.ainvoke.side_effect = AssertionError("benchmark repo helper path should bypass the model")
-
     def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
         case_dir = run_dir / "cases" / "megahit"
         output_dir = case_dir / "run" / "repo_native_output"
@@ -4467,20 +4629,58 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_repo_helper(
             return {"phase": phase, "command": command, "stdout": {"repo": "megahit"}}
         raise AssertionError(f"unexpected phase: {phase}")
 
-    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_helper):
-        result = await _invoke_worker_agent(
-            agent=agent,
-            node=node,
-            workspace_root=workspace_root,
+    async def fake_agent_run(*args, **kwargs):
+        fake_helper([], cwd=workspace_root, phase="run-repo-native:megahit")
+        fake_helper([], cwd=workspace_root, phase="analyze-case:megahit")
+        case_dir = run_dir / "cases" / "megahit"
+        (case_dir / "run" / "result_manifest.json").write_text(
+            json.dumps(
+                {
+                    "expected_outputs": {
+                        "final.contigs.fa": {
+                            "path": str(case_dir / "run" / "repo_native_output" / "final.contigs.fa"),
+                            "exists": True,
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
         )
+        return {
+            "messages": [
+                AIMessage(
+                    content=json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "megahit benchmark completed by the agent-owned case runner.",
+                            "artifacts": [
+                                str(case_dir / "run" / "result_manifest.json"),
+                                str(case_dir / "analysis.json"),
+                            ],
+                            "evidence": [str(case_dir / "run" / "status.json")],
+                        }
+                    )
+                )
+            ]
+        }
+
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = fake_agent_run
+
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
 
     assert result.status == "completed"
     assert "megahit" in result.summary
+    assert agent.ainvoke.await_count == 1
     assert (run_dir / "cases" / "megahit" / "run" / "result_manifest.json").exists()
 
 
 @pytest.mark.asyncio
-async def test_deterministic_benchmark_repo_helper_marks_missing_expected_outputs_partial(
+async def test_agent_owned_benchmark_case_marks_missing_expected_outputs_partial(
     tmp_path: Path,
 ) -> None:
     workspace_root = tmp_path / "workspace"
@@ -4516,9 +4716,6 @@ async def test_deterministic_benchmark_repo_helper_marks_missing_expected_output
             "run_dir": str(run_dir),
         },
     )
-    agent = AsyncMock()
-    agent.ainvoke.side_effect = AssertionError("benchmark repo helper path should bypass the model")
-
     def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
         if phase == "run-repo-native:canu":
             (case_dir / "run" / "status.json").write_text(
@@ -4575,20 +4772,40 @@ async def test_deterministic_benchmark_repo_helper_marks_missing_expected_output
             return {"phase": phase, "command": command, "stdout": {"repo": "canu"}}
         raise AssertionError(f"unexpected phase: {phase}")
 
-    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_helper):
-        result = await _invoke_worker_agent(
-            agent=agent,
-            node=node,
-            workspace_root=workspace_root,
-        )
+    async def fake_agent_run(*args, **kwargs):
+        fake_helper([], cwd=workspace_root, phase="run-repo-native:canu")
+        return {
+            "messages": [
+                AIMessage(
+                    content=json.dumps(
+                        {
+                            "status": "partial",
+                            "summary": "Executed canu, but expected benchmark output files were not found.",
+                            "artifacts": [str(case_dir / "run" / "status.json")],
+                            "evidence": [str(case_dir / "run" / "repo_native.log")],
+                            "failure_reason": "expected_outputs_missing",
+                        }
+                    )
+                )
+            ]
+        }
+
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = fake_agent_run
+
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
 
     assert result.status == "partial"
     assert result.failure_reason == "expected_outputs_missing"
-    assert "Expected benchmark output files were not found" in result.summary
+    assert "expected benchmark output files were not found" in result.summary
 
 
 @pytest.mark.asyncio
-async def test_retry_benchmark_case_runs_agentic_repair_before_deterministic_retry(
+async def test_retry_benchmark_case_is_owned_by_worker_agent(
     tmp_path: Path,
 ) -> None:
     workspace_root = tmp_path / "workspace"
@@ -4653,76 +4870,54 @@ async def test_retry_benchmark_case_runs_agentic_repair_before_deterministic_ret
             "run_dir": str(run_dir),
         },
     )
-    agent = AsyncMock()
-    agent.ainvoke.return_value = {
-        "messages": [
-            AIMessage(
-                content=json.dumps(
-                    {
-                        "repaired": True,
-                        "modified_files": [str(staged_wdl)],
-                        "summary": "patched the staged WDL to avoid writing to /output",
-                    }
-                )
-            )
-        ]
-    }
-
-    def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
-        if phase == "run-wdl:canu":
-            output_file = case_dir / "wdl" / "assembly.fasta"
-            output_file.write_text(">contig\nACGT\n", encoding="utf-8")
-            (case_dir / "wdl" / "outputs.json").write_text(
-                json.dumps({"outputs": {"CanuWorkflow.assembly": str(output_file)}}),
-                encoding="utf-8",
-            )
-            (case_dir / "wdl" / "status.json").write_text(
-                json.dumps(
-                    {
-                        "success": True,
-                        "returncode": 0,
-                        "started_at": "2026-05-17T00:00:00Z",
-                        "finished_at": "2026-05-17T00:00:02Z",
-                        "elapsed_seconds": 2.0,
-                        "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
-                        "outputs_path": str(case_dir / "wdl" / "outputs.json"),
-                        "output_artifacts": [str(output_file)],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            return {"phase": phase, "command": command, "stdout": {"repo": "canu"}}
-        if phase == "analyze-case:canu":
-            (case_dir / "analysis.json").write_text(
-                json.dumps(
-                    {
-                        "family": "long-read-assembly",
-                        "artifact_paths": [str(case_dir / "wdl" / "run_outputs" / "assembly.fasta")],
-                        "artifact_checksums": {},
-                        "metrics": {"contig_count": 1},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"repo": "canu"}}
-        raise AssertionError(f"unexpected phase: {phase}")
-
-    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_helper):
-        result = await _invoke_worker_agent(
-            agent=agent,
-            node=node,
-            workspace_root=workspace_root,
+    async def fake_agent_run(*args, **kwargs):
+        output_file = case_dir / "wdl" / "assembly.fasta"
+        output_file.write_text(">contig\nACGT\n", encoding="utf-8")
+        (case_dir / "wdl" / "status.json").write_text(
+            json.dumps({"success": True, "returncode": 0, "output_artifacts": [str(output_file)]}),
+            encoding="utf-8",
         )
+        (case_dir / "analysis.json").write_text(
+            json.dumps(
+                {
+                    "family": "long-read-assembly",
+                    "artifact_paths": [str(output_file)],
+                    "artifact_checksums": {},
+                    "metrics": {"contig_count": 1},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
+        return {
+            "messages": [
+                AIMessage(
+                    content=json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "retry canu completed after an agent-owned bounded repair and WDL run.",
+                            "artifacts": [str(case_dir / "analysis.json")],
+                            "evidence": [str(case_dir / "wdl" / "status.json")],
+                        }
+                    )
+                )
+            ]
+        }
+
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = fake_agent_run
+
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
 
     assert result.status == "completed"
     assert agent.ainvoke.await_count == 1
-    repair_report = json.loads((case_dir / "repair_report.json").read_text(encoding="utf-8"))
-    assert repair_report["repaired"] is True
-    assert repair_report["modified_files"] == [str(staged_wdl)]
     prompt = agent.ainvoke.await_args.args[0]["messages"][0].content
-    assert "Permission denied" in prompt
-    assert str(staged_wdl) in prompt
+    assert "You are responsible for the whole per-operator case" in prompt
+    assert str(run_dir) in prompt
 
 
 @pytest.mark.asyncio
@@ -4832,7 +5027,7 @@ async def test_retry_benchmark_case_ignores_invalid_repair_output(
 
 
 @pytest.mark.asyncio
-async def test_supervisor_worker_runner_triggers_benchmark_case_repair_on_retry(
+async def test_supervisor_worker_runner_sends_benchmark_case_to_worker_agent(
     tmp_path: Path,
 ) -> None:
     node = TaskNode(
@@ -4846,13 +5041,14 @@ async def test_supervisor_worker_runner_triggers_benchmark_case_repair_on_retry(
             "run_dir": str(tmp_path / "workspace" / "orchestration_runs" / "run"),
         },
     )
-    deterministic_result = WorkerResult(status="completed", summary="retry ok")
+    agent_result = WorkerResult(status="completed", summary="agent-owned retry ok")
     agent = AsyncMock()
     with (
         patch.object(supervisor_runtime, "_maybe_prepare_worker_inputs", return_value=None),
         patch.object(supervisor_runtime, "_maybe_run_agentic_benchmark_register", AsyncMock(return_value=None)),
         patch.object(supervisor_runtime, "_maybe_run_agentic_benchmark_case_repair", AsyncMock(return_value={"repaired": True})) as repair_mock,
-        patch.object(supervisor_runtime, "_maybe_run_deterministic_worker", return_value=deterministic_result),
+        patch.object(supervisor_runtime, "_maybe_run_deterministic_worker", return_value=WorkerResult(status="completed", summary="deterministic")),
+        patch.object(supervisor_runtime, "_invoke_worker_runnable", AsyncMock(return_value=agent_result)) as invoke_mock,
     ):
         runner = SupervisorWorkerRunner(
             base_agent=agent,
@@ -4860,12 +5056,13 @@ async def test_supervisor_worker_runner_triggers_benchmark_case_repair_on_retry(
         )
         result = await runner.run(node)
 
-    assert result is deterministic_result
-    repair_mock.assert_awaited_once()
+    assert result is agent_result
+    invoke_mock.assert_awaited_once()
+    repair_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_deterministic_benchmark_workers_run_in_parallel_ready_batch(
+async def test_agent_owned_benchmark_workers_run_in_parallel_ready_batch(
     tmp_path: Path,
 ) -> None:
     graph = TaskGraph(
@@ -4894,36 +5091,42 @@ async def test_deterministic_benchmark_workers_run_in_parallel_ready_batch(
     max_active = 0
     lock = threading.Lock()
 
-    def fake_deterministic_worker(*, node: TaskNode, workspace_root: Path) -> WorkerResult | None:
+    async def fake_agent_run(*args, **kwargs):
         nonlocal active, max_active
-        if node.node_id not in {"spades", "megahit"}:
-            return None
         with lock:
             active += 1
             max_active = max(max_active, active)
-        time.sleep(0.1)
+        await asyncio.sleep(0.1)
         with lock:
             active -= 1
-        return WorkerResult(status="completed", summary=f"{node.node_id} ok")
+        return {
+            "messages": [
+                AIMessage(
+                    content=json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "agent-owned benchmark case ok",
+                        }
+                    )
+                )
+            ]
+        }
 
     agent = AsyncMock()
-    agent.ainvoke.side_effect = AssertionError("deterministic worker should bypass the model")
+    agent.ainvoke.side_effect = fake_agent_run
 
-    with patch(
-        "code2workspace_cli.supervisor_runtime._maybe_run_deterministic_worker",
-        side_effect=fake_deterministic_worker,
-    ):
-        result = await execute_graph_round(
-            graph,
-            lambda node: _invoke_worker_agent(
-                agent=agent,
-                node=node,
-                workspace_root=tmp_path,
-            ),
-        )
+    result = await execute_graph_round(
+        graph,
+        lambda node: _invoke_worker_agent(
+            agent=agent,
+            node=node,
+            workspace_root=tmp_path,
+        ),
+    )
 
     assert result.completed_count == 2
     assert max_active == 2
+    assert agent.ainvoke.await_count == 2
 
 
 @pytest.mark.asyncio

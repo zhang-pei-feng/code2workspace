@@ -1,0 +1,75 @@
+{
+  "applicability": {
+    "avoid_when": "the task explicitly needs broad web discovery, monitoring, or a formal report artifact",
+    "use_when": "the user wants a repo-local explanation or decision and one bounded evidence lane is enough"
+  },
+  "confidence": 93.25,
+  "created_at": "2026-05-19T01:29:04+00:00",
+  "problem_abstraction": {
+    "constraints": [
+      "local_only",
+      "short_answer"
+    ],
+    "summary": "Explain repo-local runtime or artifact behavior from local code and keep the answer compact.",
+    "tags": [
+      "local_code_explanation",
+      "local_only",
+      "repo_local",
+      "请只基于本地代码",
+      "tool_activity",
+      "jsonl",
+      "里早先的",
+      "unknown",
+      "tool",
+      "event",
+      "是怎么来的",
+      "后来又是怎么修掉的",
+      "回答简短"
+    ]
+  },
+  "problem_classification": {
+    "complexity": "small",
+    "evidence_mode": "local_only",
+    "intent": "local_code_explanation",
+    "scope": "repo_local",
+    "task_family": "generic"
+  },
+  "problem_instance": {
+    "abstracted_instance": "Explain repo-local runtime or artifact behavior from local code and keep the answer compact. Example prompt shape: 请只基于本地代码，说明 tool_activity.jsonl 里早先的 unknown tool event 是怎么来的，后来又是怎么修掉的。回答简短。",
+    "prompt_excerpt": "请只基于本地代码，说明 tool_activity.jsonl 里早先的 unknown tool event 是怎么来的，后来又是怎么修掉的。回答简短。"
+  },
+  "record_id": "generic-unknown-tool-fix-holdout__iter-001__579ec7a0d1",
+  "source": {
+    "case_id": "generic-unknown-tool-fix-holdout",
+    "harness_run_root": "experiments/harness/runs/generic-orchestration-harness/20260519T010322Z",
+    "orchestration_run_dir": "/mnt/data1/zhangpf/code/code2workspace/workspace/20260519092655/orchestration_runs/20260519T012703206612Z",
+    "split": "holdout",
+    "variant": "iter-001"
+  },
+  "trajectory": {
+    "answer_style": "short_direct_answer",
+    "evidence_pattern": "explicit_evidence_boundary",
+    "graph_shape": "evidence_then_synthesis",
+    "node_count": 3,
+    "node_ids": [],
+    "round_count": 2,
+    "stop_rule": "stop after enough local artifacts are read for synthesis",
+    "tool_rhythm": "moderate"
+  },
+  "trajectory_effect": {
+    "acceptance": "accepted",
+    "case_score": 87.5,
+    "completion_level": "D6.evidence_boundary_preserved",
+    "completion_status": "completed",
+    "efficiency_score": 100.0,
+    "evidence_score": 60.0,
+    "findings": [
+      "Generic trace is complete enough for harness comparison."
+    ],
+    "score_delta_vs_previous": 2.125,
+    "source_url_count": 0,
+    "split_mean_score": 86.875,
+    "traceability_score": 100.0
+  },
+  "trajectory_explain": "This trajectory kept the graph small enough for the task while still leaving a clear synthesis step. It fits local-only questions because it can stop after the needed repo artifacts are read."
+}

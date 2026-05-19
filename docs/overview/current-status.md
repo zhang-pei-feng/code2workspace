@@ -37,8 +37,10 @@ This is the fastest engineering snapshot for the repository.
   - uses known-family guidance/templates for `github2workspace`, `benchmark`,
     and `report`
   - executes those rounds through one supervisor worker runner contract, with
-    non-deterministic nodes dispatched to a dedicated worker agent runnable and
-    deterministic benchmark helpers kept as adapters
+    non-deterministic nodes dispatched to a dedicated worker agent runnable,
+    benchmark per-tool case nodes now owned by parallel worker agents, and
+    deterministic benchmark helpers kept for registration/summary adapters and
+    optional worker-invoked commands
   - writes canonical orchestration artifacts under the current thread workspace
     at `orchestration_runs/<run_id>/`
   - rebuilds and queries a lightweight SQLite case index from workspace
@@ -57,10 +59,15 @@ This is the fastest engineering snapshot for the repository.
   output contract inspired by Open Deep Research-style final report prompts:
   title, executive summary, scope/time window, key findings, evidence analysis,
   uncertainty/limitations, optional recommendations, and a source/evidence
-  appendix. The final chat-facing response also preserves this structure for
+  appendix. The composition prompt has now been reshaped further to resemble
+  Open Deep Research's stronger report-writer contract: a report-level writing
+  contract, task-type structure archetypes, section quality rules, stable
+  citation/source rules, and forbidden meta-writing patterns, while still
+  preserving the local-artifact and evidence-layer semantics needed by this
+  repo. The final chat-facing response also preserves this structure for
   `report` tasks instead of compressing the deliverable into a short summary.
-  The constraints are now split across `init_report` contract setup,
-  `compose_report` section/source/format rules, and `final_response`
+  The constraints are split across `init_report` contract setup,
+  `compose_report` writing/source/format rules, and `final_response`
   structure-preservation rules rather than being hardcoded as runtime logic.
 - Added `docs/overview/supervisor-agent-function-flows.zh.md` as a
   thesis-facing Chinese explanation of each Supervisor Agent function, including
@@ -75,6 +82,34 @@ This is the fastest engineering snapshot for the repository.
   Chinese field-level design note for `operator_store` and
   `benchmark_comparison_history_store`, separating stable operator management
   from reusable benchmark comparison history.
+- Benchmark fan-out execution now keeps one agent per selected operator case:
+  after `register` chooses `selected_tools`, each tool node is scheduled in the
+  ready batch and enters `worker_agent` instead of being short-circuited by the
+  deterministic case helper. The helper script remains available for the agent
+  to call as a concrete command, while the agent owns command selection,
+  bounded repair, output verification, and analysis artifact creation for that
+  case. Validation:
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+  -> `87 passed`
+- Added a global execute-timeout clamp for workspace/worker agents so
+  agent-owned benchmark cases no longer fail at the tool layer when the model
+  proposes oversized shell timeouts:
+  - `ExecuteTimeoutClampMiddleware` now rewrites `execute(timeout=...)` tool
+    calls above 3600 seconds down to the tool-supported ceiling
+  - benchmark case guidance now also explicitly tells workers to keep execute
+    timeouts within the allowed bound instead of copying larger values from
+    helper conventions
+  - a live rerun of the historical long-read virus-assembly benchmark prompt
+    confirmed the previous `timeout exceeds maximum allowed (3600s)` failure is
+    gone; `Flye` completed successfully under agent-owned execution, while
+    `canu` progressed through real `miniwdl` execution, one bounded WDL repair,
+    and a structured failure analysis that attributes the remaining failure to
+    dataset/coverage overlap limits rather than runtime plumbing
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_agent.py -q`
+    -> `92 passed`
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'benchmark_case or benchmark_workers_run_in_parallel or supervisor_worker_runner_sends_benchmark_case' -q`
+    -> `9 passed`
 - Report supervisor worker nodes now have a bounded default timeout of 20
   minutes (`CODE2WORKSPACE_SUPERVISOR_REPORT_NODE_TIMEOUT_SECONDS`). A timed
   out report lane is recorded as `partial` with `worker_timeout`, allowing
@@ -85,13 +120,38 @@ This is the fastest engineering snapshot for the repository.
   `existing_data` (already materialized database/registry/API/artifact/history
   evidence) and `computed_data` (values that require retrieving a compatible
   operator plus dataset/input bundle from the local stores and running its
-  concrete WDL/Docker/entrypoint path). The prompt prioritizes
-  `operator_store` candidates and local datasets/input bundles for computed
-  evidence; `benchmark_comparison_history_store` is treated as optional
-  existing evidence only when directly relevant. A focused test now runs a
-  report graph where `local_data_lane` selects a local operator from the prompt
-  context, executes it, writes `forecast_result.json`, and returns that artifact
-  through `worker_outputs/local_data_lane.json`.
+  concrete WDL/Docker/entrypoint path). The prompt now enforces a stronger
+  decision order: first judge whether `existing_data` is already sufficient,
+  only then declare a concrete evidence gap, and only then search
+  `operator_store` plus `dataset_store` for new computation. This keeps
+  `benchmark_comparison_history_store` as optional `existing_data` rather than
+  turning every local-data request into an implicit rerun. A focused test still
+  covers the positive compute path where `local_data_lane` selects a local
+  operator from the prompt context, executes it, writes
+  `forecast_result.json`, and returns that artifact through
+  `worker_outputs/local_data_lane.json`.
+- Added a first-class `dataset_store` alongside `operator_store` and
+  `benchmark_comparison_history_store`. It uses file-backed `dataset.json`
+  records plus rebuildable SQLite indexes and optional embedding-backed
+  semantic retrieval, and Supervisor local-computation prompts now inject
+  matching dataset/input-bundle candidates before falling back to operator input
+  hints or historical benchmark records.
+- The existing benchmark/input datasets have been consolidated under
+  `workspace/dataset_store/`: 30 dataset records, 126 materialized files, and
+  30 `text-embedding-3-small` embedding records generated through the
+  configured OpenAI-compatible `/embeddings` gateway. `DatasetStore` now tries a
+  direct HTTP `/embeddings` request before the LangChain embedding adapter and
+  only falls back to local hash vectors if the remote embedding path is
+  unavailable.
+- When the benchmark comparison history store is empty, supervisor runtime now
+  lazily backfills it from existing workspace benchmark run artifacts before
+  report local-data lookup or benchmark-history reuse. The backfill scans run
+  directories with `manifest.json` + `cases/`, synthesizes missing
+  `run/status.json` or `run/result_manifest.json` from `wdl/status.json` when
+  needed, and writes canonical
+  `benchmark_comparison_history_store/records/<repo>/<run_id>/benchmark_result_record.json`
+  entries into the current workspace root so historical benchmark evidence
+  becomes immediately queryable as local structured data.
 - Generic planning now also makes local computation explicit: `init_generic`
   guidance tells the planner that prediction, simulation, scoring, metric
   calculation, or other computed evidence should produce a worker that searches
@@ -263,6 +323,21 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
     and holdout mean score from `84.75` to `86.88`
   - implementation design is documented in
     `docs/overview/generic-orchestration-harness-plan.zh.md`
+- Generic orchestration skill evolution now has a first case-memory loop:
+  - added `.code2workspace/skills/orchestration/generic-experience/` as a
+    runtime-owned experience skill package separate from stable
+    `supervisor-guidance`
+  - accepted generic harness candidates now export structured experience
+    records with problem classification/abstraction, abstracted instance,
+    trajectory, trajectory explanation, trajectory effect, applicability, and
+    confidence
+  - those records are distilled into
+    `generic-experience/generated/generic_orchestration_experience.md`
+  - generic worker prompts now read both the distilled experience skill and
+    top matching historical experience records as planning hints whenever the
+    `generic_qa` family guidance is active
+  - the design note is recorded in
+    `docs/overview/generic-experience-skill-evolution-plan.zh.md`
 - Fresh generic real-case rerun after the monitoring-policy update completed
   the three previous COVID/respiratory generic examples with return code 0
   under

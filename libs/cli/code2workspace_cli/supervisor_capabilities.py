@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Literal
 
 from code2workspace.orchestration_runtime import CapabilityBundle
+from code2workspace_cli.generic_experience_store import (
+    generated_guidance_path,
+    retrieve_experience_guidance_lines,
+)
 
 ImplementationKind = Literal["tool", "guidance", "hybrid"]
 
@@ -156,8 +160,9 @@ _NODE_GUIDANCE_DEFAULTS: dict[str, tuple[str, ...]] = {
         "Focus on literature, preprints, technical analyses, and primary-source web material.",
     ),
     "init_generic": (
-        "Keep this node narrow: define the generic delivery contract, pick 2-3 bounded worker units, and record a one-layer parallel batch plan only.",
-        "Do not spend this node on broad execution; stop once the worker split and batch plan are concrete enough for the next round.",
+        "Keep this node narrow: define the generic delivery contract, pick the next 1-3 bounded worker units, and record a serial next-step plan by default.",
+        "Prefer a gather evidence -> check what is missing -> gather targeted evidence if needed -> summarize flow; use parallel lanes only when independent branches are clearly necessary.",
+        "Do not spend this node on broad execution; stop once the worker split and serial plan are concrete enough for the next round.",
         "If the generic task needs prediction or calculation, plan a worker that searches operator_store, selects a compatible dataset/input bundle, and runs the chosen operator to produce computed evidence.",
     ),
     "compose_generic": (
@@ -265,4 +270,25 @@ def family_guidance_lines(guidance_ids: list[str]) -> list[str]:
     lines: list[str] = []
     for guidance_id in guidance_ids:
         lines.extend(_guidance_asset_lines("families", guidance_id))
+        if guidance_id == "generic_qa":
+            lines.extend(_generated_generic_experience_lines())
     return lines
+
+
+def _generated_generic_experience_lines() -> tuple[str, ...]:
+    path = generated_guidance_path(_repo_root())
+    if not path.exists():
+        return ()
+    loaded = [
+        line.strip("- ").strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    return tuple(line for line in loaded if line)
+
+
+def generic_experience_guidance_lines(*, task: str, guidance_ids: list[str]) -> list[str]:
+    """Return matched experience guidance for generic family tasks."""
+    if "generic_qa" not in guidance_ids:
+        return []
+    return retrieve_experience_guidance_lines(task=task, root=_repo_root())

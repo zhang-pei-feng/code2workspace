@@ -17,7 +17,8 @@
 11. [算子库 operator_store](#算子库-operator_store)
 12. [Benchmark 比对历史库 benchmark_comparison_history_store](#benchmark-比对历史库-benchmark_comparison_history_store)
 13. [评估指标与完成度判断](#评估指标与完成度判断)
-14. [入口文件速查](#入口文件速查)
+14. [Prompt 注入与假阳拦截总表](#prompt-注入与假阳拦截总表)
+15. [入口文件速查](#入口文件速查)
 
 ## 总体架构
 
@@ -161,13 +162,15 @@ flowchart TD
     P -->|命中| WR1[WorkerResult]
     P -->|未命中| AR[maybe_run_agentic_benchmark_register<br/>LLM 选择算子]
     AR -->|命中| WR2[WorkerResult]
-    AR -->|未命中| REP[maybe_run_agentic_benchmark_case_repair<br/>LLM 修复 case]
+    AR -->|未命中| BC{benchmark case?}
+    BC -->|是| INV[invoke_worker_runnable<br/>agent 负责完整 case]
+    BC -->|否| REP[maybe_run_agentic_benchmark_case_repair<br/>兼容旧 retry 修复]
     REP --> DET[maybe_run_deterministic_worker<br/>helper / Python]
     DET -->|命中| WR3[WorkerResult]
     DET -->|未命中| SEL[select_runnable]
     SEL -->|report 专用节点| RWA[report_worker_agent]
     SEL -->|普通节点| SWA[supervisor_worker_agent]
-    RWA --> INV[invoke_worker_runnable]
+    RWA --> INV
     SWA --> INV
     INV --> WR4[WorkerResult]
 ```
@@ -177,8 +180,9 @@ flowchart TD
 1. `github2workspace inspect` 的仓库 materialization 由代码先做。
 2. `github2workspace wdl` 可复用已有 smoke 证据，但只能返回 `partial`，不能假装主 workflow 完成。
 3. `benchmark register` 可以先让 LLM 在候选算子中选工具，再交给确定性 helper 落地。
-4. `benchmark case` 和 `summarize` 优先走确定性 helper。
-5. 其他节点才进入 `worker_agent`。
+4. `benchmark case` 默认直接进入 per-tool `worker_agent`，由 agent 负责执行、修复、验证和分析；helper 只是 agent 可调用的工具命令。
+5. `benchmark summarize` 仍优先走确定性 helper，负责聚合各 agent case 产物。
+6. 其他节点才进入 `worker_agent`。
 
 ### report 专用 worker 模型
 
@@ -232,7 +236,7 @@ prompt 中会注入：
 - 节点级 guidance，例如 `register`、`wdl`、`compose_report`。
 - family guidance，例如 `benchmark_family`、`github2workspace_pipeline`。
 - 对 `final_response` 节点，额外注入 final summary 和决策信息。
-- 对 `report local_data_lane`，额外注入 `benchmark_comparison_history_store` 候选比对历史记录。
+- 对 `report local_data_lane` 和 generic 计算节点，额外注入 `operator_store` 候选算子、候选输入数据，以及 `benchmark_comparison_history_store` 候选历史记录。
 
 worker 必须返回 JSON：
 
@@ -249,6 +253,43 @@ worker 必须返回 JSON：
 ```
 
 如果 worker 没有返回 JSON，解析器会把文本包装成 `completed`，但这类结果在关键节点会被 `decision_check` 拦住。例如 `init_generic` 没有 `spawned_subgraph.nodes`，就不能进入下一轮执行。
+
+### prompt 注入位置
+
+系统里有三类 prompt 注入，作用不同：
+
+| 注入位置 | 注入对象 | 注入内容 | 目的 |
+| --- | --- | --- | --- |
+| `get_system_prompt()` | `base_agent`、`worker_agent`、`fallback_agent` | CLI/工作空间通用 system prompt、本地运行规则、交互/非交互差异 | 给所有 workspace agent 统一人格和工具使用边界 |
+| `MemoryMiddleware` / `SkillsMiddleware` | `base_agent`、`worker_agent` | 用户/项目 `AGENTS.md`、`.code2workspace/skills`、`.agents/skills` | 注入项目规则、技能说明、orchestration guidance |
+| `_build_worker_prompt()` | 每个 supervisor 节点 | 节点目标、run_dir、历史 worker 输出、capability、family/node guidance、本地计算上下文 | 把“一个大任务”压缩成“当前节点只做什么” |
+
+`worker_agent` 的节点 prompt 不是 system prompt，而是作为当前 HumanMessage 交给 agent。这样它仍然继承 workspace agent 的工具、skills、memory 和 subagent 能力，同时又被节点级指令约束。
+
+### worker prompt 的信息拼装流程
+
+```mermaid
+flowchart TD
+    N[TaskNode] --> RT[_augment_node_with_runtime_context<br/>代码收集 run_dir 上下文]
+    RT --> P[_build_worker_prompt]
+    P --> A[时间锚点<br/>UTC + local]
+    P --> B[capability_bundles<br/>能力说明/工具偏好/实现类型]
+    P --> C[node_guidance_lines<br/>按 node_id 加载]
+    P --> D[family_guidance_lines<br/>按 guidance_ids 加载]
+    P --> E[prior_worker_output_payloads<br/>上一轮节点摘要]
+    P --> F[local_computation_context<br/>operator_store + history 候选]
+    P --> G[final_response_source_material<br/>最终回答证据材料]
+    A --> H[HumanMessage prompt]
+    B --> H
+    C --> H
+    D --> H
+    E --> H
+    F --> H
+    G --> H
+    H --> WA[worker_agent / report_worker_agent]
+```
+
+其中 `local_computation_context` 只在需要本地数据或计算的节点注入，例如 `report local_data_lane`、`generic worker_context`、`worker_solution`，以及带 `db_access`、`operator_filter`、`metric_compute`、`data_filter` 能力束的节点。
 
 ### subagent 机制
 
@@ -389,6 +430,17 @@ flowchart TD
 
 `decision_check` 会阻止虚假完成：如果 `wdl` 声称 `completed`，但没有主功能 `miniwdl` 成功运行证据，代码会生成 `check_wdl` 并要求停止或重试。
 
+### github2workspace 的假阳拦截
+
+这里的“假阳”主要指最终回答说已经跑通，但产物证据不足。
+
+| 拦截位置 | 类型 | 触发条件 | 处理 |
+| --- | --- | --- | --- |
+| `wdl` 节点 guidance | prompt 约束 | worker 可能只做 `miniwdl check` | 明确说明 `miniwdl check` 不等于完成 |
+| `decision_check` | 代码判断 | `wdl` 返回 `completed`，但没有主 workflow 成功 `outputs.json` / `workflow.log` | 生成 `check_wdl`，停止下游或要求重试 |
+| `evaluation.json` | artifact 后处理 | final response 声称 Docker/WDL/可复现成功，但证据等级不足 | 标记 `false_positive=true` 和 `unsupported_claims` |
+| `operator_store` 写入 | 产品库记录 | github2workspace 产物被登记为算子 | 把 `false_positive`、`completion_level`、缺失证据写入算子记录和 tag |
+
 ## 基准测试 benchmark
 
 `benchmark` 用于多个算子或工具在共享输入上比较指标。这里的关键不是让 LLM 自由发挥，而是把注册、准备、执行、汇总拆成可追溯阶段。
@@ -399,9 +451,9 @@ flowchart TD
     B1 --> Sel{selected_tools?}
     Sel -->|无| Stop[记录 missing_benchmark_assets 或 missing_selected_tools]
     Sel -->|有| B2[fan-out 并行执行]
-    B2 --> T1[tool A case<br/>deterministic helper / agent repair]
-    B2 --> T2[tool B case<br/>deterministic helper / agent repair]
-    B2 --> TN[tool N case<br/>deterministic helper / agent repair]
+    B2 --> T1[tool A case<br/>worker_agent]
+    B2 --> T2[tool B case<br/>worker_agent]
+    B2 --> TN[tool N case<br/>worker_agent]
     T1 --> B3[summarize<br/>聚合指标和阻塞]
     T2 --> B3
     TN --> B3
@@ -428,7 +480,30 @@ flowchart TD
 - `cases/<tool>/execution_ready.json`：是否具备 runtime image、WDL、inputs。
 - `spawned_subgraph.selected_tools`：下一轮并行节点的机器可读工具列表。
 
-执行节点会优先使用 `.code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py`，例如 `run-repo-native` 或 WDL 运行路径。只有在需要修复 case 时，才让 agent 做受限修复。
+执行节点现在由并行的 per-tool `worker_agent` 负责完整 case 执行。agent 会读取 `manifest.json`、`execution_ready.json` 和执行契约，自行选择 repo-native helper、WDL 路径或必要的受限修复；`.code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py` 仍可作为 agent 调用的工具命令，但不再由 supervisor 直接短路执行整个 case。
+
+### benchmark case 执行与修复
+
+```mermaid
+flowchart TD
+    C[case node] --> H{历史结果可复用?}
+    H -->|是| Reuse[恢复 run/status.json<br/>analysis.json<br/>reused_result_record.json]
+    H -->|否| Ready[读取 manifest / execution_ready]
+    Ready --> Native{有 repo-native 命令?}
+    Native -->|是| RN[helper run-repo-native]
+    Native -->|否| WDL{有 workflow.wdl + inputs.json?}
+    WDL -->|是| MW[helper WDL/miniwdl path]
+    WDL -->|否| Agent[worker_agent 受限执行]
+    RN --> Check[检查 expected_outputs]
+    MW --> Check
+    Agent --> Check
+    Check -->|失败且 retry| Repair[agentic case repair<br/>只修 staged case]
+    Repair --> Ready
+    Check --> Out[case status + result_manifest + analysis]
+    Reuse --> Out
+```
+
+修复节点不是让 agent 重新设计 benchmark，而是把错误日志、staged WDL、case manifest、输入路径注入给 worker，让它做最小修复。修复输出必须能落到 `repair_report.json` 或具体被改文件，否则忽略无效修复。
 
 ## 报告生成 report
 
@@ -455,10 +530,23 @@ flowchart TD
 - 三条 evidence lane 可并行执行。
 - report 节点有默认超时 `20min`，超时记录为 `partial + worker_timeout`，后续仍可基于已有证据合成。
 - `local_data_lane` 会注入 `benchmark_comparison_history_store` 候选历史记录，把本地 benchmark 比对计算历史当作结构化证据。
+- `local_data_lane` 和 generic 计算节点都会注入 `operator_store` 候选，把算子库作为 `computed_data` 的首选来源。
 - `compose_report` 必须区分直接证据、推断证据和不确定性。
 - `final_response` 对 report 不压缩成短摘要，而是尽量保留正式 Markdown 报告结构。
 
 默认报告结构包括：标题、执行摘要、范围与时间窗口、关键发现、证据分析、不确定性与局限、建议或下一步、来源与证据附录。
+
+### report 的 evidence lane 设计
+
+| lane | 主要来源 | 由谁执行 | 输出要求 |
+| --- | --- | --- | --- |
+| `monitoring_lane` | 官方监测、主数据源、可信域名搜索 | `report_worker_agent` | 2-4 条 source-backed findings、source priority、freshness、uncertainty |
+| `local_data_lane` | 本地数据库、API、`operator_store`、`benchmark_comparison_history_store` | `report_worker_agent` + 本地工具 | `existing_data`、`computed_data`、历史记录摘录或无结果说明 |
+| `literature_lane` | 文献、preprint、技术网页、一次来源 | `report_worker_agent` | 2-4 条文献/技术证据、direct-vs-proxy、局限 |
+| `compose_report` | 三条 lane 的产物 | `report_worker_agent` / LLM | 正式 Markdown 报告，不新增未证实事实 |
+| `final_response` | compose 结果、final summary、decision | LLM | 保留报告结构，补充证据边界 |
+
+`monitoring_lane` 的证据深度默认是 D2：定向可信源搜索并读取支撑具体结论的页面、PDF、CSV、JSON 或报告。需要趋势/变化时升到 D3；高风险、争议、强不确定或用户要求全面研究时才升到 D4。
 
 ## 节点执行机制
 
@@ -499,7 +587,22 @@ flowchart TD
 - 把 worker 真实工具调用暴露为 `worker_tool_call` / `worker_tool_result`。
 - 对 report 节点设置超时。
 - 把结果写入 `worker_outputs/<node>.json` 和 `node_traces/<node>.json`。
+- 把原始 worker 消息、raw output、解析后的 `WorkerResult`、source URLs、耗时写入 `raw_worker_traces/<node>.jsonl`。
 - 向 TUI / stream 发送 supervisor event，便于界面显示长任务进度。
+
+### node decision check
+
+部分关键节点在 `metadata.decision_check=true` 时会被代码复核。复核不是 LLM 评审，而是根据 `WorkerResult` 和已落盘证据判断“能不能让下游继续”。
+
+| 节点 | 复核规则 | 失败处理 |
+| --- | --- | --- |
+| 任意关键节点 | `status=failed/blocked` | `finalize`，下游标记 `blocked_by_node_decision_check` |
+| `init_generic` | 没有 `spawned_subgraph.nodes` | 允许继续，由 generic fallback 图兜底 |
+| `register` / `retry_register` | 没有结构化 `selected_tools` 或 `blocked_tools` | `finalize`，防止无工具列表时 fan-out |
+| `init_report` | `partial` 或没有 contract/artifact/evidence 信号 | `finalize`，防止证据 lane 在不可靠报告契约上运行 |
+| `github2workspace wdl` | `completed` 但无主功能 miniwdl 成功证据，或只有 smoke-level 证据 | `finalize`，防止把静态检查当成跑通 |
+
+被 `finalize` 的节点会生成一个虚拟 `check_<node_id>` 结果，记录原因；剩余节点不会继续消耗时间，但仍会写 final summary、final response 和 evaluation。
 
 ## 能力束与 Skill guidance
 
@@ -525,8 +628,10 @@ flowchart TD
 - `families/report_synthesis.md`
 - `nodes/register.md`
 - `nodes/benchmark_case.md`
-- `nodes/wdl.md`
+- `nodes/inspect.md`
 - `nodes/compose_report.md`
+
+部分节点没有独立 Markdown 文件时，会使用 `supervisor_capabilities.py` 里的默认 guidance。例如 `wdl` 完成判断、`compose_generic`、`benchmark_case` 等都有代码侧默认提示或与现有 node guidance 叠加。
 
 这样做的好处是：稳定的调度逻辑留在 Python，经验型执行策略放到 Skill 文档，便于迭代和论文追踪。
 
@@ -565,6 +670,23 @@ flowchart TD
 ```
 
 `SQLiteCaseIndex` 会从历史 `orchestration_runs` 中读取 `request.json`、`final_decision.json`、`final_summary.md`，把类似任务摘要索引起来。新任务规划前会检索最多 3 条相似历史案例。
+
+### run artifact 的作用分层
+
+| artifact | 谁写入 | 用途 |
+| --- | --- | --- |
+| `request.json` | supervisor wrapper 代码 | 原始请求、时间和入口信息 |
+| `task_classification.json` | classifier / 规则 | 记录任务族、置信度、来源 |
+| `retrieved_cases.json` | `SQLiteCaseIndex` | 给 planner 的相似历史案例 |
+| `graph_round_*.json` | planner 代码 | 记录每轮图结构，便于复现调度 |
+| `worker_outputs/*.json` | `_run_worker_and_capture` | 节点结构化结果，供后续节点和评估读取 |
+| `node_traces/*.json` | `_run_worker_and_capture` | 节点输入输出快照 |
+| `raw_worker_traces/*.jsonl` | worker wrapper | 原始消息、工具调用、模型输出和 source URLs |
+| `tool_activity.jsonl` | worker wrapper / stream | TUI 进度、工具调用、heartbeat |
+| `final_decision.json` | supervisor decision | 是否完成、是否重试、失败节点 |
+| `final_summary.md` | summary 节点 / supervisor | 运行摘要 |
+| `final_response.md` | final response 节点 | 最终给用户看的回答 |
+| `evaluation.json` | deterministic evaluator | 完成度、缺失证据、假阳判断 |
 
 ## 算子库 operator_store
 
@@ -683,7 +805,7 @@ benchmark_comparison_history_store/
 
 ## 评估指标与完成度判断
 
-评估器是 artifact post-processor，不是 agent。它读取 run 目录产物，写 `evaluation.json`。目前主要支持 `github2workspace` 和 `benchmark`。
+评估器是 artifact post-processor，不是 agent。它读取 run 目录产物，写 `evaluation.json`。当前支持 `github2workspace`、`benchmark` 和 `generic`。其中 `github2workspace` 与 `benchmark` 更强调阶段完成度和假阳检测，`generic` 更强调路由、图结构、证据边界和 trace 可审计性。
 
 ### github2workspace 评估等级
 
@@ -733,6 +855,71 @@ benchmark_comparison_history_store/
 - `unsupported_claims`
 
 这套评估避免只看最终回答文字，而是把“真实完成到哪一步”落到文件证据上。
+
+### generic 评估等级
+
+| 等级 | 名称 | 判断依据 |
+| --- | --- | --- |
+| `D0` | `no_generic_artifacts` | 没有可用 generic 产物 |
+| `D1` | `classified_generic` | `task_classification.json` 或 `final_decision.json` 标记为 `generic` |
+| `D2` | `graph_planned` | 有 `graph_round_*.json` 且包含节点 |
+| `D3` | `nodes_executed` | 有 `worker_outputs/*.json` |
+| `D4` | `worker_trace_available` | 有 `raw_worker_traces/*.jsonl` 或 `tool_activity.jsonl` |
+| `D5` | `final_answer_written` | 有非空 `final_response.md` |
+| `D6` | `evidence_boundary_preserved` | 最终回答包含证据边界、不确定性、局限、直接/推断等信号 |
+
+generic 还会写 `generic_trace_summary.json`，用于 harness 对比。它不是判断“答案一定正确”，而是判断这次通用任务运行是否可审计、可比较、边界清楚。
+
+| 指标 | 含义 |
+| --- | --- |
+| `routing_score` | 是否正确留在 `generic` |
+| `graph_fit_score` | 图结构是否适合任务，避免过度拆分或缺节点 |
+| `traceability_score` | worker 输出、raw trace、耗时和工具事件是否完整 |
+| `evidence_score` | 是否有 source URL、搜索后读取、证据边界 |
+| `answer_score` | 是否写出最终回答，是否有可审计摘要和证据边界 |
+| `efficiency_score` | 节点数、工具事件数和耗时是否过高 |
+
+generic 的常见 findings 包括：没有规划节点、部分节点缺 raw trace、工具事件名称未归一化、运行成本过高、收集了 source 但 final answer 没保留证据边界等。
+
+## Prompt 注入与假阳拦截总表
+
+### prompt 注入总表
+
+| 功能 | 注入位置 | 主要注入内容 | 为什么注入 |
+| --- | --- | --- | --- |
+| 任务分类 | classifier prompt | task、候选 task_type、JSON 输出约束 | 让分类结果机器可读 |
+| `generic init` | `_build_worker_prompt` + `nodes/init_generic.md` | 动态子图格式、能力束白名单、本地计算要求 | 让 worker 规划下一轮而不是直接答完 |
+| `generic evidence/solution` | `worker_context.md` / `worker_solution.md` | D2-D4 证据深度、本地 operator 计算、停止条件 | 让普通任务也保留证据边界 |
+| `github2workspace inspect/build/wdl` | family guidance + node guidance | 仓库落地、Docker、WDL、miniwdl 真实运行要求 | 防止只写说明不验证 |
+| `benchmark register` | `nodes/register.md` + operator candidates | 候选算子、共享数据集、helper 命令、`selected_tools` 输出 | 让下游 fan-out 有机器可读输入 |
+| `benchmark case` | `nodes/benchmark_case.md` + case artifacts | manifest、execution contract、helper 路径、期望输出 | 让每个算子由并行 agent 完整执行 case |
+| `report init` | `nodes/init_report.md` | 报告契约、lane 期望、目录脚手架 | 让证据 lane 有统一口径 |
+| `report lanes` | lane guidance + local computation context | source priority、D2/D3/D4、operator/history 候选 | 控制证据质量和本地计算复用 |
+| `compose_report` | `nodes/compose_report.md` | 默认报告模板、引用规则、证据/推断/局限 | 产出正式结构化报告 |
+| `final_response` | `_build_worker_prompt` 特殊分支 | final summary、decision、已收集证据、禁止发明事实 | 把内部产物编辑成用户回答 |
+
+### 假阳拦截总表
+
+| 功能 | 假阳风险 | 拦截点 | 判断依据 |
+| --- | --- | --- | --- |
+| `generic` | 有 source 但回答抹掉不确定性 | `generic` evaluator | `has_evidence_boundary`、`has_audit_summary`、source URL 与 final answer 对照 |
+| `github2workspace build` | 声称 Docker 成功但无构建证据 | evaluator | `worker_outputs/build.json` 中的 Dockerfile 和 build success marker |
+| `github2workspace wdl` | `miniwdl check` 被当成真实运行 | node decision + evaluator | `wdl_smoke_run/*/outputs.json` 和成功 `workflow.log` |
+| `github2workspace reproducible` | 声称完全可复现但缺请求/决策/输出 | evaluator | `request.json`、`final_decision.json`、smoke outputs/log |
+| `benchmark register` | 没有工具列表却继续 fan-out | node decision | `spawned_subgraph.selected_tools` 或 `blocked_tools` |
+| `benchmark comparison` | 一个工具成功却说多工具比较有效 | evaluator | `completed_operators>=2`、`dataset_consistency`、summary comparison |
+| `benchmark history reuse` | 历史结果被错误复用 | history reuse 规则 | workflow/input signature 优先，dataset_key 兜底 |
+| `report` | 证据 lane 不全却写成确定结论 | report guidance + final prompt | 必须保留 missing lane、uncertainty、source appendix |
+
+### 代码与 LLM 的边界
+
+| 环节 | 代码负责 | LLM / agent 负责 |
+| --- | --- | --- |
+| 路由 | 规则兜底、置信度阈值、无效 JSON 回退 | 根据任务语义输出分类 JSON |
+| 图规划 | 已知任务族默认图、重试图、依赖调度 | `init_generic` 可生成动态子图 |
+| 节点执行 | register/summarize helper、历史复用、产物落盘、超时、heartbeat | per-tool case 执行、命令选择、修复、证据提炼、报告写作 |
+| 算子检索 | SQLite/FTS/embedding 召回候选 | 从候选中解释选择理由或做小范围决策 |
+| 完成判断 | `decision_check`、`evaluation.json`、false positive 标记 | `final_response` 用已有证据写清楚边界 |
 
 ## 入口文件速查
 
