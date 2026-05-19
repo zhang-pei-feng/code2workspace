@@ -1187,11 +1187,13 @@ async def _collect_worker_messages(
 @dataclass(slots=True)
 class _WorkerToolEventState:
     tool_names_by_id: dict[str, str]
+    pending_tool_calls: list[dict[str, object]]
     seen_tool_call_keys: set[str]
     seen_tool_result_keys: set[str]
 
     def __init__(self) -> None:
         self.tool_names_by_id = {}
+        self.pending_tool_calls = []
         self.seen_tool_call_keys = set()
         self.seen_tool_result_keys = set()
 
@@ -1206,34 +1208,24 @@ def _record_worker_tool_events(
     tool_state = state or _WorkerToolEventState()
     for message in messages:
         for tool_call in _message_tool_calls(message):
-            tool_call_id = str(tool_call.get("id") or "")
-            tool_name = str(tool_call.get("name") or "unknown")
-            if tool_call_id:
-                tool_state.tool_names_by_id[tool_call_id] = tool_name
-            event = {
-                "event": "worker_tool_call",
-                "node_id": node.node_id,
-                "tool_name": tool_name,
-                "tool_call_id": tool_call_id,
-                "args_preview": _compact_event_value(tool_call.get("args")),
-            }
-            event_key = json.dumps(event, sort_keys=True, ensure_ascii=False)
-            if event_key in tool_state.seen_tool_call_keys:
-                continue
-            tool_state.seen_tool_call_keys.add(event_key)
-            event = {
-                "event": "worker_tool_call",
-                "node_id": node.node_id,
-                "tool_name": tool_name,
-                "tool_call_id": tool_call_id,
-                "args_preview": _compact_event_value(tool_call.get("args")),
-            }
-            _append_worker_tool_activity(node=node, event=event)
-            _emit_supervisor_event(kind="worker_tool_call", **event)
+            event = _worker_tool_call_event_from_chunk(
+                node=node,
+                tool_call=tool_call,
+                state=tool_state,
+            )
+            if event is not None:
+                _emit_worker_tool_call_event(node=node, event=event, state=tool_state)
 
         tool_result = _message_tool_result(message, tool_state.tool_names_by_id)
         if tool_result is None:
             continue
+        pending_event = _pending_tool_call_event_for_result(
+            node=node,
+            tool_call_id=str(tool_result.get("tool_call_id", "") or ""),
+            state=tool_state,
+        )
+        if pending_event is not None:
+            _emit_worker_tool_call_event(node=node, event=pending_event, state=tool_state)
         event = {
             "event": "worker_tool_result",
             "node_id": node.node_id,
@@ -1246,6 +1238,96 @@ def _record_worker_tool_events(
         _append_worker_tool_activity(node=node, event=event)
         _emit_supervisor_event(kind="worker_tool_result", **event)
     return tool_state
+
+
+def _worker_tool_call_event_from_chunk(
+    *,
+    node: TaskNode,
+    tool_call: dict[str, object],
+    state: _WorkerToolEventState,
+) -> dict[str, object] | None:
+    """Merge streamed tool-call name/id and argument chunks before logging."""
+
+    tool_call_id = str(tool_call.get("id") or "")
+    tool_name = str(tool_call.get("name") or "")
+    args = tool_call.get("args")
+    has_args = args not in (None, "", {})
+    if tool_call_id and tool_name:
+        state.tool_names_by_id[tool_call_id] = tool_name
+        pending = {
+            "node_id": node.node_id,
+            "tool_name": tool_name,
+            "tool_call_id": tool_call_id,
+            "args": args if has_args else {},
+            "emitted": False,
+        }
+        state.pending_tool_calls.append(pending)
+        if has_args:
+            pending["emitted"] = True
+            return _tool_call_event_from_pending(pending)
+        return None
+
+    if has_args and not tool_name and not tool_call_id:
+        for pending in reversed(state.pending_tool_calls):
+            if pending.get("emitted") is True:
+                continue
+            pending["args"] = args
+            pending["emitted"] = True
+            return _tool_call_event_from_pending(pending)
+
+    if tool_name or tool_call_id or has_args:
+        resolved_name = tool_name or (
+            state.tool_names_by_id.get(tool_call_id, "") if tool_call_id else ""
+        )
+        return {
+            "event": "worker_tool_call",
+            "node_id": node.node_id,
+            "tool_name": resolved_name or "unknown",
+            "tool_call_id": tool_call_id,
+            "args_preview": _compact_event_value(args),
+        }
+    return None
+
+
+def _pending_tool_call_event_for_result(
+    *,
+    node: TaskNode,
+    tool_call_id: str,
+    state: _WorkerToolEventState,
+) -> dict[str, object] | None:
+    if not tool_call_id:
+        return None
+    for pending in reversed(state.pending_tool_calls):
+        if pending.get("tool_call_id") != tool_call_id or pending.get("emitted") is True:
+            continue
+        pending["emitted"] = True
+        pending["node_id"] = node.node_id
+        return _tool_call_event_from_pending(pending)
+    return None
+
+
+def _tool_call_event_from_pending(pending: dict[str, object]) -> dict[str, object]:
+    return {
+        "event": "worker_tool_call",
+        "node_id": str(pending.get("node_id", "")),
+        "tool_name": str(pending.get("tool_name", "") or "unknown"),
+        "tool_call_id": str(pending.get("tool_call_id", "") or ""),
+        "args_preview": _compact_event_value(pending.get("args")),
+    }
+
+
+def _emit_worker_tool_call_event(
+    *,
+    node: TaskNode,
+    event: dict[str, object],
+    state: _WorkerToolEventState,
+) -> None:
+    event_key = json.dumps(event, sort_keys=True, ensure_ascii=False)
+    if event_key in state.seen_tool_call_keys:
+        return
+    state.seen_tool_call_keys.add(event_key)
+    _append_worker_tool_activity(node=node, event=event)
+    _emit_supervisor_event(kind="worker_tool_call", **event)
 
 
 def _extract_messages_refusal(messages: list[object]) -> str | None:

@@ -2706,6 +2706,115 @@ async def test_invoke_worker_agent_streams_internal_tool_calls_before_completion
 
 
 @pytest.mark.asyncio
+async def test_invoke_worker_agent_merges_streamed_tool_call_argument_chunks(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-streaming-merged-tool-call"
+    run_dir.mkdir(parents=True)
+    node = TaskNode(
+        node_id="worker_context",
+        title="Collect context",
+        objective="Read a file before finishing",
+        capability_bundles=["repo_fetch", "validate"],
+        metadata={
+            "task": "inspect files",
+            "task_type": "generic",
+            "run_dir": str(run_dir),
+        },
+    )
+
+    class _StreamingAgent:
+        def astream(self, _payload, **_kwargs):
+            async def _gen():
+                yield (
+                    (),
+                    "messages",
+                    (
+                        AIMessageChunk(
+                            content="",
+                            tool_calls=[
+                                {
+                                    "name": "read_file",
+                                    "args": {},
+                                    "id": "call_read",
+                                    "type": "tool_call",
+                                }
+                            ],
+                        ),
+                        {},
+                    ),
+                )
+                yield (
+                    (),
+                    "messages",
+                    (
+                        AIMessageChunk(
+                            content="",
+                            tool_calls=[
+                                {
+                                    "name": "",
+                                    "args": {"file_path": "README.md", "limit": 200},
+                                    "id": None,
+                                    "type": "tool_call",
+                                }
+                            ],
+                        ),
+                        {},
+                    ),
+                )
+                yield (
+                    (),
+                    "messages",
+                    (
+                        ToolMessage(
+                            content="README contents",
+                            tool_call_id="call_read",
+                            status="success",
+                        ),
+                        {},
+                    ),
+                )
+                yield (
+                    (),
+                    "messages",
+                    (
+                        AIMessage(
+                            content='{"status":"completed","summary":"done","artifacts":[],"evidence":[]}'
+                        ),
+                        {},
+                    ),
+                )
+
+            return _gen()
+
+        async def ainvoke(self, _payload, **_kwargs):
+            raise AssertionError("streaming path should be used")
+
+    result = await _invoke_worker_agent(
+        agent=_StreamingAgent(),
+        node=node,
+        workspace_root=tmp_path,
+    )
+
+    assert result.status == "completed"
+    events = [
+        json.loads(line)
+        for line in (run_dir / "tool_activity.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    call_events = [event for event in events if event.get("event") == "worker_tool_call"]
+    assert call_events == [
+        {
+            "event": "worker_tool_call",
+            "node_id": "worker_context",
+            "tool_name": "read_file",
+            "tool_call_id": "call_read",
+            "args_preview": '{"file_path": "README.md", "limit": 200}',
+        }
+    ]
+    assert all(event.get("tool_name") != "unknown" for event in events)
+
+
+@pytest.mark.asyncio
 async def test_supervisor_worker_runner_prefers_worker_subagent(
     tmp_path: Path,
 ) -> None:
