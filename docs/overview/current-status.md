@@ -4,7 +4,7 @@ This is the fastest engineering snapshot for the repository.
 
 ## Snapshot
 
-- Last consolidated update: 2026-05-18
+- Last consolidated update: 2026-05-19
 - Latest local audit: 2026-05-17, see
   `docs/overview/supervisor-flow-experiment-status.md` for the current
   Supervisor Graph flow diagrams, recent experiment-result summary, and
@@ -112,6 +112,12 @@ This is the fastest engineering snapshot for the repository.
   completion levels (`G0-G8` for GitHub-to-workspace, `B0-B10` for benchmark),
   records evidence paths and missing evidence, and flags unsupported final-answer
   claims as false positives.
+- `github2workspace` operator-store records now carry the evaluator outcome in
+  the library itself: the run-level `operator_product.json`, stable
+  `operator.json`, validation record, and tags include `false_positive`,
+  `completion_level`, unsupported claims, and missing-evidence notes. This keeps
+  partial/registered products queryable without hiding whether the final answer
+  overclaimed the available evidence.
 - Additional checked-in evidence: historical one-shot completions still exist
   for `v-pipe`, `covid-19-signal`, and `fieldbioinformatics`, while the latest
   reduced evaluation adds fresh completed samples on `spades` and `megahit`
@@ -237,6 +243,26 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
     optional LLM judge
   - implementation plan is documented in
     `docs/overview/generic-harness-evaluation-plan.zh.md`
+- Generic orchestration now also has a first real harness optimization loop:
+  - added `experiments/harness/generic_orchestration_harness/` with config
+    loading, run layout, surface patching, proposer workspace artifacts,
+    baseline-vs-candidate split evaluation, and keep/discard reporting
+  - added a rule-based proposer at
+    `experiments/harness/proposers/generic_orchestration_surface_proposer.py`
+    plus a live config at
+    `experiments/harness/configs/generic_orchestration_harness.toml`
+  - generic harness runs call the real CLI non-interactive generic path,
+    collect `generic_trace_summary.json` / `evaluation.json` from real
+    `orchestration_runs/<run_id>`, and score each case with weighted
+    routing/graph/trace/evidence/answer/efficiency components
+  - holdout acceptance currently requires combined improvement without
+    degrading holdout traceability
+  - the first live optimize run at
+    `experiments/harness/runs/generic-orchestration-harness/20260519T010322Z`
+    accepted `iter-001`, improving train mean score from `85.08` to `86.50`
+    and holdout mean score from `84.75` to `86.88`
+  - implementation design is documented in
+    `docs/overview/generic-orchestration-harness-plan.zh.md`
 - Fresh generic real-case rerun after the monitoring-policy update completed
   the three previous COVID/respiratory generic examples with return code 0
   under

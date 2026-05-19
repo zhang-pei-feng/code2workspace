@@ -24,6 +24,64 @@ and evidence-backed completion judgment.
 
 ## Chronology
 
+### 2026-05-19
+
+- Implemented the first end-to-end generic orchestration harness loop:
+  - added `experiments/harness/generic_orchestration_harness/` with a real
+    baseline/candidate keep-discard loop over Supervisor Graph generic runs
+  - each harness case now calls the real CLI non-interactive generic path,
+    waits for a real `orchestration_runs/<run_id>`, and scores that run from
+    `generic_trace_summary.json` / `evaluation.json` instead of using a mocked
+    planner or static prompt check
+  - the harness materializes `manifest.json`, variants, split summaries,
+    proposer workspace artifacts, per-case copied run evidence, iteration
+    decisions, and final `report.json`
+  - the first optimization surface intentionally stays on generic guidance
+    assets rather than Python runtime logic so prompt-policy changes can be
+    iterated safely and compared directly
+  - to make that possible, the previously implicit generic guidance was fully
+    assetized with new `generic_qa.md`, `init_generic.md`, and
+    `worker_solution.md`
+- Added the first rule-based generic proposer:
+  - `generic_orchestration_surface_proposer.py` reads the visible train summary
+    and modifies only `init_generic`, `worker_context`, `compose_generic`, and
+    `worker_solution`
+  - current heuristics aim to reduce over-orchestration on narrow local-code
+    questions, keep evidence collection bounded, preserve compact evidence
+    boundaries in short answers, and stop worker solution loops once compose
+    has enough material
+- Completed one live optimize run:
+  - run root:
+    `experiments/harness/runs/generic-orchestration-harness/20260519T010322Z`
+  - baseline train mean score: `85.08`
+  - candidate train mean score: `86.50`
+  - baseline holdout mean score: `84.75`
+  - candidate holdout mean score: `86.88`
+  - keep/discard decision: `accepted`
+  - the most visible win was `efficiency_score` on train (`85 -> 100`) while
+    preserving `traceability_score = 100` on both holdout cases
+- Recorded the design note in
+  `docs/overview/generic-orchestration-harness-plan.zh.md` so the harness can
+  be cited as a concrete optimization layer above the artifact-evaluation
+  substrate rather than as an ad hoc experiment script
+
+- The `github2workspace` operator library now preserves false-positive
+  judgment inside the indexed product record:
+  - finalization writes `evaluation.json` before materializing the
+    `github2workspace` operator product
+  - `operator_product.json`, stable `operator.json`, and validation records now
+    include `false_positive`, `completion_level`, `unsupported_claims`, and
+    `required_evidence_missing`
+  - tags include `false-positive:true|false`, `false-positive` for positive
+    cases, and the staged completion level
+- This makes the thesis-facing operator library more auditable: downstream
+  benchmark/report/generic retrieval can distinguish a reusable completed
+  workspace from a registered or partial product whose final response overclaims
+  the evidence, without manually reopening the run directory first.
+- Validation:
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_operator_store.py libs/cli/tests/unit_tests/test_supervisor_evaluation.py libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+  -> `98 passed`
+
 ### 2026-05-18
 
 - Added the first generic harness evaluation layer on top of Supervisor Graph

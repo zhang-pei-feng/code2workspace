@@ -1,0 +1,77 @@
+[experiment]
+name = "generic-orchestration-harness"
+output_root = "experiments/harness/runs"
+max_iterations = 2
+max_parallel_cases = 1
+
+[proposer]
+command = [
+  "python3",
+  "experiments/harness/proposers/generic_orchestration_surface_proposer.py",
+]
+max_runtime_minutes = 5
+
+[surfaces.generic_family]
+kind = "workspace_file"
+target = ".code2workspace/skills/orchestration/supervisor-guidance/references/families/generic_qa.md"
+filename = "generic_qa.md"
+base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/families/generic_qa.md"
+
+[surfaces.init_generic]
+kind = "workspace_file"
+target = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/init_generic.md"
+filename = "init_generic.md"
+base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/init_generic.md"
+
+[surfaces.worker_context]
+kind = "workspace_file"
+target = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/worker_context.md"
+filename = "worker_context.md"
+base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/worker_context.md"
+
+[surfaces.worker_solution]
+kind = "workspace_file"
+target = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/worker_solution.md"
+filename = "worker_solution.md"
+base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/worker_solution.md"
+
+[surfaces.compose_generic]
+kind = "workspace_file"
+target = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/compose_generic.md"
+filename = "compose_generic.md"
+base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/compose_generic.md"
+
+[[cases]]
+case_id = "generic-trace-artifacts-train"
+split = "train"
+weight = 1.0
+max_runtime_minutes = 8
+prompt = "请只基于本地代码，说明 generic trace run 现在会记录哪些关键 artifact，并给出 raw worker trace 的环境变量开关名。回答简短。"
+
+[[cases]]
+case_id = "generic-eval-scores-train"
+split = "train"
+weight = 1.0
+max_runtime_minutes = 8
+prompt = "请只基于本地代码，说明 generic evaluation 里的六个 score 分别是什么、各自大概在衡量什么。尽量简短。"
+
+[[cases]]
+case_id = "generic-optimization-gap-train"
+split = "train"
+weight = 1.0
+max_runtime_minutes = 8
+prompt = "请只基于本地代码，判断在真正实现 generic harness 自动优化闭环之前，还缺了哪几个关键环节。回答简短。"
+
+[[cases]]
+case_id = "generic-trace-vs-tool-activity-holdout"
+split = "holdout"
+weight = 1.0
+max_runtime_minutes = 8
+prompt = "请只基于本地代码，解释 worker tool activity 和 raw worker trace 各自记录什么、两者差别是什么。保持口语化。"
+
+[[cases]]
+case_id = "generic-unknown-tool-fix-holdout"
+split = "holdout"
+weight = 1.0
+max_runtime_minutes = 8
+prompt = "请只基于本地代码，说明 tool_activity.jsonl 里早先的 unknown tool event 是怎么来的，后来又是怎么修掉的。回答简短。"
