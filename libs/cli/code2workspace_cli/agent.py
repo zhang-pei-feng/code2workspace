@@ -86,6 +86,8 @@ SUPERVISOR_REPORT_NODE_MODEL_ENVS: dict[str, str] = {
     "init_report": "CODE2WORKSPACE_SUPERVISOR_REPORT_INIT_MODEL",
     "monitoring_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_MONITORING_MODEL",
     "local_data_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_LOCAL_DATA_MODEL",
+    "existing_data_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_EXISTING_DATA_MODEL",
+    "computed_data_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_COMPUTED_DATA_MODEL",
     "literature_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_LITERATURE_MODEL",
     "compose_report": "CODE2WORKSPACE_SUPERVISOR_REPORT_COMPOSE_MODEL",
     "summarize": "CODE2WORKSPACE_SUPERVISOR_REPORT_SUMMARIZE_MODEL",
@@ -95,6 +97,8 @@ SUPERVISOR_REPORT_RETRY_NODE_IDS: dict[str, tuple[str, ...]] = {
     "init_report": ("retry_init_report",),
     "monitoring_lane": ("retry_monitoring_lane",),
     "local_data_lane": ("retry_local_data_lane",),
+    "existing_data_lane": ("retry_existing_data_lane",),
+    "computed_data_lane": ("retry_computed_data_lane",),
     "literature_lane": ("retry_literature_lane",),
     "compose_report": ("retry_compose_report",),
 }

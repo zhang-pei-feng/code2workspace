@@ -10,6 +10,8 @@
 - The report should read like a polished deliverable for a decision-maker or reviewer, not like agent output.
 - Do not narrate your own actions. Avoid phrases such as "I searched", "the lane found", "this node analyzed", "here is the report", or "based on the tool outputs" unless a direct artifact audit note genuinely requires that wording.
 - Do not expose internal supervisor/node names in headings or body text. Convert them into user-facing source categories such as local artifacts, monitoring evidence, benchmark history, or literature/web evidence.
+- Do not default to headings such as `Executive Summary`, `执行摘要`, `Summary`, or `结论摘要` unless the user explicitly asked for that label. Prefer task-shaped opening headings such as `Conclusion`, `Current Assessment`, `Comparison Result`, `Current Status`, or a direct topic heading when appropriate.
+- Historical full reports may be used to locate evidence or compare prior conclusions, but do not imitate their section names, prose shape, or house style by default.
 - Expand major claims with three layers whenever relevant:
   - what the evidence directly shows
   - what can reasonably be inferred from it
@@ -19,19 +21,37 @@
   - one `#` title
   - `##` major sections
   - `###` subsections only when they improve readability
+- Prefer a clear total-subtotal-total flow when the task fits it:
+  - open with the overall answer/current judgment
+  - expand into the main supporting findings, comparisons, or evidence blocks
+  - close by restating the bounded takeaway, practical implication, or evidence-limited conclusion
 - Use absolute dates and explicit time windows wherever freshness matters.
 - Choose The Report Shape:
 
 - Use the user's requested format when explicit. If the user asked for fixed section names or a mandated structure, that requirement is authoritative.
-- Otherwise, choose the closest structure archetype below and adapt it to the evidence:
-  - comparison report:
-    - define the comparison target and criteria early
-    - include a compact comparison table
-    - explain where the compared evidence is not directly comparable
+- Otherwise, choose the closest structure archetype below and adapt it to the evidence. Treat these as a reusable report-shape library rather than a checklist tied to one domain:
+  - WHO-style risk assessment:
+    - open with the current overall risk judgment
+    - define the assessed object, time anchor, and risk boundary early
+    - organize the body by risk dimensions or assessment dimensions
+    - for each dimension, separate direct evidence, reasonable inference, evidence strength, and key uncertainty
+    - end with an overall risk judgment and confidence statement
   - monitoring or situation report:
     - open with current status and recent change
     - state the time window, source freshness, and watch items
     - separate current facts from forward-looking implications
+  - comparison report:
+    - define the comparison target and criteria early
+    - include a compact comparison table
+    - explain where the compared evidence is not directly comparable
+  - evidence review or evidence synthesis report:
+    - open with the bounded bottom-line conclusion
+    - separate direct evidence, proxy evidence, conflicting evidence, and unresolved gaps
+    - prefer showing what the evidence can and cannot support over forcing a stronger conclusion
+  - decision memo or action memo:
+    - open with the decision-relevant bottom line
+    - focus on what matters now, what is uncertain, and what should be watched or done next
+    - keep the body concise and operational rather than encyclopedic
   - risk or assessment report:
     - define what is being assessed
     - separate observed evidence, risk interpretation, and uncertainty
@@ -42,48 +62,33 @@
   - local evidence report:
     - distinguish direct local artifacts, historical summaries, reusable run products, and optional computed evidence
     - state clearly when a conclusion is supported by local artifact reuse rather than fresh recomputation
-- Default Section Template:
-
-- Use this default structure unless the user supplied a stricter format:
-  - `# <report title>`
-  - `## Executive Summary` / `执行摘要`
-  - `## Scope and Time Window` / `范围与时间窗口`
-  - `## Key Findings` / `关键发现`
-  - `## Evidence Analysis` / `证据分析`
-  - `## Uncertainty and Limitations` / `不确定性与限制`
-  - `## Recommendations or Next Steps` / `建议或下一步` when the task calls for action or decision support
-  - `## Sources / Evidence Appendix` / `来源与证据附录`
-- If a section has no usable evidence, keep the section and say what is missing.
+  - If two archetypes both fit, choose one as the primary shape and borrow only the minimum useful parts from the other. Do not mechanically stack all archetypes into one report.
 - Section Quality Rules:
 
-- Executive summary:
-  - state the bottom-line answer first
-  - include only the most decision-relevant conclusions
-  - do not merely describe what the report contains
-- Scope and time window:
-  - define the task boundary, geography/repository boundary, datasets, and evidence freshness
-  - say what is out of scope when that materially affects interpretation
-- Key findings:
-  - separate findings clearly with subsections, numbering, or tables
-  - each finding should connect claim, evidence, interpretation, and caveat
-  - if the report is comparative, make the comparison rule explicit before the conclusion
-- Evidence analysis:
-  - compare how local data, monitoring evidence, literature/web evidence, benchmark history, or computed evidence agree or diverge
-  - distinguish direct evidence from inferred or proxy evidence whenever that changes confidence
-  - if local benchmark history was available, summarize what it directly supports: prior metric values, successful or failed tools, reusable artifacts, reproducibility notes, or dataset/input compatibility
-- Uncertainty and limitations:
-  - distinguish missing evidence, stale evidence, low-quality evidence, and non-comparable evidence
-  - do not hide conflicts; surface them and explain which evidence is more direct, fresher, or more relevant
-- Recommendations or next steps:
-  - include only when useful for the task
-  - make each recommendation traceable to a prior finding or explicit uncertainty
-  - do not recommend recomputation by default; say why new computation would be needed if you recommend it
+- Open with the bottom-line answer or current state, not a table of contents.
+- For the opening section, prefer a direct answer/current assessment over a formal executive-summary label unless the user explicitly asked for executive-summary formatting.
+- Early in the report, make the task boundary and relevant time window explicit whenever freshness or scope affects interpretation.
+- Organize the body around substantive findings or themes rather than mechanically filling a fixed checklist.
+- After the body sections, end with a concise closing synthesis that gathers the overall conclusion back together instead of stopping abruptly after the evidence blocks.
+- Separate findings clearly with subsections, numbering, or tables when that improves scanability.
+- For each major finding, connect:
+  - the claim
+  - the evidence that directly supports it
+  - the interpretation or inference
+  - the caveat, uncertainty, or boundary
+- Compare how local data, monitoring evidence, literature/web evidence, benchmark history, or computed evidence agree or diverge when multiple evidence families are present.
+- Distinguish direct evidence from inferred or proxy evidence whenever that changes confidence.
+- If local benchmark history was available, summarize what it directly supports: prior metric values, successful or failed tools, reusable artifacts, reproducibility notes, or dataset/input compatibility.
+- Include limitations and unresolved uncertainty as a real analytic section, not a one-line disclaimer.
+- Include recommendations or next steps only when useful for the task, and make each one traceable to a prior finding or explicit uncertainty.
+- Do not recommend recomputation by default; explain why existing evidence is insufficient if you recommend new computation.
 - Citation And Source Rules:
 
 - Use one consistent inline source style throughout the report, preferably bracketed references such as `[1]`, `[2]`, `[3]`.
 - Keep numbering stable and sequential. If a source is reused, reuse its existing number instead of renumbering it.
-- End with a `Sources / Evidence Appendix` that maps each cited source or artifact to the kind of claim it supports.
-- For local artifacts, cite stable file paths rather than vague labels like "generated files" or "the output above".
+- End with a Chinese-titled source section such as `证据来源`, `来源说明`, or `证据附录`; do not use an English-only heading like `Sources` or `Evidence Appendix` unless the user explicitly asked for English.
+- For local artifacts, do not expose absolute filesystem paths in the report body or source appendix by default. Prefer workspace-relative paths, run-relative paths, file basenames with run identifiers, or concise source labels unless an absolute path is truly necessary for auditability.
+- When a relative path or concise source label is enough to locate the artifact, prefer that over a full absolute path.
 - Mark evidence as direct, inferred, or proxy when that distinction materially affects confidence.
 - If sources disagree, do not average them away. Explain the conflict and why one source is preferred, or leave the conclusion unresolved.
 - Forbidden Patterns:
@@ -94,3 +99,4 @@
 - Do not rely on bullets alone when the report needs interpretation.
 - Do not silently convert a weak or proxy signal into a strong factual claim.
 - Do not claim that new computation was necessary unless the report also explains why existing evidence was insufficient.
+- Do not revive legacy section labels or style patterns just because they appear in retrieved historical reports.

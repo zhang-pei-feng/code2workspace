@@ -71,6 +71,8 @@ from code2workspace_cli.widgets.messages import (
 logger = logging.getLogger(__name__)
 configure_debug_logging(logger)
 
+_INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG = "internal_benchmark_register_selector"
+
 _hitl_adapter_cache: TypeAdapter | None = None
 """Lazy singleton for the HITL request validator."""
 
@@ -201,6 +203,21 @@ def _is_summarization_chunk(metadata: dict | None) -> bool:
     if metadata is None:
         return False
     return metadata.get("lc_source") == "summarization"
+
+
+def _is_internal_benchmark_selector_chunk(metadata: dict | None) -> bool:
+    """Check whether a streamed message belongs to the internal register selector."""
+    if metadata is None:
+        return False
+    run_name = metadata.get("run_name")
+    if run_name == _INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG:
+        return True
+    tags = metadata.get("tags")
+    if isinstance(tags, str):
+        return tags == _INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG
+    if isinstance(tags, (list, tuple, set)):
+        return _INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG in tags
+    return False
 
 
 class TextualUIAdapter:
@@ -826,6 +843,9 @@ async def execute_task_textual(
                             summarization_in_progress = True
                             if adapter._set_spinner:
                                 await adapter._set_spinner("Offloading")
+                        continue
+
+                    if _is_internal_benchmark_selector_chunk(metadata):
                         continue
 
                     # Regular (non-summarization) chunks resumed — summarization

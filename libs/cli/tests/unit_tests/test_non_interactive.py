@@ -473,6 +473,59 @@ class TestToolDisplayInLogs:
 
         assert "".join(state.full_response) == "先说结论。"
 
+    def test_process_ai_message_hides_leaked_benchmark_selector_prefix(self) -> None:
+        """Leading benchmark selector JSON should stay hidden from the user."""
+        console = Console(file=io.StringIO(), force_terminal=False, color_system=None)
+        state = StreamState(quiet=True, stream=False)
+
+        selector_msg = MagicMock(spec=AIMessage)
+        selector_msg.usage_metadata = None
+        selector_msg.content_blocks = [
+            {
+                "type": "text",
+                "text": (
+                    '{"selected_dataset_id":"long-read-canu-pacbio",'
+                    '"selected_tools":["Flye","canu"],'
+                    '"selection_rationale":"Use the shared PacBio dataset."}'
+                ),
+            }
+        ]
+        final_msg = MagicMock(spec=AIMessage)
+        final_msg.usage_metadata = None
+        final_msg.content_blocks = [{"type": "text", "text": "Flye 和 canu 已开始在同一份数据上运行。"}]
+
+        _process_ai_message(selector_msg, state, console)
+        _process_ai_message(final_msg, state, console)
+
+        assert "".join(state.full_response) == "Flye 和 canu 已开始在同一份数据上运行。"
+
+    def test_process_message_chunk_skips_internal_benchmark_selector_metadata(
+        self,
+    ) -> None:
+        """Tagged internal selector chunks should not be rendered."""
+        console = Console(file=io.StringIO(), force_terminal=False, color_system=None)
+        state = StreamState(quiet=True, stream=False)
+        message = MagicMock(spec=AIMessage)
+        message.usage_metadata = None
+        message.content_blocks = [
+            {
+                "type": "text",
+                "text": '{"selected_tools":["Flye","canu"],"selection_rationale":"hidden"}',
+            }
+        ]
+
+        _process_message_chunk(
+            (
+                message,
+                {"tags": ["internal_benchmark_register_selector"]},
+            ),
+            state,
+            console,
+            FileOpTracker(assistant_id=None),
+        )
+
+        assert state.full_response == []
+
     async def test_quiet_stdout_hides_leaked_classifier_prefix(self) -> None:
         """Quiet stdout should suppress leaked classifier JSON before final text."""
         classifier_msg = MagicMock(spec=AIMessage)

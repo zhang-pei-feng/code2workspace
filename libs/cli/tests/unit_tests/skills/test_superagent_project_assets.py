@@ -22,7 +22,6 @@ def test_project_superagent_skills_are_discoverable() -> None:
 
     for name in {
         "academic-search",
-        "benchmark-workflow-orchestrator",
         "data-governance-ops",
         "epietl-api",
         "respiratory-disease-data-fetcher",
@@ -49,7 +48,6 @@ def test_shared_helper_directory_is_not_discoverable_as_skill() -> None:
 
 def test_superagent_scripts_expose_help() -> None:
     scripts = [
-        _repo_root() / ".code2workspace" / "skills" / "orchestration" / "benchmark-workflow-orchestrator" / "scripts" / "benchmark_workflow.py",
         _repo_root() / ".code2workspace" / "skills" / "capabilities" / "data-governance-ops" / "scripts" / "governance_ops.py",
     ]
 
@@ -57,16 +55,10 @@ def test_superagent_scripts_expose_help() -> None:
         assert script.exists()
 
 
-def test_workflow_skills_are_local_only_after_bioos_removal() -> None:
-    root = _repo_root()
-    benchmark_skill = (
-        root / ".code2workspace" / "skills" / "orchestration" / "benchmark-workflow-orchestrator" / "SKILL.md"
-    ).read_text(encoding="utf-8")
-    benchmark_ui = (
-        root / ".code2workspace" / "skills" / "orchestration" / "benchmark-workflow-orchestrator" / "agents" / "openai.yaml"
-    ).read_text(encoding="utf-8")
-    assert "Bio-OS" not in benchmark_skill
-    assert "bioos-operator" not in benchmark_skill
-    assert "bioos_ops.py" not in benchmark_skill
-    assert "Bio-OS" not in benchmark_ui
-    assert "bioos-operator" not in benchmark_ui
+def test_removed_benchmark_helper_skill_is_not_discoverable() -> None:
+    project_skills_dir = _repo_root() / ".code2workspace" / "skills"
+
+    skills = list_skills(project_skills_dir=project_skills_dir)
+    skill_names = {skill["name"] for skill in skills}
+
+    assert "benchmark-workflow-orchestrator" not in skill_names

@@ -156,6 +156,14 @@ _NODE_GUIDANCE_DEFAULTS: dict[str, tuple[str, ...]] = {
         "Focus on structured local data, APIs, registries, or databases relevant to the report topic.",
         "Split local evidence into existing_data already available locally and computed_data that requires selecting a local operator plus dataset/input bundle and running it.",
     ),
+    "existing_data_lane": (
+        "Focus on already materialized local data: databases, registries, APIs, dataset_store records, cached artifacts, and history records.",
+        "Do not run operators from this lane; return an explicit evidence gap if the needed value requires new computation.",
+    ),
+    "computed_data_lane": (
+        "Focus on computed local evidence that must be produced for this report.",
+        "First confirm existing data is insufficient, then select a compatible local operator plus dataset/input bundle, run the concrete path when available, and cite result artifacts.",
+    ),
     "literature_lane": (
         "Focus on literature, preprints, technical analyses, and primary-source web material.",
     ),

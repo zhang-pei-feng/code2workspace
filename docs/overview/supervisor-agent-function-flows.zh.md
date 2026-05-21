@@ -4,25 +4,46 @@
 
 ## 目录
 
-1. [总体架构](#总体架构)
-2. [Agent 与 Worker 设计](#agent-与-worker-设计)
-3. [任务分类与路由](#任务分类与路由)
-4. [通用任务 generic](#通用任务-generic)
-5. [仓库转工作空间 github2workspace](#仓库转工作空间-github2workspace)
-6. [基准测试 benchmark](#基准测试-benchmark)
-7. [报告生成 report](#报告生成-report)
-8. [节点执行机制](#节点执行机制)
-9. [能力束与 Skill guidance](#能力束与-skill-guidance)
-10. [产物与 Benchmark 比对历史库](#产物与-benchmark-比对历史库)
-11. [算子库 operator_store](#算子库-operator_store)
-12. [Benchmark 比对历史库 benchmark_comparison_history_store](#benchmark-比对历史库-benchmark_comparison_history_store)
-13. [评估指标与完成度判断](#评估指标与完成度判断)
-14. [Prompt 注入与假阳拦截总表](#prompt-注入与假阳拦截总表)
-15. [入口文件速查](#入口文件速查)
+- [Supervisor Agent 功能流程图说明](#supervisor-agent-功能流程图说明)
+  - [目录](#目录)
+  - [总体架构](#总体架构)
+  - [Agent 与 Worker 设计](#agent-与-worker-设计)
+    - [agent 类型](#agent-类型)
+    - [workspace agent 的 middleware 栈](#workspace-agent-的-middleware-栈)
+    - [worker\_agent 节点执行选择](#worker_agent-节点执行选择)
+    - [report 专用 worker 模型](#report-专用-worker-模型)
+    - [worker prompt 设计](#worker-prompt-设计)
+    - [prompt 注入位置](#prompt-注入位置)
+    - [worker prompt 的信息拼装流程](#worker-prompt-的信息拼装流程)
+    - [subagent 机制](#subagent-机制)
+  - [任务分类与路由](#任务分类与路由)
+  - [通用任务 generic](#通用任务-generic)
+  - [仓库转工作空间 github2workspace](#仓库转工作空间-github2workspace)
+    - [github2workspace 的假阳拦截](#github2workspace-的假阳拦截)
+  - [基准测试 benchmark](#基准测试-benchmark)
+    - [benchmark case 执行与修复](#benchmark-case-执行与修复)
+  - [报告生成 report](#报告生成-report)
+    - [report 的 evidence lane 设计](#report-的-evidence-lane-设计)
+  - [节点执行机制](#节点执行机制)
+    - [node decision check](#node-decision-check)
+  - [能力束与 Skill guidance](#能力束与-skill-guidance)
+  - [产物与 Benchmark 比对历史库](#产物与-benchmark-比对历史库)
+    - [run artifact 的作用分层](#run-artifact-的作用分层)
+  - [算子库 operator\_store](#算子库-operator_store)
+  - [Benchmark 比对历史库 benchmark\_comparison\_history\_store](#benchmark-比对历史库-benchmark_comparison_history_store)
+  - [评估指标与完成度判断](#评估指标与完成度判断)
+    - [github2workspace 评估等级](#github2workspace-评估等级)
+    - [benchmark 评估等级](#benchmark-评估等级)
+    - [generic 评估等级](#generic-评估等级)
+  - [Prompt 注入与假阳拦截总表](#prompt-注入与假阳拦截总表)
+    - [prompt 注入总表](#prompt-注入总表)
+    - [假阳拦截总表](#假阳拦截总表)
+    - [代码与 LLM 的边界](#代码与-llm-的边界)
+  - [入口文件速查](#入口文件速查)
 
 ## 总体架构
 
-当前默认 CLI 智能体不是直接把用户问题交给单个 chat agent，而是先进入 `Supervisor Graph Runtime`。它先判断任务类型，再生成一轮或多轮 `TaskGraph`，每个节点由确定性代码、helper 脚本、worker agent 或最终 LLM 汇总器执行。
+当前默认 CLI 智能体不是直接把用户问题交给单个 chat agent，而是先进入 `Supervisor Graph Runtime`。它先判断任务类型，再生成一轮或多轮 `TaskGraph`，每个节点由确定性代码、helper 脚本、worker agent 或最终 LLM 汇总器执行。最新实现里，`generic` 任务还会在正式执行前提供 `simple / medium / difficult` 三种 `generic_approach` 选项，作为下一轮 worker prompt 的执行倾向。
 
 ```mermaid
 flowchart TD
@@ -154,7 +175,7 @@ flowchart TD
 
 ### worker_agent 节点执行选择
 
-`SupervisorWorkerRunner` 不会所有节点都交给 LLM。它按顺序尝试多种执行器。
+`SupervisorWorkerRunner` 不会所有节点都交给 LLM。它按顺序尝试多种执行器，先处理可预先准备的输入，再尝试 benchmark 的 agentic register，再走 benchmark case 或确定性 helper，最后才落到通用 worker runnable。
 
 ```mermaid
 flowchart TD
@@ -179,21 +200,23 @@ flowchart TD
 
 1. `github2workspace inspect` 的仓库 materialization 由代码先做。
 2. `github2workspace wdl` 可复用已有 smoke 证据，但只能返回 `partial`，不能假装主 workflow 完成。
-3. `benchmark register` 可以先让 LLM 在候选算子中选工具，再交给确定性 helper 落地。
+3. `benchmark register` 可以先让 LLM 在候选算子中选工具，再交给确定性 helper 落地；如果没选出可用工具，会记录阻塞而不是继续 fan-out。
 4. `benchmark case` 默认直接进入 per-tool `worker_agent`，由 agent 负责执行、修复、验证和分析；helper 只是 agent 可调用的工具命令。
 5. `benchmark summarize` 仍优先走确定性 helper，负责聚合各 agent case 产物。
 6. 其他节点才进入 `worker_agent`。
 
 ### report 专用 worker 模型
 
-`report` 任务可以给不同节点配不同模型。默认模型是 `openai_paid:gpt-5.4`，不可用时尝试兼容 fallback `openai:gpt-5.4`。
+`report` 任务可以给不同节点配不同模型。默认模型按项目配置解析，代码里保留了兼容 fallback 逻辑，节点级覆盖优先于全局 report worker 设置。
 
 | report 节点 | 环境变量 |
 | --- | --- |
 | 全局 report worker | `CODE2WORKSPACE_SUPERVISOR_REPORT_MODEL` |
 | `init_report` | `CODE2WORKSPACE_SUPERVISOR_REPORT_INIT_MODEL` |
 | `monitoring_lane` | `CODE2WORKSPACE_SUPERVISOR_REPORT_MONITORING_MODEL` |
-| `local_data_lane` | `CODE2WORKSPACE_SUPERVISOR_REPORT_LOCAL_DATA_MODEL` |
+| `existing_data_lane` | `CODE2WORKSPACE_SUPERVISOR_REPORT_EXISTING_DATA_MODEL` |
+| `computed_data_lane` | `CODE2WORKSPACE_SUPERVISOR_REPORT_COMPUTED_DATA_MODEL` |
+| `local_data_lane` | `CODE2WORKSPACE_SUPERVISOR_REPORT_LOCAL_DATA_MODEL`，legacy 兼容 |
 | `literature_lane` | `CODE2WORKSPACE_SUPERVISOR_REPORT_LITERATURE_MODEL` |
 | `compose_report` | `CODE2WORKSPACE_SUPERVISOR_REPORT_COMPOSE_MODEL` |
 | `summarize` | `CODE2WORKSPACE_SUPERVISOR_REPORT_SUMMARIZE_MODEL` |
@@ -235,8 +258,9 @@ prompt 中会注入：
 - `capability_bundles` 的说明、实现类型和偏好工具。
 - 节点级 guidance，例如 `register`、`wdl`、`compose_report`。
 - family guidance，例如 `benchmark_family`、`github2workspace_pipeline`。
+- 如果当前是 generic 任务，还会注入 `generic_approach`，让 worker 知道这轮是偏最小、均衡还是更彻底的执行倾向。
 - 对 `final_response` 节点，额外注入 final summary 和决策信息。
-- 对 `report local_data_lane` 和 generic 计算节点，额外注入 `operator_store` 候选算子、候选输入数据，以及 `benchmark_comparison_history_store` 候选历史记录。
+- 对 `report existing_data_lane`、`computed_data_lane` 和 generic 计算节点，额外注入 `operator_store` 候选算子、候选输入数据，以及 `benchmark_comparison_history_store` 候选历史记录。
 
 worker 必须返回 JSON：
 
@@ -289,7 +313,7 @@ flowchart TD
     H --> WA[worker_agent / report_worker_agent]
 ```
 
-其中 `local_computation_context` 只在需要本地数据或计算的节点注入，例如 `report local_data_lane`、`generic worker_context`、`worker_solution`，以及带 `db_access`、`operator_filter`、`metric_compute`、`data_filter` 能力束的节点。
+其中 `local_computation_context` 只在需要本地数据或计算的节点注入，例如 `report existing_data_lane`、`computed_data_lane`、`generic worker_context`、`worker_solution`，以及带 `db_access`、`operator_filter`、`metric_compute`、`data_filter` 能力束的节点。它现在明确区分 `existing_data` 和 `computed_data`，并把 `benchmark_comparison_history_store` 当作可选的本地已有证据，而不是默认重算指令。
 
 ### subagent 机制
 
@@ -380,6 +404,7 @@ flowchart TD
 - 每个节点需要 `node_id`、`title`、`objective`、`capability_bundles`。
 - 代码会清洗节点名、能力束和边，防止非法节点进入调度。
 - 如果没有可用子图，会退化为 `compose_generic -> summarize`。
+- 如果启用了交互式 generic 选择，会先让用户或默认策略选一个 `generic_approach`，并把它写入后续 prompt 与 `final_decision.json`。
 
 典型节点设计：
 
@@ -391,6 +416,8 @@ flowchart TD
 | `compose_generic` | worker agent / LLM | 合并 worker 输出为正常用户答案 |
 | `summarize` | worker agent / LLM | 记录结果、阻塞点、下一步建议 |
 | `final_response` | LLM | 编辑成最终聊天回答 |
+
+`generic` 也可以接受动态子图，只要 `init_generic` 返回合法 `spawned_subgraph`，后续 round 就会沿着那张图继续，而不是固定死在 `worker_context -> worker_solution -> compose_generic`。
 
 ## 仓库转工作空间 github2workspace
 
@@ -468,7 +495,9 @@ flowchart TD
 | --- | --- | --- |
 | `operator_store` 检索 | 代码 + SQLite | 根据任务、输入输出类型、tag、全文或 embedding 召回候选算子 |
 | LLM 选择 | worker agent | 在候选集中选择最合适的工具子集，输出 JSON |
-| deterministic helper | Python 脚本 | 初始化 benchmark 目录、解析数据集、准备 case、生成执行契约 |
+| deterministic register/materialize | Python 代码 | 初始化 benchmark 目录、选择共享数据集、准备 case、生成执行契约 |
+
+最新代码里，`register` 还允许先走 agentic selection，再把结果回写成 `spawned_subgraph.selected_tools`；如果没有选出可用工具，就记录 `missing_selected_tools` 或 `blocked_tools`，而不是假装下一轮可以继续。
 
 `register` 最少要产出：
 
@@ -480,7 +509,7 @@ flowchart TD
 - `cases/<tool>/execution_ready.json`：是否具备 runtime image、WDL、inputs。
 - `spawned_subgraph.selected_tools`：下一轮并行节点的机器可读工具列表。
 
-执行节点现在由并行的 per-tool `worker_agent` 负责完整 case 执行。agent 会读取 `manifest.json`、`execution_ready.json` 和执行契约，自行选择 repo-native helper、WDL 路径或必要的受限修复；`.code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py` 仍可作为 agent 调用的工具命令，但不再由 supervisor 直接短路执行整个 case。
+执行节点现在由并行的 per-tool `worker_agent` 负责完整 case 执行。agent 会读取 `manifest.json`、`execution_ready.json` 和执行契约，自行决定直接跑 `miniwdl`、执行 repo-native 命令、检查输出、生成 `result_manifest.json`，以及在必要时做受限修复。原先的 `benchmark_workflow.py` helper 已移除，不再作为 benchmark case 的执行入口。
 
 ### benchmark case 执行与修复
 
@@ -489,12 +518,13 @@ flowchart TD
     C[case node] --> H{历史结果可复用?}
     H -->|是| Reuse[恢复 run/status.json<br/>analysis.json<br/>reused_result_record.json]
     H -->|否| Ready[读取 manifest / execution_ready]
-    Ready --> Native{有 repo-native 命令?}
-    Native -->|是| RN[helper run-repo-native]
+    Ready --> Decide[worker_agent 读取 staged case]
+    Decide --> Native{repo-native 更合适?}
+    Native -->|是| RN[agent 执行 repo-native 命令]
     Native -->|否| WDL{有 workflow.wdl + inputs.json?}
-    WDL -->|是| MW[helper WDL/miniwdl path]
-    WDL -->|否| Agent[worker_agent 受限执行]
-    RN --> Check[检查 expected_outputs]
+    WDL -->|是| MW[agent 执行 miniwdl run]
+    WDL -->|否| Agent[agent 自行补充最小执行路径]
+    RN --> Check[检查 expected_outputs / outputs.json]
     MW --> Check
     Agent --> Check
     Check -->|失败且 retry| Repair[agentic case repair<br/>只修 staged case]
@@ -512,12 +542,15 @@ flowchart TD
 ```mermaid
 flowchart TD
     R0[report 请求] --> R1[init_report<br/>agent 建立报告契约]
-    R1 --> R2[monitoring_lane<br/>官方监测/运行态势]
-    R1 --> R3[local_data_lane<br/>本地数据/计算历史]
-    R1 --> R4[literature_lane<br/>文献/技术网页]
+    R1 --> P{spawned_subgraph<br/>动态选择 evidence lanes}
+    P --> R2[monitoring_lane<br/>官方监测/运行态势]
+    P --> R3[existing_data_lane<br/>已有本地证据]
+    P --> R4[computed_data_lane<br/>必要时新计算]
+    P --> R7[literature_lane<br/>文献/技术网页]
     R2 --> R5[compose_report<br/>合成正式报告]
     R3 --> R5
     R4 --> R5
+    R7 --> R5
     R5 --> R6[summarize]
     R6 --> D{decision}
     D -->|lane 超时/partial| Retry[retry lane -> compose_report]
@@ -527,26 +560,27 @@ flowchart TD
 报告链路的技术约束：
 
 - `init_report` 只做报告契约和目录脚手架，不做大规模研究。
-- 三条 evidence lane 可并行执行。
+- `init_report` 会选择 0-6 条 evidence lane；同类 lane 最多 3 条，未选择的 lane 必须有跳过理由。
 - report 节点有默认超时 `20min`，超时记录为 `partial + worker_timeout`，后续仍可基于已有证据合成。
-- `local_data_lane` 会注入 `benchmark_comparison_history_store` 候选历史记录，把本地 benchmark 比对计算历史当作结构化证据。
-- `local_data_lane` 和 generic 计算节点都会注入 `operator_store` 候选，把算子库作为 `computed_data` 的首选来源。
+- `existing_data_lane` 会注入 `benchmark_comparison_history_store` 候选历史记录，把本地 benchmark 比对计算历史当作结构化证据。
+- `computed_data_lane` 和 generic 计算节点都会注入 `operator_store` 候选，把算子库作为 `computed_data` 的首选来源，但只有存在具体证据缺口时才运行。
 - `compose_report` 必须区分直接证据、推断证据和不确定性。
-- `final_response` 对 report 不压缩成短摘要，而是尽量保留正式 Markdown 报告结构。
-
-默认报告结构包括：标题、执行摘要、范围与时间窗口、关键发现、证据分析、不确定性与局限、建议或下一步、来源与证据附录。
+- `final_response` 对 report 不压缩成短摘要，而是尽量保留 `compose_report` 已写出的正式 Markdown 报告形态，不再在最后一步强行套固定章节模板。
 
 ### report 的 evidence lane 设计
 
 | lane | 主要来源 | 由谁执行 | 输出要求 |
 | --- | --- | --- | --- |
 | `monitoring_lane` | 官方监测、主数据源、可信域名搜索 | `report_worker_agent` | 2-4 条 source-backed findings、source priority、freshness、uncertainty |
-| `local_data_lane` | 本地数据库、API、`operator_store`、`benchmark_comparison_history_store` | `report_worker_agent` + 本地工具 | `existing_data`、`computed_data`、历史记录摘录或无结果说明 |
+| `existing_data_lane` | 本地数据库、API、缓存 artifact、`dataset_store`、`benchmark_comparison_history_store` | `report_worker_agent` + 本地工具 | 已有记录摘录、record path/run id、数据质量说明或 null-result |
+| `computed_data_lane` | `operator_store`、`dataset_store`、可运行 WDL/Docker/entrypoint | `report_worker_agent` + 本地工具 | 新计算的命令、输入、输出、状态、指标或兼容性 blocker |
 | `literature_lane` | 文献、preprint、技术网页、一次来源 | `report_worker_agent` | 2-4 条文献/技术证据、direct-vs-proxy、局限 |
-| `compose_report` | 三条 lane 的产物 | `report_worker_agent` / LLM | 正式 Markdown 报告，不新增未证实事实 |
+| `compose_report` | 所选 evidence lane 的产物 | `report_worker_agent` / LLM | 正式 Markdown 报告，不新增未证实事实 |
 | `final_response` | compose 结果、final summary、decision | LLM | 保留报告结构，补充证据边界 |
 
 `monitoring_lane` 的证据深度默认是 D2：定向可信源搜索并读取支撑具体结论的页面、PDF、CSV、JSON 或报告。需要趋势/变化时升到 D3；高风险、争议、强不确定或用户要求全面研究时才升到 D4。
+
+本地证据现在拆成两条 lane：`existing_data_lane` 只查已有证据，不运行算子；`computed_data_lane` 先说明为什么已有证据不足，再决定是否选择 operator + dataset/input bundle 运行。也就是说，`operator_store` 里的算子不是“见到就跑”，而是要先结合任务语义、历史记录、数据集候选和本地数据库证据判断是否确实存在一个需要新计算的缺口。
 
 ## 节点执行机制
 
@@ -760,7 +794,7 @@ operator_store/
 
 ## Benchmark 比对历史库 benchmark_comparison_history_store
 
-`benchmark_comparison_history_store` 保存历史 benchmark 比对计算记录，主要服务两个场景：复用已有成功结果，以及给 `report local_data_lane` 提供本地比对计算证据。
+`benchmark_comparison_history_store` 保存历史 benchmark 比对计算记录，主要服务两个场景：复用已有成功结果，以及给 `report existing_data_lane` 提供本地比对计算证据。
 
 ```mermaid
 flowchart TD
@@ -771,7 +805,7 @@ flowchart TD
     Emb --> DB
     DB --> Search[search_records]
     Search --> Register[benchmark 复用历史结果]
-    Search --> Report[report local_data_lane 引用历史证据]
+    Search --> Report[report existing_data_lane 引用历史证据]
 ```
 
 目录结构：
@@ -926,10 +960,9 @@ generic 的常见 findings 包括：没有规划节点、部分节点缺 raw tra
 | 文件 | 作用 |
 | --- | --- |
 | `libs/code2workspace/code2workspace/orchestration_runtime.py` | `TaskGraph` 数据结构、分类、规划、依赖调度、决策检查 |
-| `libs/cli/code2workspace_cli/supervisor_runtime.py` | CLI supervisor wrapper、运行目录、worker 执行、产物落盘、helper adapter |
+| `libs/cli/code2workspace_cli/supervisor_runtime.py` | CLI supervisor wrapper、运行目录、worker 执行、产物落盘、benchmark register/summary 适配 |
 | `libs/cli/code2workspace_cli/supervisor_capabilities.py` | `capability_bundles` 到工具和 guidance 的映射 |
 | `libs/cli/code2workspace_cli/supervisor_evaluation.py` | `evaluation.json` 阶段化评估 |
 | `libs/cli/code2workspace_cli/operator_store.py` | 算子库、结构化/全文/向量检索 |
 | `libs/cli/code2workspace_cli/benchmark_result_store.py` | benchmark 比对历史库实现；模块名保留旧称以兼容代码 |
 | `.code2workspace/skills/orchestration/supervisor-guidance/` | family 和 node 执行经验 |
-| `.code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py` | benchmark 确定性 helper |

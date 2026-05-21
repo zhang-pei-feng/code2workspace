@@ -33,12 +33,14 @@ from code2workspace_cli.benchmark_result_store import (
 )
 from code2workspace_cli.dataset_store import DatasetStore
 from code2workspace_cli.operator_store import OperatorSearchFilter, OperatorStore
+from code2workspace_cli.operator_store import build_benchmark_operator_manifest
 from code2workspace_cli.supervisor_runtime import (
     _build_worker_invoke_request,
     _build_benchmark_comparison,
     _build_worker_prompt,
     _github2workspace_product_status,
     _invoke_worker_agent,
+    _invoke_worker_runnable,
     _latest_human_route_mode,
     _last_ai_text,
     _parse_worker_result,
@@ -77,6 +79,986 @@ def _make_settings(tmp_path: Path) -> Mock:
     settings.get_user_claude_skills_dir.return_value = tmp_path / "claude"
     settings.get_project_claude_skills_dir.return_value = None
     return settings
+
+
+def test_shared_store_roots_are_discoverable_from_workspace_siblings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    workspace_root = repo_root / "workspace" / "20260520_session"
+    workspace_root.mkdir(parents=True)
+    (repo_root / "workspace" / "benchmark_comparison_history_store").mkdir(parents=True)
+    (repo_root / "workspace" / "dataset_store").mkdir(parents=True)
+    shared_operator_store = repo_root / "workspace" / "live_register_longread_multi_default_v5" / "operator_store"
+    shared_operator_store.mkdir(parents=True)
+    monkeypatch.setattr(supervisor_runtime, "_PROJECT_ROOT", repo_root)
+    monkeypatch.delenv("CODE2WORKSPACE_SHARED_OPERATOR_STORE_ROOT", raising=False)
+    monkeypatch.delenv("CODE2WORKSPACE_SHARED_DATASET_STORE_ROOT", raising=False)
+    monkeypatch.delenv("CODE2WORKSPACE_SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT", raising=False)
+
+    operator_roots = supervisor_runtime._candidate_operator_store_roots(workspace_root)
+    dataset_roots = supervisor_runtime._candidate_dataset_store_roots(workspace_root)
+    history_roots = supervisor_runtime._candidate_benchmark_result_store_roots(workspace_root)
+
+    assert shared_operator_store.resolve() in operator_roots
+    assert (repo_root / "workspace" / "dataset_store").resolve() in dataset_roots
+    assert (
+        repo_root / "workspace" / "benchmark_comparison_history_store"
+    ).resolve() in history_roots
+
+
+def test_operator_store_search_uses_shared_workspace_store_without_embeddings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    workspace_root = repo_root / "workspace" / "20260520_session"
+    workspace_root.mkdir(parents=True)
+    shared_operator_store = repo_root / "workspace" / "live_register_longread_multi_default_v5" / "operator_store"
+    store = OperatorStore(shared_operator_store)
+    run_dir = repo_root / "workspace" / "live_register_longread_multi_default_v5" / "orchestration_runs" / "longread-multi-default"
+    case_dir = run_dir / "cases" / "Flye"
+    case_dir.mkdir(parents=True, exist_ok=True)
+    store.write_manifest(
+        build_benchmark_operator_manifest(
+            product_id="benchmark:Flye:longread-multi-default",
+            name="Flye",
+            version="longread-multi-default",
+            run_dir=run_dir,
+            case_dir=case_dir,
+            case_manifest={
+                "repo_name": "Flye",
+                "dataset_key": "long-read-canu-pacbio",
+                "metric_keys": [],
+                "expected_outputs": ["contigs.fasta"],
+                "selected_input_files": {"reads_fastq": "/tmp/reads.fastq"},
+            },
+            ready_payload={
+                "ready": True,
+                "runtime_image": "Flye",
+                "wdl_path": "/tmp/Flye.wdl",
+                "inputs_json_path": "/tmp/Flye.json",
+            },
+            status="registered_ready",
+            validation_summary="Flye is registered and execution-ready.",
+        )
+    )
+    monkeypatch.setattr(supervisor_runtime, "_PROJECT_ROOT", repo_root)
+    monkeypatch.setenv("CODE2WORKSPACE_OPERATOR_STORE_EMBEDDINGS_ENABLED", "0")
+    monkeypatch.delenv("CODE2WORKSPACE_SHARED_OPERATOR_STORE_ROOT", raising=False)
+
+    rows = supervisor_runtime._collect_benchmark_operator_candidates(
+        task="运行 Flye benchmark。",
+        workspace_root=workspace_root,
+        excluded_tools=set(),
+        limit=8,
+    )
+
+    assert [row["name"] for row in rows] == ["Flye"]
+
+
+def test_collect_benchmark_candidates_keeps_explicitly_named_github2workspace_tool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CODE2WORKSPACE_OPERATOR_STORE_EMBEDDINGS_ENABLED", "0")
+    workspace_root = tmp_path / "workspace"
+    operator_store = OperatorStore(workspace_root / "operator_store")
+
+    spades_wdl = tmp_path / "spades.wdl"
+    spades_inputs = tmp_path / "spades.inputs.json"
+    spades_docker = tmp_path / "spades.Dockerfile"
+    spades_read1 = tmp_path / "spades_R1.fastq.gz"
+    spades_read2 = tmp_path / "spades_R2.fastq.gz"
+    spades_wdl.write_text("workflow SpadesWorkflow {}", encoding="utf-8")
+    spades_inputs.write_text("{}", encoding="utf-8")
+    spades_docker.write_text("FROM scratch\n", encoding="utf-8")
+    spades_read1.write_text("R1", encoding="utf-8")
+    spades_read2.write_text("R2", encoding="utf-8")
+    operator_store.write_manifest(
+        {
+            "product_id": "github2workspace:spades:test",
+            "operator_id": "github2workspace:spades",
+            "name": "spades",
+            "family": "github2workspace",
+            "version": "test",
+            "status": "completed",
+            "summary": "Short-read assembler for paired-end FASTQ benchmark runs.",
+            "created_at": "2026-05-20T00:00:00Z",
+            "source": {
+                "repo_url": "https://github.com/ablab/spades",
+                "repo_name": "spades",
+                "commit": "",
+            },
+            "runtime": {
+                "backend": "wdl",
+                "image_ref": "spades",
+                "workflow_path": str(spades_wdl),
+                "inputs_json_path": str(spades_inputs),
+                "dockerfile_path": str(spades_docker),
+            },
+            "inputs": [
+                {"name": "read1", "media_type": "fastq-gzip", "path": str(spades_read1), "schema_path": "", "required": True},
+                {"name": "read2", "media_type": "fastq-gzip", "path": str(spades_read2), "schema_path": "", "required": True},
+            ],
+            "outputs": [],
+            "metrics": [],
+            "validation": {
+                "validation_id": "github2workspace:test:spades",
+                "status": "completed",
+                "dataset_id": "short-read-ecoli-srr001666",
+                "run_dir": str(tmp_path / "run-spades"),
+                "summary": "completed",
+                "created_at": "2026-05-20T00:00:00Z",
+            },
+            "tags": ["github2workspace", "completed", "wdl-completed", "domain:covid-assembly"],
+        }
+    )
+
+    for index in range(5):
+        wdl_path = tmp_path / f"ranked_{index}.wdl"
+        inputs_path = tmp_path / f"ranked_{index}.inputs.json"
+        docker_path = tmp_path / f"ranked_{index}.Dockerfile"
+        reads_path = tmp_path / f"ranked_{index}.fastq.gz"
+        wdl_path.write_text(f"workflow Ranked{index} {{}}", encoding="utf-8")
+        inputs_path.write_text("{}", encoding="utf-8")
+        docker_path.write_text("FROM scratch\n", encoding="utf-8")
+        reads_path.write_text("READS", encoding="utf-8")
+        operator_store.write_manifest(
+            build_benchmark_operator_manifest(
+                product_id=f"benchmark:ranked-{index}:test",
+                name=f"ranked-{index}",
+                version="test",
+                run_dir=tmp_path / f"run-ranked-{index}",
+                case_dir=tmp_path / f"case-ranked-{index}",
+                case_manifest={
+                    "repo_name": f"ranked-{index}",
+                    "dataset_key": "short-read-ecoli-srr001666",
+                    "metric_keys": [],
+                    "expected_outputs": ["contigs.fasta"],
+                    "selected_input_files": {"reads_fastq": str(reads_path)},
+                },
+                ready_payload={
+                    "ready": True,
+                    "runtime_image": f"ranked-{index}",
+                    "wdl_path": str(wdl_path),
+                    "inputs_json_path": str(inputs_path),
+                },
+                status="registered_ready",
+                validation_summary="benchmark candidate ready",
+            )
+        )
+
+    rows = supervisor_runtime._collect_benchmark_operator_candidates(
+        task="请在共享短读数据集上运行 spades 这个 benchmark 算子。",
+        workspace_root=workspace_root,
+        excluded_tools=set(),
+        limit=1,
+    )
+
+    assert rows
+    assert rows[0]["name"] == "spades"
+
+
+def test_short_tool_name_does_not_match_across_other_tool_names() -> None:
+    task = "请比较 spades 和 megahit 两个短读组装算子。"
+
+    assert supervisor_runtime._task_explicitly_mentions_benchmark_tool(task, "spades")
+    assert supervisor_runtime._task_explicitly_mentions_benchmark_tool(task, "megahit")
+    assert not supervisor_runtime._task_explicitly_mentions_benchmark_tool(task, "esm")
+
+
+def test_benchmark_selection_resolves_shared_dataset_before_choosing_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True)
+    dataset_store = DatasetStore(workspace_root / "dataset_store")
+    pacbio = tmp_path / "pacbio.fastq"
+    pacbio.write_text("@r\nACGT\n+\n!!!!\n", encoding="utf-8")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "long-read-canu-pacbio",
+            "name": "long read canu pacbio",
+            "version": "local-test",
+            "domain": "genome_assembly",
+            "source": "test",
+            "license": "unknown",
+            "summary": "Shared long-read PacBio benchmark dataset.",
+            "files": [
+                {
+                    "name": "pacbio",
+                    "role": "pacbio",
+                    "media_type": "fastq",
+                    "uri": str(pacbio),
+                    "sha256": "",
+                    "size_bytes": pacbio.stat().st_size,
+                }
+            ],
+            "tags": ["benchmark", "genome_assembly"],
+            "compatible_operator_ids": [],
+        }
+    )
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "circrna-distractor-fastq",
+            "name": "circrna distractor fastq",
+            "version": "local-test",
+            "domain": "circrna",
+            "source": "test",
+            "license": "unknown",
+            "summary": "Unrelated circRNA dataset that also happens to contain FASTQ files.",
+            "files": [
+                {
+                    "name": "reads_1",
+                    "role": "read1",
+                    "media_type": "fastq",
+                    "uri": str(pacbio),
+                    "sha256": "",
+                    "size_bytes": pacbio.stat().st_size,
+                }
+            ],
+            "tags": ["benchmark", "circrna"],
+            "compatible_operator_ids": [],
+        }
+    )
+    monkeypatch.setattr(
+        supervisor_runtime,
+        "_collect_benchmark_operator_candidates",
+        lambda **_kwargs: [
+            {
+                "name": "Flye",
+                "operator_id": "benchmark:Flye",
+                "family": "benchmark",
+                "validation_status": "registered_ready",
+                "summary": "Long-read assembler for PacBio datasets.",
+                "canonical_text": "long read assembly pacbio hifi assembler",
+                "input_media_types": ["fastq", "json"],
+                "output_media_types": ["fasta", "gfa"],
+                "tags": ["wdl-completed"],
+                "workflow_path": str(tmp_path / "flye.wdl"),
+                "inputs_json_path": str(tmp_path / "flye.inputs.json"),
+                "dockerfile_path": str(tmp_path / "flye.Dockerfile"),
+                "runtime_image": "benchmark/flye",
+                "entry_workflow": "FlyeWorkflow",
+                "inputs": [
+                    {"name": "reads", "path": str(tmp_path / "old-flye.fastq.gz"), "media_type": "fastq"},
+                    {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+                ],
+                "outputs": [],
+                "expected_outputs": [],
+                "score": 90,
+                "rank": 0,
+            },
+            {
+                "name": "canu",
+                "operator_id": "benchmark:canu",
+                "family": "benchmark",
+                "validation_status": "registered_ready",
+                "summary": "Long-read assembler for PacBio datasets.",
+                "canonical_text": "long read assembly pacbio assembler",
+                "input_media_types": ["fastq", "json"],
+                "output_media_types": ["fasta"],
+                "tags": ["wdl-completed"],
+                "workflow_path": str(tmp_path / "canu.wdl"),
+                "inputs_json_path": str(tmp_path / "canu.inputs.json"),
+                "dockerfile_path": str(tmp_path / "canu.Dockerfile"),
+                "runtime_image": "benchmark/canu",
+                "entry_workflow": "CanuWorkflow",
+                "inputs": [
+                    {"name": "reads_fastq", "path": str(tmp_path / "old-canu.fastq"), "media_type": "fastq"},
+                    {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+                ],
+                "outputs": [],
+                "expected_outputs": [],
+                "score": 88,
+                "rank": 1,
+            },
+        ],
+    )
+
+    selected_tools, report = supervisor_runtime._resolve_benchmark_selected_tools(
+        task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
+        workspace_root=workspace_root,
+        benchmark_root="",
+        requested_tools=[],
+        excluded_tools=set(),
+    )
+
+    assert selected_tools == ["Flye", "canu"]
+    assert report["dataset_key"] == "long-read-canu-pacbio"
+    assert report["selected_dataset"]["dataset_id"] == "long-read-canu-pacbio"
+    assert [item["name"] for item in report["selected_operators"]] == ["Flye", "canu"]
+
+
+def test_benchmark_selection_override_backfills_empty_dataset_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True)
+    dataset_store = DatasetStore(workspace_root / "dataset_store")
+    pacbio = tmp_path / "pacbio.fastq"
+    pacbio.write_text("@r\nACGT\n+\n!!!!\n", encoding="utf-8")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "long-read-canu-pacbio",
+            "name": "long read canu pacbio",
+            "version": "local-test",
+            "domain": "genome_assembly",
+            "source": "test",
+            "license": "unknown",
+            "summary": "Shared long-read PacBio benchmark dataset.",
+            "files": [
+                {
+                    "name": "pacbio",
+                    "role": "pacbio",
+                    "media_type": "fastq",
+                    "uri": str(pacbio),
+                    "sha256": "",
+                    "size_bytes": pacbio.stat().st_size,
+                }
+            ],
+            "tags": ["benchmark", "genome_assembly"],
+            "compatible_operator_ids": [],
+        }
+    )
+    monkeypatch.setattr(
+        supervisor_runtime,
+        "_collect_benchmark_operator_candidates",
+        lambda **_kwargs: [
+            {
+                "name": "Flye",
+                "operator_id": "benchmark:Flye",
+                "family": "benchmark",
+                "validation_status": "registered_ready",
+                "summary": "Long-read assembler for PacBio datasets.",
+                "canonical_text": "long read assembly pacbio",
+                "input_media_types": ["fastq", "json"],
+                "output_media_types": ["fasta"],
+                "tags": ["wdl-completed"],
+                "workflow_path": str(tmp_path / "flye.wdl"),
+                "inputs_json_path": str(tmp_path / "flye.inputs.json"),
+                "dockerfile_path": str(tmp_path / "flye.Dockerfile"),
+                "runtime_image": "benchmark/flye",
+                "entry_workflow": "FlyeWorkflow",
+                "inputs": [
+                    {"name": "reads", "path": str(tmp_path / "old-flye.fastq.gz"), "media_type": "fastq"},
+                    {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+                ],
+                "outputs": [],
+                "expected_outputs": [],
+                "score": 90,
+                "rank": 0,
+            },
+            {
+                "name": "canu",
+                "operator_id": "benchmark:canu",
+                "family": "benchmark",
+                "validation_status": "registered_ready",
+                "summary": "Long-read assembler for PacBio datasets.",
+                "canonical_text": "long read assembly pacbio",
+                "input_media_types": ["fastq", "json"],
+                "output_media_types": ["fasta"],
+                "tags": ["wdl-completed"],
+                "workflow_path": str(tmp_path / "canu.wdl"),
+                "inputs_json_path": str(tmp_path / "canu.inputs.json"),
+                "dockerfile_path": str(tmp_path / "canu.Dockerfile"),
+                "runtime_image": "benchmark/canu",
+                "entry_workflow": "CanuWorkflow",
+                "inputs": [
+                    {"name": "reads_fastq", "path": str(tmp_path / "old-canu.fastq"), "media_type": "fastq"},
+                    {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+                ],
+                "outputs": [],
+                "expected_outputs": [],
+                "score": 88,
+                "rank": 1,
+            },
+        ],
+    )
+
+    selected_tools, report = supervisor_runtime._resolve_benchmark_selected_tools(
+        task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
+        workspace_root=workspace_root,
+        benchmark_root="",
+        requested_tools=[],
+        excluded_tools=set(),
+        selection_override={
+            "selected_tools": ["Flye", "canu"],
+            "selected_operators": [],
+            "dataset_key": "",
+            "selection_strategy": "agent_operator_store_search",
+        },
+    )
+
+    assert selected_tools == ["Flye", "canu"]
+    assert report["dataset_key"] == "long-read-canu-pacbio"
+    assert report["selected_dataset"]["dataset_id"] == "long-read-canu-pacbio"
+
+
+def test_benchmark_register_prefers_user_provided_external_dataset_folder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-external-dataset"
+    run_dir.mkdir(parents=True)
+    external_dir = tmp_path / "sarscov2_err6617197_short_reads"
+    external_dir.mkdir()
+    read1 = external_dir / "ERR6617197_1.fastq.gz"
+    read2 = external_dir / "ERR6617197_2.fastq.gz"
+    read1.write_text("R1", encoding="utf-8")
+    read2.write_text("R2", encoding="utf-8")
+
+    dataset_store = DatasetStore(workspace_root / "dataset_store")
+    old_r1 = tmp_path / "SRR001666_1.fastq.gz"
+    old_r2 = tmp_path / "SRR001666_2.fastq.gz"
+    old_r1.write_text("OLD1", encoding="utf-8")
+    old_r2.write_text("OLD2", encoding="utf-8")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "short-read-ecoli-srr001666",
+            "name": "Old E. coli short reads",
+            "domain": "genome_assembly",
+            "files": [
+                {"name": old_r1.name, "role": "read1", "media_type": "fastq", "uri": str(old_r1)},
+                {"name": old_r2.name, "role": "read2", "media_type": "fastq", "uri": str(old_r2)},
+            ],
+        }
+    )
+
+    for name, workflow in (("spades", "SpadesWorkflow"), ("megahit", "MegahitAssembly")):
+        (tmp_path / f"{name}.wdl").write_text(f"workflow {workflow} {{}}", encoding="utf-8")
+        (tmp_path / f"{name}.inputs.json").write_text(
+            json.dumps(
+                {
+                    f"{workflow}.read1": "/legacy/SRR001666_1.fastq.gz",
+                    f"{workflow}.read2": "/legacy/SRR001666_2.fastq.gz",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        supervisor_runtime,
+        "_collect_benchmark_operator_candidates",
+        lambda **_kwargs: [
+            {
+                "name": "spades",
+                "operator_id": "benchmark:spades",
+                "family": "benchmark",
+                "validation_status": "registered_ready",
+                "summary": "Short-read viral assembler.",
+                "canonical_text": "viral assembly short read paired fastq spades",
+                "input_media_types": ["fastq", "json"],
+                "output_media_types": ["fasta"],
+                "tags": ["wdl-completed"],
+                "workflow_path": str(tmp_path / "spades.wdl"),
+                "inputs_json_path": str(tmp_path / "spades.inputs.json"),
+                "dockerfile_path": "",
+                "runtime_image": "benchmark/spades",
+                "entry_workflow": "SpadesWorkflow",
+                "inputs": [
+                    {"name": "read1", "path": str(old_r1), "media_type": "fastq"},
+                    {"name": "read2", "path": str(old_r2), "media_type": "fastq"},
+                ],
+                "outputs": [],
+                "expected_outputs": ["contigs.fasta"],
+                "score": 90,
+                "rank": 0,
+            },
+            {
+                "name": "megahit",
+                "operator_id": "benchmark:megahit",
+                "family": "benchmark",
+                "validation_status": "registered_ready",
+                "summary": "Short-read viral assembler.",
+                "canonical_text": "viral assembly short read paired fastq megahit",
+                "input_media_types": ["fastq", "json"],
+                "output_media_types": ["fasta"],
+                "tags": ["wdl-completed"],
+                "workflow_path": str(tmp_path / "megahit.wdl"),
+                "inputs_json_path": str(tmp_path / "megahit.inputs.json"),
+                "dockerfile_path": "",
+                "runtime_image": "benchmark/megahit",
+                "entry_workflow": "MegahitAssembly",
+                "inputs": [
+                    {"name": "read1", "path": str(old_r1), "media_type": "fastq"},
+                    {"name": "read2", "path": str(old_r2), "media_type": "fastq"},
+                ],
+                "outputs": [],
+                "expected_outputs": ["final.contigs.fa"],
+                "score": 89,
+                "rank": 1,
+            },
+        ],
+    )
+    node = TaskNode(
+        node_id="register",
+        title="Register benchmark cases",
+        objective="Register benchmark cases on a user-provided external dataset.",
+        capability_bundles=["plan", "task_manage", "validate"],
+        metadata={
+            "task_type": "benchmark",
+            "task": (
+                "请跑一个病毒组装短读 benchmark，比较 spades 和 megahit。"
+                "不要使用 dataset_store 里已有的数据集，这次请使用我临时提供的新数据目录："
+                f"{external_dir}。这个目录里有 ERR6617197_1.fastq.gz 和 ERR6617197_2.fastq.gz，"
+                "请把这两个算子都在这同一组短读数据上运行。"
+            ),
+            "run_dir": str(run_dir),
+            "selected_tools": [],
+            "excluded_tools": [],
+        },
+    )
+
+    result = supervisor_runtime._run_deterministic_benchmark_register(
+        node=node,
+        workspace_root=workspace_root,
+    )
+
+    assert result.status == "completed"
+    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
+    assert selection_report["dataset_key"].startswith("external-sarscov2-err6617197-short-reads-")
+    assert selection_report["selected_dataset_id"] == selection_report["dataset_key"]
+    assert selection_report["selected_dataset"]["source_kind"] == "user_provided_external_path"
+    assert selection_report["selected_dataset"]["dataset_root"] == str(external_dir.resolve())
+    assert selection_report["selected_tools"] == ["spades", "megahit"]
+
+    dataset_resolution = json.loads((run_dir / "dataset_resolution.json").read_text(encoding="utf-8"))
+    assert set(dataset_resolution["repo_to_dataset"].values()) == {
+        selection_report["dataset_key"]
+    }
+
+    for tool, workflow in (("spades", "SpadesWorkflow"), ("megahit", "MegahitAssembly")):
+        manifest = json.loads((run_dir / "cases" / tool / "manifest.json").read_text(encoding="utf-8"))
+        staged_inputs = json.loads((run_dir / "cases" / tool / "wdl" / "inputs.json").read_text(encoding="utf-8"))
+        assert manifest["selected_input_source"] == "user_provided_external_path"
+        assert manifest["dataset_key"] == selection_report["dataset_key"]
+        assert staged_inputs[f"{workflow}.read1"] == str(read1)
+        assert staged_inputs[f"{workflow}.read2"] == str(read2)
+
+
+def test_build_benchmark_dataset_selection_prompt_requires_dataset_first() -> None:
+    dataset_options = [
+        {
+            "dataset_id": "long-read-canu-pacbio",
+            "name": "long read canu pacbio",
+            "domain": "genome_assembly",
+            "files": [{"name": "pacbio", "media_type": "fastq", "uri": "/tmp/pacbio.fastq"}],
+        }
+    ]
+    prompt = supervisor_runtime._build_benchmark_dataset_selection_prompt(
+        task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
+        dataset_options=dataset_options,
+        benchmark_root="/tmp/benchmark-root",
+    )
+
+    assert "Choose exactly one dataset" in prompt
+    assert '"selected_dataset_id":"dataset_id"' in prompt
+    assert "Dataset options:" in prompt
+    assert "dataset_id=long-read-canu-pacbio" in prompt
+    assert "Do not call tools." in prompt
+
+
+def test_build_benchmark_register_selection_prompt_uses_chosen_dataset() -> None:
+    dataset_candidate = {
+        "dataset_id": "long-read-canu-pacbio",
+        "name": "long read canu pacbio",
+        "domain": "genome_assembly",
+        "files": [{"name": "pacbio", "media_type": "fastq", "uri": "/tmp/pacbio.fastq"}],
+    }
+    candidates = [
+        {
+            "name": "Flye",
+            "family": "benchmark",
+            "validation_status": "registered_ready",
+            "input_media_types": ["fastq", "json"],
+            "output_media_types": ["fasta"],
+            "tags": ["wdl-completed"],
+            "summary": "Long-read assembler.",
+        },
+        {
+            "name": "canu",
+            "family": "benchmark",
+            "validation_status": "registered_ready",
+            "input_media_types": ["fastq", "json"],
+            "output_media_types": ["fasta"],
+            "tags": ["wdl-completed"],
+            "summary": "Long-read assembler.",
+        },
+    ]
+
+    prompt = supervisor_runtime._build_benchmark_register_selection_prompt(
+        task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
+        candidates=candidates,
+        benchmark_root="/tmp/benchmark-root",
+        excluded_tools=set(),
+        dataset_candidate=dataset_candidate,
+    )
+
+    assert "Chosen shared dataset:" in prompt
+    assert "dataset_id=long-read-canu-pacbio" in prompt
+    assert '{"selected_tools":["tool_name"]' in prompt
+    assert "Do not call tools." in prompt
+
+
+@pytest.mark.asyncio
+async def test_benchmark_agent_selection_returns_selected_dataset_id(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True)
+    dataset_store = DatasetStore(workspace_root / "dataset_store")
+    pacbio = tmp_path / "pacbio.fastq"
+    pacbio.write_text("@r\nACGT\n+\n!!!!\n", encoding="utf-8")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "long-read-canu-pacbio",
+            "name": "long read canu pacbio",
+            "version": "local-test",
+            "domain": "genome_assembly",
+            "source": "test",
+            "license": "unknown",
+            "summary": "Shared long-read PacBio benchmark dataset.",
+            "files": [
+                {
+                    "name": "pacbio",
+                    "role": "pacbio",
+                    "media_type": "fastq",
+                    "uri": str(pacbio),
+                    "sha256": "",
+                    "size_bytes": pacbio.stat().st_size,
+                }
+            ],
+            "tags": ["benchmark", "genome_assembly"],
+            "compatible_operator_ids": [],
+        }
+    )
+
+    candidates = [
+        {
+            "name": "Flye",
+            "operator_id": "benchmark:Flye",
+            "family": "benchmark",
+            "validation_status": "registered_ready",
+            "summary": "Long-read assembler for PacBio datasets.",
+            "canonical_text": "long read assembly pacbio hifi assembler",
+            "input_media_types": ["fastq", "json"],
+            "output_media_types": ["fasta", "gfa"],
+            "tags": ["wdl-completed"],
+            "workflow_path": str(tmp_path / "flye.wdl"),
+            "inputs_json_path": str(tmp_path / "flye.inputs.json"),
+            "dockerfile_path": str(tmp_path / "flye.Dockerfile"),
+            "runtime_image": "benchmark/flye",
+            "entry_workflow": "FlyeWorkflow",
+            "inputs": [
+                {"name": "reads", "path": str(tmp_path / "old-flye.fastq.gz"), "media_type": "fastq"},
+                {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+            ],
+            "outputs": [],
+            "expected_outputs": [],
+            "score": 90,
+            "rank": 0,
+        },
+        {
+            "name": "canu",
+            "operator_id": "benchmark:canu",
+            "family": "benchmark",
+            "validation_status": "registered_ready",
+            "summary": "Long-read assembler for PacBio datasets.",
+            "canonical_text": "long read assembly pacbio assembler",
+            "input_media_types": ["fastq", "json"],
+            "output_media_types": ["fasta"],
+            "tags": ["wdl-completed"],
+            "workflow_path": str(tmp_path / "canu.wdl"),
+            "inputs_json_path": str(tmp_path / "canu.inputs.json"),
+            "dockerfile_path": str(tmp_path / "canu.Dockerfile"),
+            "runtime_image": "benchmark/canu",
+            "entry_workflow": "CanuWorkflow",
+            "inputs": [
+                {"name": "reads_fastq", "path": str(tmp_path / "old-canu.fastq"), "media_type": "fastq"},
+                {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+            ],
+            "outputs": [],
+            "expected_outputs": [],
+            "score": 88,
+            "rank": 1,
+        },
+    ]
+
+    agent = AsyncMock()
+    agent.ainvoke.return_value = {
+        "messages": [
+            AIMessage(
+                content='{"selected_dataset_id":"long-read-canu-pacbio","selected_tools":["canu"],"selection_rationale":"Use the shared PacBio dataset; canu is compatible."}'
+            )
+        ]
+    }
+
+    with patch.object(
+        supervisor_runtime,
+        "_collect_benchmark_operator_candidates",
+        return_value=candidates,
+    ):
+        selection, debug_payload = await supervisor_runtime._select_benchmark_tools_with_agent(
+            agent=agent,
+            task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
+            workspace_root=workspace_root,
+            excluded_tools=set(),
+            benchmark_root="/tmp/benchmark-root",
+        )
+
+    assert selection is not None
+    assert selection["dataset_key"] == "long-read-canu-pacbio"
+    assert selection["selected_dataset_id"] == "long-read-canu-pacbio"
+    assert selection["selected_dataset"]["dataset_id"] == "long-read-canu-pacbio"
+    assert selection["selected_tools"] == ["Flye", "canu"]
+    assert debug_payload["dataset_selection_source"] == "agent_json"
+
+
+@pytest.mark.asyncio
+async def test_benchmark_agent_selection_recovers_from_non_json_text(tmp_path: Path) -> None:
+    workspace_root = tmp_path
+    dataset_store_root = workspace_root / "dataset_store"
+    dataset_store_root.mkdir(parents=True, exist_ok=True)
+    operator_store_root = workspace_root / "operator_store"
+    operator_store_root.mkdir(parents=True, exist_ok=True)
+
+    (tmp_path / "flye.wdl").write_text("workflow FlyeWorkflow {}", encoding="utf-8")
+    (tmp_path / "flye.inputs.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "flye.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    (tmp_path / "canu.wdl").write_text("workflow CanuWorkflow {}", encoding="utf-8")
+    (tmp_path / "canu.inputs.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "canu.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    pacbio_reads = tmp_path / "pacbio.fastq"
+    pacbio_reads.write_text("@r1\nACGT\n+\n!!!!\n", encoding="utf-8")
+    legacy_reads = tmp_path / "legacy.fastq"
+    legacy_reads.write_text("@r1\nTGCA\n+\n!!!!\n", encoding="utf-8")
+
+    dataset_store = supervisor_runtime.DatasetStore(dataset_store_root)
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "long-read-canu-pacbio",
+            "name": "PacBio shared dataset",
+            "domain": "assembly",
+            "compatible_operator_ids": ["benchmark-Flye", "benchmark-canu"],
+            "files": [
+                {
+                    "name": "pacbio.fastq",
+                    "uri": str(pacbio_reads),
+                    "role": "reads_fastq",
+                    "media_type": "fastq",
+                }
+            ],
+        }
+    )
+
+    candidates = [
+        {
+            "operator_id": "benchmark-Flye",
+            "name": "Flye",
+            "family": "benchmark",
+            "validation_status": "registered_ready",
+            "summary": "Long read assembler",
+            "canonical_text": "long read assembly pacbio assembler",
+            "input_media_types": ["fastq", "json"],
+            "output_media_types": ["fasta"],
+            "tags": ["wdl-completed"],
+            "workflow_path": str(tmp_path / "flye.wdl"),
+            "inputs_json_path": str(tmp_path / "flye.inputs.json"),
+            "dockerfile_path": str(tmp_path / "flye.Dockerfile"),
+            "runtime_image": "benchmark/flye",
+            "entry_workflow": "FlyeWorkflow",
+            "inputs": [
+                {"name": "reads_fastq", "path": str(legacy_reads), "media_type": "fastq"},
+                {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+            ],
+            "outputs": [],
+            "expected_outputs": [],
+            "score": 90,
+            "rank": 0,
+        },
+        {
+            "operator_id": "benchmark-canu",
+            "name": "canu",
+            "family": "benchmark",
+            "validation_status": "registered_ready",
+            "summary": "Long read assembler",
+            "canonical_text": "long read assembly pacbio assembler",
+            "input_media_types": ["fastq", "json"],
+            "output_media_types": ["fasta"],
+            "tags": ["wdl-completed"],
+            "workflow_path": str(tmp_path / "canu.wdl"),
+            "inputs_json_path": str(tmp_path / "canu.inputs.json"),
+            "dockerfile_path": str(tmp_path / "canu.Dockerfile"),
+            "runtime_image": "benchmark/canu",
+            "entry_workflow": "CanuWorkflow",
+            "inputs": [
+                {"name": "reads_fastq", "path": str(legacy_reads), "media_type": "fastq"},
+                {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+            ],
+            "outputs": [],
+            "expected_outputs": [],
+            "score": 88,
+            "rank": 1,
+        },
+    ]
+
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = [
+        {"messages": [AIMessage(content="我选择 long-read-canu-pacbio 作为共享数据集。")]},
+        {"messages": [AIMessage(content="Use Flye and canu on that shared dataset.")]},
+    ]
+
+    with patch.object(
+        supervisor_runtime,
+        "_collect_benchmark_operator_candidates",
+        return_value=candidates,
+    ):
+        selection, debug_payload = await supervisor_runtime._select_benchmark_tools_with_agent(
+            agent=agent,
+            task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
+            workspace_root=workspace_root,
+            excluded_tools=set(),
+            benchmark_root="/tmp/benchmark-root",
+        )
+
+    assert selection is not None
+    assert selection["selected_dataset_id"] == "long-read-canu-pacbio"
+    assert selection["selected_tools"] == ["Flye", "canu"]
+    assert debug_payload["dataset_selection_source"] == "agent_text_fallback"
+
+
+@pytest.mark.asyncio
+async def test_benchmark_dataset_selection_times_out_fast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class HangingAgent:
+        async def ainvoke(self, *_args, **_kwargs):
+            await asyncio.sleep(1)
+            return {"messages": [AIMessage(content='{"selected_dataset_id":"x"}')]}
+
+    monkeypatch.setenv(
+        "CODE2WORKSPACE_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS",
+        "0.01",
+    )
+    dataset_candidate, debug_payload = await supervisor_runtime._select_benchmark_dataset_with_agent(
+        agent=HangingAgent(),
+        task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
+        dataset_options=[
+            {
+                "dataset_id": "long-read-canu-pacbio",
+                "name": "long read canu pacbio",
+                "domain": "genome_assembly",
+                "files": [{"name": "pacbio", "media_type": "fastq", "uri": "/tmp/pacbio.fastq"}],
+            }
+        ],
+        benchmark_root="/tmp/benchmark-root",
+    )
+
+    assert dataset_candidate is None
+    assert debug_payload["failure_reason"] == "agent_invoke_timeout"
+
+
+@pytest.mark.asyncio
+async def test_invoke_benchmark_register_selector_uses_internal_no_stream_config() -> None:
+    selector = AsyncMock()
+    selector.ainvoke.return_value = {"messages": [AIMessage(content='{"selected_tools":["Flye"]}')]}
+
+    result, debug_payload = await supervisor_runtime._invoke_benchmark_register_selector(
+        selector=selector,
+        prompt="pick tools",
+        timeout_seconds=1,
+    )
+
+    assert result is not None
+    assert debug_payload["mode"] == "direct_messages"
+    selector.ainvoke.assert_awaited_once()
+    kwargs = selector.ainvoke.await_args.kwargs
+    assert kwargs["config"]["callbacks"] == []
+    assert kwargs["config"]["run_name"] == "internal_benchmark_register_selector"
+    assert kwargs["config"]["tags"] == ["internal_benchmark_register_selector"]
+
+
+def test_benchmark_selected_input_files_from_dataset_store_uses_project_relative_record_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    workspace_root = repo_root / "workspace" / "20260520_session"
+    workspace_root.mkdir(parents=True)
+    dataset_store = DatasetStore(repo_root / "workspace" / "dataset_store")
+    pacbio = repo_root / "experiments" / "benchmark" / "datasets" / "downloads" / "long-read-canu-pacbio" / "pacbio.fastq"
+    pacbio.parent.mkdir(parents=True, exist_ok=True)
+    pacbio.write_text("@r1\nACGT\n+\n!!!!\n", encoding="utf-8")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "long-read-canu-pacbio",
+            "name": "Shared long-read dataset",
+            "domain": "genome_assembly",
+            "compatible_operator_ids": [],
+            "files": [
+                {
+                    "name": "pacbio",
+                    "role": "reads_fastq",
+                    "media_type": "fastq",
+                    "uri": str(pacbio),
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr(supervisor_runtime, "_PROJECT_ROOT", repo_root)
+
+    selected = supervisor_runtime._benchmark_selected_input_files_from_dataset_store(
+        operator={"operator_id": "benchmark:canu"},
+        dataset_key="long-read-canu-pacbio",
+        workspace_root=workspace_root,
+    )
+
+    assert selected["pacbio"].endswith("pacbio.fastq")
+    assert selected["reads_fastq"].endswith("pacbio.fastq")
+    assert selected["pacbio.fastq"].endswith("pacbio.fastq")
+
+
+def test_sanitize_benchmark_inputs_json_rewrites_existing_absolute_fastq_paths(
+    tmp_path: Path,
+) -> None:
+    legacy_fastq = tmp_path / "legacy.fastq"
+    legacy_fastq.write_text("@r1\nAAAA\n+\n!!!!\n", encoding="utf-8")
+    shared_fastq = tmp_path / "shared.fastq"
+    shared_fastq.write_text("@r2\nCCCC\n+\n!!!!\n", encoding="utf-8")
+    inputs_json = tmp_path / "inputs.json"
+    inputs_json.write_text(
+        json.dumps(
+            {
+                "FlyeAssembly.reads": str(legacy_fastq),
+                "CanuWorkflow.reads_fastq": str(legacy_fastq),
+                "SomeWorkflow.genome_size": "500k",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    supervisor_runtime._sanitize_benchmark_inputs_json(
+        inputs_json,
+        selected_input_files={
+            "pacbio": str(shared_fastq),
+            "reads_fastq": str(shared_fastq),
+            "shared.fastq": str(shared_fastq),
+        },
+    )
+
+    payload = json.loads(inputs_json.read_text(encoding="utf-8"))
+    assert payload["FlyeAssembly.reads"] == str(shared_fastq)
+    assert payload["CanuWorkflow.reads_fastq"] == str(shared_fastq)
+    assert payload["SomeWorkflow.genome_size"] == "500k"
 
 
 @pytest.mark.asyncio
@@ -219,6 +1201,41 @@ async def test_run_supervisor_orchestration_supports_report_tasks(
     workspace.mkdir(parents=True)
 
     async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "init_report":
+            return WorkerResult(
+                status="completed",
+                summary="report contract initialized",
+                artifacts=["report_contract.md"],
+                spawned_subgraph={
+                    "nodes": [
+                        {
+                            "node_id": "monitoring_lane",
+                            "title": "Monitoring lane",
+                            "objective": "Collect surveillance evidence.",
+                            "capability_bundles": ["web_search", "web_fetch", "validate"],
+                        },
+                        {
+                            "node_id": "existing_data_lane",
+                            "title": "Existing local data lane",
+                            "objective": "Query local data stores for existing evidence.",
+                            "capability_bundles": ["db_access", "api_call", "data_filter", "validate"],
+                        },
+                        {
+                            "node_id": "computed_data_lane",
+                            "title": "Computed local data lane",
+                            "objective": "Run local computation only if needed.",
+                            "capability_bundles": ["operator_filter", "data_filter", "metric_compute", "validate"],
+                        },
+                        {
+                            "node_id": "literature_lane",
+                            "title": "Literature lane",
+                            "objective": "Collect literature evidence.",
+                            "capability_bundles": ["web_search", "web_fetch", "api_call", "validate"],
+                        },
+                    ],
+                    "edges": [],
+                },
+            )
         return WorkerResult(
             status="completed",
             summary=f"{node.node_id} ok",
@@ -233,11 +1250,17 @@ async def test_run_supervisor_orchestration_supports_report_tasks(
 
     run_dir = result.run_dir
     final_payload = json.loads((run_dir / "final_decision.json").read_text())
-    graph_payload = json.loads((run_dir / "graph_round_1.json").read_text())
+    graph_payload = json.loads((run_dir / "graph_round_2.json").read_text())
 
     assert final_payload["task_type"] == "report"
     assert final_payload["decision"] == "stop"
     assert graph_payload["task_type"] == "report"
+    assert [node["node_id"] for node in graph_payload["nodes"]][:4] == [
+        "monitoring_lane",
+        "existing_data_lane",
+        "computed_data_lane",
+        "literature_lane",
+    ]
     assert (run_dir / "worker_outputs" / "compose_report.json").exists()
 
 
@@ -301,6 +1324,62 @@ async def test_run_supervisor_orchestration_supports_generic_tasks(
     assert final_payload["generic_approach"] is None
     assert not (run_dir / "generic_approach_options.json").exists()
     assert not (run_dir / "generic_approach_selection.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_run_supervisor_orchestration_writes_partial_finalizer_summary(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace" / "20260521150000"
+    workspace.mkdir(parents=True)
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "init_generic":
+            return WorkerResult(
+                status="completed",
+                summary="planned response graph",
+                spawned_subgraph={
+                    "nodes": [
+                        {
+                            "node_id": "compose_generic",
+                            "title": "Compose",
+                            "objective": "Compose the answer.",
+                            "capability_bundles": ["summarize"],
+                        },
+                        {
+                            "node_id": "summarize",
+                            "title": "Summarize",
+                            "objective": "Summarize the answer.",
+                            "capability_bundles": ["summarize"],
+                        },
+                    ],
+                    "edges": [{"source": "compose_generic", "target": "summarize"}],
+                },
+            )
+        if node.node_id == "final_response":
+            run_dir = Path(str(node.metadata["run_dir"]))
+            return WorkerResult(
+                status="partial",
+                summary=(
+                    "可用结果：canu 成功，Flye 失败。主要产物："
+                    f"`{run_dir / 'cases' / 'canu' / 'out' / 'contigs.fasta'}`。"
+                ),
+            )
+        return WorkerResult(status="completed", summary="Worker completed.")
+
+    result = await run_supervisor_orchestration(
+        task="请汇总这次运行结果。",
+        workspace_root=workspace,
+        worker_runner=worker_runner,
+    )
+
+    assert result.user_response == (
+        "可用结果：canu 成功，Flye 失败。主要产物："
+        "`cases/canu/out/contigs.fasta`。"
+    )
+    assert (result.run_dir / "final_response.md").read_text(encoding="utf-8") == (
+        result.user_response
+    )
 
 
 @pytest.mark.asyncio
@@ -554,6 +1633,65 @@ async def test_run_worker_and_capture_times_out_report_nodes(
 
 
 @pytest.mark.asyncio
+async def test_report_lane_agent_recovers_from_tool_exception_inside_lane(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-recover"
+    run_dir.mkdir(parents=True)
+    node = TaskNode(
+        node_id="monitoring_lane_influenza",
+        title="Influenza monitoring lane",
+        objective="collect influenza monitoring evidence",
+        capability_bundles=["web_search", "web_fetch", "validate"],
+        metadata={"task_type": "report", "run_dir": str(run_dir)},
+    )
+
+    class RecoveringAgent:
+        def __init__(self) -> None:
+            self.prompts: list[str] = []
+
+        async def ainvoke(self, payload, **_kwargs):
+            prompt = payload["messages"][0].content
+            self.prompts.append(prompt)
+            if len(self.prompts) == 1:
+                raise ValueError("Invalid IPv6 URL")
+            assert "Report lane recovery instruction" in prompt
+            assert "Invalid IPv6 URL" in prompt
+            return {
+                "messages": [
+                    AIMessage(
+                        content=json.dumps(
+                            {
+                                "status": "completed",
+                                "summary": "influenza lane recovered after skipping a malformed URL",
+                                "artifacts": ["influenza_lane_brief.md"],
+                                "evidence": ["WHO weekly update", "CDC FluView"],
+                                "next_action_hint": "compose_report can use this recovered lane.",
+                                "failure_reason": None,
+                                "spawned_subgraph": {},
+                            }
+                        )
+                    )
+                ]
+            }
+
+    result = await _invoke_worker_runnable(
+        agent=RecoveringAgent(),
+        node=node,
+        workspace_root=tmp_path,
+    )
+
+    assert result.status == "completed"
+    assert "recovered" in result.summary
+    raw_trace = (run_dir / "raw_worker_traces" / "monitoring_lane_influenza.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert "worker_invocation_failed" in raw_trace
+    assert "worker_lane_recovery_started" in raw_trace
+    assert "worker_lane_recovery_finished" in raw_trace
+
+
+@pytest.mark.asyncio
 async def test_run_worker_and_capture_emits_heartbeat_for_long_running_nodes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -633,7 +1771,7 @@ def test_create_cli_agent_wraps_default_agent_with_supervisor_runtime(
     assert mock_build.call_args.kwargs["worker_agent"] is built_agents[1]
     assert mock_build.call_args.kwargs["fallback_agent"] is built_agents[3]
     worker_subagents = mock_build.call_args.kwargs["worker_subagents"]
-    assert len(worker_subagents) == 7
+    assert len(worker_subagents) == 9
     assert {item.runnable for item in worker_subagents} == {built_agents[2]}
     assert any(
         item.name == "report:monitoring_lane"
@@ -890,9 +2028,11 @@ def test_build_worker_prompt_final_response_preserves_evidence_sources() -> None
     assert "auditable reasoning path" in prompt
     assert "not private chain-of-thought" in prompt
     assert "false positives" in prompt
+    assert "do not expose absolute filesystem paths" in prompt
+    assert "run-relative paths" in prompt
 
 
-def test_build_worker_prompt_report_final_response_preserves_report_template() -> None:
+def test_build_worker_prompt_report_final_response_preserves_report_shape() -> None:
     node = TaskNode(
         node_id="final_response",
         title="Write final user response",
@@ -915,11 +2055,73 @@ def test_build_worker_prompt_report_final_response_preserves_report_template() -
     )
 
     assert "structured Markdown deliverable" in prompt
-    assert "title, executive summary, scope/time window" in prompt
+    assert "Keep the report shape chosen by composition" in prompt
+    assert "do not force a default heading checklist" in prompt
     assert "same language as the user's report request" in prompt
     assert "evidence appendix" in prompt
     assert "preserve the numbering and include the source list" in prompt
     assert "traceable to a finding" in prompt
+
+
+def test_final_response_paths_are_relativized_for_user_facing_text(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    run_dir = repo_root / "workspace" / "20260521" / "orchestration_runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    dataset_path = repo_root / "workspace" / "dataset_store" / "files" / "reads.fastq.gz"
+    output_path = run_dir / "cases" / "Flye" / "out" / "assembly.fasta"
+    monkeypatch.setattr(supervisor_runtime, "_PROJECT_ROOT", repo_root)
+
+    text = (
+        f"- reads: `{dataset_path}`\n"
+        f"- output: `{output_path}`。\n"
+        f"- run-prefixed: `orchestration_runs/{run_dir.name}/cases/Flye/out/assembly.fasta`\n"
+        f"- workspace-prefixed: `{run_dir.relative_to(repo_root).as_posix()}/cases/Flye/out/assembly.fasta`\n"
+        "- external: `/var/tmp/not-project/output.txt`\n"
+    )
+
+    cleaned = supervisor_runtime._relativize_user_facing_paths(text, run_dir=run_dir)
+
+    assert "`workspace/dataset_store/files/reads.fastq.gz`" in cleaned
+    assert "`cases/Flye/out/assembly.fasta`。" in cleaned
+    assert cleaned.count("`cases/Flye/out/assembly.fasta`") == 3
+    assert str(repo_root) not in cleaned
+    assert f"orchestration_runs/{run_dir.name}/cases" not in cleaned
+    assert f"{run_dir.relative_to(repo_root).as_posix()}/cases" not in cleaned
+    assert "`/var/tmp/not-project/output.txt`" in cleaned
+
+
+def test_final_response_source_material_relativizes_summary_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    run_dir = repo_root / "workspace" / "20260521" / "orchestration_runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    output_path = run_dir / "cases" / "canu" / "out" / "contigs.fasta"
+    monkeypatch.setattr(supervisor_runtime, "_PROJECT_ROOT", repo_root)
+    node = TaskNode(
+        node_id="final_response",
+        title="Write final response",
+        objective="Write final response",
+        capability_bundles=["summarize"],
+        metadata={
+            "task": "汇总 benchmark",
+            "task_type": "benchmark",
+            "run_dir": str(run_dir),
+            "final_summary": f"主要产物: {output_path}",
+            "final_decision": "stop",
+            "final_decision_reason": "done",
+            "failed_nodes": [],
+        },
+    )
+
+    material = supervisor_runtime._final_response_source_material(node)
+
+    assert "主要产物: cases/canu/out/contigs.fasta" in material
+    assert str(repo_root) not in material
 
 
 def test_build_worker_prompt_compose_report_includes_template_guidance() -> None:
@@ -943,13 +2145,69 @@ def test_build_worker_prompt_compose_report_includes_template_guidance() -> None
 
     assert "Report-Level Writing Contract" in prompt
     assert "Choose The Report Shape" in prompt
-    assert "Default Section Template" in prompt
     assert "Section Quality Rules" in prompt
     assert "Citation And Source Rules" in prompt
     assert "Forbidden Patterns" in prompt
     assert "Do not narrate your own actions" in prompt
+    assert "WHO-style risk assessment" in prompt
+    assert "monitoring or situation report" in prompt
+    assert "evidence review or evidence synthesis report" in prompt
+    assert "decision memo or action memo" in prompt
     assert "comparison report" in prompt
     assert "local evidence report" in prompt
+    assert "technical evaluation" in prompt
+    assert "choose one as the primary shape" in prompt
+    assert "Open with the bottom-line answer or current state" in prompt
+    assert "rather than mechanically filling a fixed checklist" in prompt
+    assert "Do not default to headings such as `Executive Summary`, `执行摘要`" in prompt
+    assert "Historical full reports may be used to locate evidence" in prompt
+    assert "Prefer a clear total-subtotal-total flow" in prompt
+    assert "do not expose absolute filesystem paths" in prompt
+    assert "Chinese-titled source section" in prompt
+
+
+def test_build_worker_prompt_init_report_includes_shape_library_guidance() -> None:
+    node = TaskNode(
+        node_id="init_report",
+        title="Initialize report",
+        objective="Plan the report graph.",
+        capability_bundles=["plan", "task_manage", "validate"],
+        metadata={
+            "task": "请写一份正式报告",
+            "task_type": "report",
+            "guidance_ids": ["report_synthesis"],
+            "run_dir": "/tmp/supervisor-run",
+        },
+    )
+
+    prompt = _build_worker_prompt(
+        node=node,
+        workspace_root=Path("/tmp/supervisor-workspace"),
+    )
+
+    assert "This node plans the dynamic report evidence graph" in prompt
+    assert "Decide each possible lane independently" in prompt
+    assert "Allowed report lane base types are monitoring_lane, existing_data_lane, computed_data_lane, and literature_lane." in prompt
+    assert "0-3 nodes for each lane base type and at most 6 evidence-lane nodes total" in prompt
+    assert "Put the selected next-round graph in spawned_subgraph" in prompt
+    assert "shape_archetype" in prompt or "WHO-style risk assessment" in prompt
+
+
+def test_parse_worker_result_recovers_report_spawned_subgraph_from_malformed_json() -> None:
+    text = (
+        '{"status":"completed","summary":"planned",'
+        '"evidence":[{"supports":"broken string}],'
+        '"spawned_subgraph":{"nodes":[{"node_id":"existing_data_lane_history",'
+        '"title":"Existing data","objective":"Query local history.",'
+        '"capability_bundles":["db_access","validate"],"lane_type":"existing_data_lane"}],'
+        '"edges":[{"from":"existing_data_lane_history","to":"compose_report"}]}}'
+    )
+
+    result = _parse_worker_result(text)
+
+    assert result.status == "completed"
+    assert result.spawned_subgraph is not None
+    assert result.spawned_subgraph["nodes"][0]["node_id"] == "existing_data_lane_history"
 
 
 def test_build_worker_prompt_monitoring_lane_includes_source_priority_and_depth_policy() -> None:
@@ -1157,7 +2415,7 @@ def test_build_worker_prompt_local_data_report_includes_benchmark_history(
 
     prompt = _build_worker_prompt(node=node, workspace_root=tmp_path)
 
-    assert "Report local data source context:" in prompt
+    assert "Report computed local data source context:" in prompt
     assert "existing_data" in prompt
     assert "computed_data" in prompt
     assert "Decision order:" in prompt
@@ -1451,15 +2709,15 @@ async def test_report_local_data_lane_can_run_operator_from_prompt_context(
         async def ainvoke(self, payload, **_kwargs):
             prompt = payload["messages"][0].content
             self.prompts.append(prompt)
-            assert "Node ID: local_data_lane" in prompt
-            assert "Report local data source context:" in prompt
+            assert "Node ID: computed_data_lane" in prompt
+            assert "Report computed local data source context:" in prompt
             assert "operator_id=analysis:respiratory-peak-forecast" in prompt
             assert f"entrypoint={entrypoint_path}" in prompt
             run_dir_line = next(
                 line for line in prompt.splitlines() if line.startswith("Run directory: ")
             )
             run_dir = Path(run_dir_line.removeprefix("Run directory: ").strip())
-            output_path = run_dir / "local_data_lane" / "forecast_result.json"
+            output_path = run_dir / "computed_data_lane" / "forecast_result.json"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             completed = subprocess.run(
                 [sys.executable, str(entrypoint_path), str(dataset_path), str(output_path)],
@@ -1473,7 +2731,7 @@ async def test_report_local_data_lane_can_run_operator_from_prompt_context(
             lane_brief_path.write_text(
                 "\n".join(
                     [
-                        "# Local Data Lane",
+                        "# Computed Data Lane",
                         "",
                         "- computed_data: local operator `analysis:respiratory-peak-forecast`",
                         f"- peak_week: `{result_payload['peak_week']}`",
@@ -1490,7 +2748,7 @@ async def test_report_local_data_lane_can_run_operator_from_prompt_context(
                             {
                                 "status": "completed",
                                 "summary": (
-                                    "local_data_lane ran operator "
+                                    "computed_data_lane ran operator "
                                     "analysis:respiratory-peak-forecast and computed "
                                     f"peak_week={result_payload['peak_week']}."
                                 ),
@@ -1519,7 +2777,7 @@ async def test_report_local_data_lane_can_run_operator_from_prompt_context(
                 summary="report contract initialized for local computation test",
                 artifacts=[str(workspace_root / "report_contract.md")],
             )
-        if node.node_id == "local_data_lane":
+        if node.node_id == "computed_data_lane":
             return await _invoke_worker_agent(
                 agent=local_data_agent,
                 node=node,
@@ -1535,7 +2793,7 @@ async def test_report_local_data_lane_can_run_operator_from_prompt_context(
 
     assert local_data_agent.prompts
     local_data_output = json.loads(
-        (result.run_dir / "worker_outputs" / "local_data_lane.json").read_text(encoding="utf-8")
+        (result.run_dir / "worker_outputs" / "computed_data_lane.json").read_text(encoding="utf-8")
     )
     assert local_data_output["result"]["status"] == "completed"
     assert "peak_week=2026-W19" in local_data_output["result"]["summary"]
@@ -1738,75 +2996,15 @@ def test_deterministic_benchmark_case_writes_benchmark_result_history_record(
         },
     )
 
-    def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
-        if phase == "run-wdl:Flye":
-            output_file = case_dir / "wdl" / "assembly.fasta"
-            output_file.write_text(">contig\nACGT\n", encoding="utf-8")
-            (case_dir / "wdl" / "outputs.json").write_text(
-                json.dumps({"outputs": {"FlyeWorkflow.assembly": str(output_file)}}),
-                encoding="utf-8",
-            )
-            (case_dir / "wdl" / "status.json").write_text(
-                json.dumps(
-                    {
-                        "success": True,
-                        "returncode": 0,
-                        "started_at": "2026-05-17T00:00:00Z",
-                        "finished_at": "2026-05-17T00:00:02Z",
-                        "elapsed_seconds": 2.0,
-                        "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
-                        "outputs_path": str(case_dir / "wdl" / "outputs.json"),
-                        "output_artifacts": [str(output_file)],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            return {"phase": phase, "command": command, "stdout": {"repo": "Flye"}}
-        if phase == "analyze-case:Flye":
-            (case_dir / "analysis.json").write_text(
-                json.dumps(
-                    {
-                        "family": "long-read-assembly",
-                        "artifact_paths": [str(case_dir / "wdl" / "run_outputs" / "assembly.fasta")],
-                        "artifact_checksums": {},
-                        "metrics": {"contig_count": 1, "n50": 4},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"repo": "Flye"}}
-        raise AssertionError(f"unexpected phase: {phase}")
-
-    with (
-        patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_helper),
-        patch("code2workspace_cli.supervisor_runtime._materialize_benchmark_operator_products", return_value=[]),
-    ):
-        result = supervisor_runtime._run_deterministic_benchmark_case(
-            node=node,
-            workspace_root=workspace_root,
-            repo="Flye",
-        )
-
-    assert result.status == "completed"
-    record_path = (
-        workspace_root
-        / "benchmark_comparison_history_store"
-        / "records"
-        / "Flye"
-        / "run-flye-history-write"
-        / "benchmark_result_record.json"
+    result = supervisor_runtime._run_deterministic_benchmark_case(
+        node=node,
+        workspace_root=workspace_root,
+        repo="Flye",
     )
-    assert record_path.exists()
-    record_payload = json.loads(record_path.read_text(encoding="utf-8"))
-    assert record_payload["repo"] == "Flye"
-    assert record_payload["dataset_key"] == "long-read-pacbio"
-    assert record_payload["success"] is True
-    assert record_payload["workflow_signature"]
-    assert record_payload["input_signature"]
-    assert record_payload["result_files"] == [
-        str(case_dir / "wdl" / "run_outputs" / "assembly.fasta")
-    ]
+
+    assert result.status == "failed"
+    assert result.failure_reason == "deterministic_benchmark_case_removed"
+    assert "agent-owned execution path" in result.summary
 
 
 def test_deterministic_benchmark_case_reuses_historical_record_before_execution(
@@ -1908,30 +3106,15 @@ def test_deterministic_benchmark_case_reuses_historical_record_before_execution(
         },
     )
 
-    with (
-        patch(
-            "code2workspace_cli.supervisor_runtime._run_helper_json_command",
-            side_effect=AssertionError("historical reuse should bypass helper execution"),
-        ),
-        patch("code2workspace_cli.supervisor_runtime._materialize_benchmark_operator_products", return_value=[]),
-    ):
-        result = supervisor_runtime._run_deterministic_benchmark_case(
-            node=node,
-            workspace_root=workspace_root,
-            repo="Flye",
-        )
-
-    assert result.status == "completed"
-    assert "Reused previously computed benchmark result" in result.summary
-    reused_status = json.loads((case_dir / "run" / "status.json").read_text(encoding="utf-8"))
-    assert reused_status["execution_mode"] == "history_reuse"
-    assert reused_status["reused_from_run_dir"] == str(historical_run_dir)
-    reused_marker = json.loads(
-        (case_dir / "run" / "reused_result_record.json").read_text(encoding="utf-8")
+    result = supervisor_runtime._run_deterministic_benchmark_case(
+        node=node,
+        workspace_root=workspace_root,
+        repo="Flye",
     )
-    assert reused_marker["run_dir"] == str(historical_run_dir)
-    assert json.loads((case_dir / "analysis.json").read_text(encoding="utf-8"))["metrics"]["n50"] == 4
-    assert json.loads((case_dir / "wdl" / "status.json").read_text(encoding="utf-8"))["success"] is True
+
+    assert result.status == "failed"
+    assert result.failure_reason == "deterministic_benchmark_case_removed"
+    assert not (case_dir / "run" / "reused_result_record.json").exists()
 
 
 def test_build_worker_prompt_includes_wdl_node_guidance() -> None:
@@ -2985,6 +4168,43 @@ async def test_supervisor_worker_runner_prefers_worker_subagent(
     base_agent.ainvoke.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_supervisor_worker_runner_uses_register_selector_for_benchmark_register(
+    tmp_path: Path,
+) -> None:
+    node = TaskNode(
+        node_id="register",
+        title="Register benchmark",
+        objective="Choose dataset and benchmark tools.",
+        capability_bundles=["operator_filter", "validate"],
+        metadata={"task": "比较 Flye 和 canu", "task_type": "benchmark"},
+    )
+    base_agent = AsyncMock()
+    worker_agent = AsyncMock()
+    selector = AsyncMock()
+    register_result = WorkerResult(status="completed", summary="selected")
+    with (
+        patch.object(supervisor_runtime, "_maybe_prepare_worker_inputs", return_value=None),
+        patch.object(
+            supervisor_runtime,
+            "_maybe_run_agentic_benchmark_register",
+            AsyncMock(return_value=register_result),
+        ) as register_mock,
+    ):
+        runner = SupervisorWorkerRunner(
+            base_agent=base_agent,
+            default_subagent=worker_agent,
+            register_selector=selector,
+            workspace_root=tmp_path,
+        )
+        result = await runner.run(node)
+
+    assert result is register_result
+    assert register_mock.await_args.kwargs["agent"] is selector
+    base_agent.ainvoke.assert_not_called()
+    worker_agent.ainvoke.assert_not_called()
+
+
 def test_build_benchmark_comparison_handles_mixed_metric_winners() -> None:
     comparison = _build_benchmark_comparison(
         [
@@ -3020,6 +4240,27 @@ def test_build_benchmark_comparison_handles_mixed_metric_winners() -> None:
     }
 
 
+def test_build_benchmark_comparison_refuses_mixed_dataset_quality_ranking() -> None:
+    comparison = _build_benchmark_comparison(
+        [
+            {
+                "repo": "faasm",
+                "dataset_key": "toy-fasta",
+                "success": True,
+                "metrics": {"n50": 1000},
+            },
+            {
+                "repo": "fqasm",
+                "dataset_key": "toy-fastq",
+                "success": True,
+                "metrics": {"n50": 2000},
+            },
+        ]
+    )
+
+    assert comparison is None
+
+
 @pytest.mark.asyncio
 async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
     tmp_path: Path,
@@ -3042,19 +4283,67 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
     agent = AsyncMock()
     agent.ainvoke.side_effect = AssertionError("register helper path should bypass the model")
 
-    def fake_register_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
-        if phase == "resolve-datasets":
-            (run_dir / "dataset_resolution.json").write_text("{}", encoding="utf-8")
-            (run_dir / "dataset_resolution.md").write_text("# datasets\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {}}
-        if phase == "init":
-            (run_dir / "benchmark_plan.json").write_text("{}", encoding="utf-8")
-            (run_dir / "benchmark_plan.md").write_text("# plan\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"case_order": ["spades", "megahit"]}}
-        repo = phase.split(":", 1)[1]
-        case_dir = run_dir / "cases" / repo
-        case_dir.mkdir(parents=True, exist_ok=True)
-        if phase.startswith("prepare-case:"):
+    candidate_rows = [
+        {
+            "name": "spades",
+            "operator_id": "benchmark:spades",
+            "family": "benchmark",
+            "runtime_image": "benchmark/spades",
+            "workflow_path": "/tmp/spades.wdl",
+            "inputs_json_path": "/tmp/spades.json",
+            "expected_outputs": ["final.contigs.fa", "log"],
+            "operator_path": "/tmp/spades/operator.json",
+        },
+        {
+            "name": "megahit",
+            "operator_id": "benchmark:megahit",
+            "family": "benchmark",
+            "runtime_image": "benchmark/megahit",
+            "workflow_path": "/tmp/megahit.wdl",
+            "inputs_json_path": "/tmp/megahit.json",
+            "expected_outputs": ["final.contigs.fa", "log"],
+            "operator_path": "/tmp/megahit/operator.json",
+        },
+    ]
+    with (
+        patch.object(
+            supervisor_runtime,
+            "_resolve_benchmark_selected_tools",
+            return_value=(
+                ["spades", "megahit"],
+                {
+                    "selected_tools": ["spades", "megahit"],
+                    "selected_operators": candidate_rows,
+                    "dataset_key": "short-read-ecoli-srr001666",
+                    "selection_strategy": "metadata_selected_tools",
+                    "requested_tools": ["spades", "megahit"],
+                    "excluded_tools": [],
+                },
+            ),
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_materialize_benchmark_selection_cases",
+            side_effect=lambda **_kwargs: (
+                (run_dir / "benchmark_plan.json").write_text("{}", encoding="utf-8"),
+                (run_dir / "benchmark_plan.md").write_text("# plan\n", encoding="utf-8"),
+                (run_dir / "dataset_resolution.json").write_text("{}", encoding="utf-8"),
+                (run_dir / "dataset_resolution.md").write_text("# datasets\n", encoding="utf-8"),
+                [
+                    {"phase": "materialize-selection", "stdout": {"case_order": ["spades", "megahit"]}},
+                    {"phase": "resolve-datasets", "stdout": {"repo_to_dataset": {"spades": "short-read-ecoli-srr001666", "megahit": "short-read-ecoli-srr001666"}}},
+                ],
+            )[-1],
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_materialize_benchmark_operator_products",
+            return_value=[],
+        ),
+    ):
+        for repo in ("spades", "megahit"):
+            case_dir = run_dir / "cases" / repo
+            case_dir.mkdir(parents=True, exist_ok=True)
             (case_dir / "manifest.json").write_text(
                 json.dumps(
                     {
@@ -3068,8 +4357,6 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
             (case_dir / "dataset_selection.json").write_text("{}", encoding="utf-8")
             (case_dir / "dataset_manifest.json").write_text("{}", encoding="utf-8")
             (case_dir / "agent_task.md").write_text("# task\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"repo": repo}}
-        if phase.startswith("execution-ready:"):
             (case_dir / "execution_ready.json").write_text(
                 json.dumps(
                     {
@@ -3081,10 +4368,6 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
                 ),
                 encoding="utf-8",
             )
-            return {"phase": phase, "command": command, "stdout": {"repo": repo}}
-        raise AssertionError(f"unexpected phase: {phase}")
-
-    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_register_helper):
         result = await _invoke_worker_agent(
             agent=agent,
             node=node,
@@ -3105,18 +4388,7 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
     assert (run_dir / "metric_plan.json").exists()
     assert (run_dir / "cases" / "spades" / "execution_ready.json").exists()
     assert (run_dir / "cases" / "megahit" / "execution_ready.json").exists()
-    operator_store = OperatorStore(workspace_root / "operator_store")
-    rows = operator_store.search(OperatorSearchFilter(input_media_type="file", status="registered_ready"))
-    assert {row["name"] for row in rows} == {"spades", "megahit"}
-    assert (
-        workspace_root
-        / "operator_store"
-        / "objects"
-        / "benchmark"
-        / "spades"
-        / "run-1"
-        / "operator_product.json"
-    ).exists()
+    assert (run_dir / "register_report.json").exists()
 
 
 @pytest.mark.asyncio
@@ -3139,19 +4411,42 @@ async def test_benchmark_register_partial_returns_only_ready_tools_for_fanout(
         },
     )
 
-    def fake_register_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
-        if phase == "resolve-datasets":
-            (run_dir / "dataset_resolution.json").write_text("{}", encoding="utf-8")
-            (run_dir / "dataset_resolution.md").write_text("# datasets\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {}}
-        if phase == "init":
-            (run_dir / "benchmark_plan.json").write_text("{}", encoding="utf-8")
-            (run_dir / "benchmark_plan.md").write_text("# plan\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"case_order": ["ACValidator", "AQUARIUM-HB"]}}
-        repo = phase.split(":", 1)[1]
-        case_dir = run_dir / "cases" / repo
-        case_dir.mkdir(parents=True, exist_ok=True)
-        if phase.startswith("prepare-case:"):
+    with (
+        patch.object(
+            supervisor_runtime,
+            "_resolve_benchmark_selected_tools",
+            return_value=(
+                ["ACValidator", "AQUARIUM-HB"],
+                {
+                    "selected_tools": ["ACValidator", "AQUARIUM-HB"],
+                    "selected_operators": [
+                        {"name": "ACValidator", "operator_id": "benchmark:acvalidator"},
+                        {"name": "AQUARIUM-HB", "operator_id": "benchmark:aquarium-hb"},
+                    ],
+                    "dataset_key": "circrna-test",
+                    "selection_strategy": "metadata_selected_tools",
+                    "requested_tools": ["ACValidator", "AQUARIUM-HB"],
+                    "excluded_tools": [],
+                },
+            ),
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_materialize_benchmark_selection_cases",
+            return_value=[
+                {"phase": "materialize-selection", "stdout": {"case_order": ["ACValidator", "AQUARIUM-HB"]}},
+                {"phase": "resolve-datasets", "stdout": {"repo_to_dataset": {"ACValidator": "circrna-test", "AQUARIUM-HB": "circrna-test"}}},
+            ],
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_materialize_benchmark_operator_products",
+            return_value=[],
+        ),
+    ):
+        for repo, ready in (("ACValidator", True), ("AQUARIUM-HB", False)):
+            case_dir = run_dir / "cases" / repo
+            case_dir.mkdir(parents=True, exist_ok=True)
             (case_dir / "manifest.json").write_text(
                 json.dumps(
                     {
@@ -3165,9 +4460,6 @@ async def test_benchmark_register_partial_returns_only_ready_tools_for_fanout(
             (case_dir / "dataset_selection.json").write_text("{}", encoding="utf-8")
             (case_dir / "dataset_manifest.json").write_text("{}", encoding="utf-8")
             (case_dir / "agent_task.md").write_text("# task\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"repo": repo}}
-        if phase.startswith("execution-ready:"):
-            ready = repo == "ACValidator"
             (case_dir / "execution_ready.json").write_text(
                 json.dumps(
                     {
@@ -3179,10 +4471,6 @@ async def test_benchmark_register_partial_returns_only_ready_tools_for_fanout(
                 ),
                 encoding="utf-8",
             )
-            return {"phase": phase, "command": command, "stdout": {"repo": repo}}
-        raise AssertionError(f"unexpected phase: {phase}")
-
-    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_register_helper):
         result = await _invoke_worker_agent(
             agent=AsyncMock(),
             node=node,
@@ -3197,6 +4485,131 @@ async def test_benchmark_register_partial_returns_only_ready_tools_for_fanout(
         "ready_tools": ["ACValidator"],
         "blocked_tools": ["AQUARIUM-HB"],
         "dataset_keys": ["circrna-test"],
+        "register_report": str(run_dir / "register_report.json"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_benchmark_register_backfills_shared_dataset_when_selection_report_drops_it(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-backfill-dataset"
+    run_dir.mkdir(parents=True)
+    node = TaskNode(
+        node_id="register",
+        title="Register benchmark cases",
+        objective="Confirm benchmark inputs, register each tool/case pair, and verify staged constraints before execution.",
+        capability_bundles=["plan", "task_manage", "validate"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "请使用共享长读长数据集运行 Flye 和 canu benchmark。",
+            "run_dir": str(run_dir),
+            "selected_tools": [],
+        },
+    )
+
+    selection_report = {
+        "selected_tools": ["Flye", "canu"],
+        "selected_operators": [
+            {"name": "Flye", "operator_id": "benchmark:Flye"},
+            {"name": "canu", "operator_id": "benchmark:canu"},
+        ],
+        "dataset_key": "",
+        "selection_strategy": "agent_operator_store_search",
+        "requested_tools": [],
+        "excluded_tools": [],
+    }
+
+    dataset_candidate = {
+        "dataset_id": "long-read-canu-pacbio",
+        "name": "long read canu pacbio",
+        "domain": "genome_assembly",
+    }
+
+    with (
+        patch.object(
+            supervisor_runtime,
+            "_resolve_benchmark_selected_tools",
+            return_value=(["Flye", "canu"], selection_report),
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_collect_benchmark_operator_candidates",
+            return_value=[
+                {"name": "Flye", "operator_id": "benchmark:Flye"},
+                {"name": "canu", "operator_id": "benchmark:canu"},
+            ],
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_resolve_benchmark_dataset_candidate",
+            return_value=dataset_candidate,
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_materialize_benchmark_selection_cases",
+            side_effect=lambda **_kwargs: (
+                (run_dir / "benchmark_plan.json").write_text("{}", encoding="utf-8"),
+                (run_dir / "benchmark_plan.md").write_text("# plan\n", encoding="utf-8"),
+                (run_dir / "dataset_resolution.json").write_text("{}", encoding="utf-8"),
+                (run_dir / "dataset_resolution.md").write_text("# datasets\n", encoding="utf-8"),
+                [
+                    {"phase": "materialize-selection", "stdout": {"case_order": ["Flye", "canu"]}},
+                    {"phase": "resolve-datasets", "stdout": {"repo_to_dataset": {"Flye": "long-read-canu-pacbio", "canu": "long-read-canu-pacbio"}}},
+                ],
+            )[-1],
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_materialize_benchmark_operator_products",
+            return_value=[],
+        ),
+    ):
+        for repo in ("Flye", "canu"):
+            case_dir = run_dir / "cases" / repo
+            case_dir.mkdir(parents=True, exist_ok=True)
+            (case_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "dataset_key": "long-read-canu-pacbio",
+                        "metric_keys": ["contig_count"],
+                        "selected_input_files": {"reads_fastq": "/tmp/pacbio.fastq"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (case_dir / "dataset_selection.json").write_text("{}", encoding="utf-8")
+            (case_dir / "dataset_manifest.json").write_text("{}", encoding="utf-8")
+            (case_dir / "agent_task.md").write_text("# task\n", encoding="utf-8")
+            (case_dir / "execution_ready.json").write_text(
+                json.dumps(
+                    {
+                        "ready": True,
+                        "runtime_image": f"benchmark/{repo}",
+                        "wdl_path": f"/tmp/{repo}.wdl",
+                        "inputs_json_path": f"/tmp/{repo}.json",
+                    }
+                ),
+                encoding="utf-8",
+            )
+        result = await _invoke_worker_agent(
+            agent=AsyncMock(),
+            node=node,
+            workspace_root=workspace_root,
+        )
+
+    report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
+    register_report = json.loads((run_dir / "register_report.json").read_text(encoding="utf-8"))
+    assert result.status == "completed"
+    assert report["dataset_key"] == "long-read-canu-pacbio"
+    assert report["selected_dataset"]["dataset_id"] == "long-read-canu-pacbio"
+    assert register_report["selection_dataset_key"] == "long-read-canu-pacbio"
+    assert result.spawned_subgraph == {
+        "selected_tools": ["Flye", "canu"],
+        "ready_tools": ["Flye", "canu"],
+        "blocked_tools": [],
+        "dataset_keys": ["long-read-canu-pacbio"],
         "register_report": str(run_dir / "register_report.json"),
     }
 
@@ -3664,6 +5077,19 @@ async def test_benchmark_register_can_use_agent_to_choose_from_operator_candidat
     (tmp_path / "esm.wdl").write_text("workflow ESMWorkflow {}", encoding="utf-8")
     (tmp_path / "esm.inputs.json").write_text("{}", encoding="utf-8")
     (tmp_path / "esm.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    dataset_store = DatasetStore(workspace_root / "dataset_store")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "immune-escape-covabdab-structural-bundle",
+            "name": "Immune escape structural bundle",
+            "domain": "immune_escape",
+            "compatible_operator_ids": [],
+            "files": [
+                {"name": "receptor", "uri": str(tmp_path / "receptor.pdbqt"), "media_type": "pdbqt"},
+                {"name": "ligand", "uri": str(tmp_path / "ligand.pdbqt"), "media_type": "pdbqt"},
+            ],
+        }
+    )
     agent = AsyncMock()
     agent.ainvoke.return_value = {
         "messages": [
@@ -3672,16 +5098,18 @@ async def test_benchmark_register_can_use_agent_to_choose_from_operator_candidat
             )
         ]
     }
-    result = await _invoke_worker_agent(
-        agent=agent,
-        node=node,
+    runner = SupervisorWorkerRunner(
+        base_agent=AsyncMock(),
+        register_selector=agent,
         workspace_root=workspace_root,
     )
+    result = await runner.run(node)
 
     assert result.status == "completed"
-    assert agent.ainvoke.await_count == 1
+    assert agent.ainvoke.await_count >= 1
     selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
     assert selection_report["selection_strategy"] == "agent_operator_store_search"
+    assert selection_report["dataset_strategy"] == "shared_dataset"
     assert selection_report["selected_tools"] == ["AutoDock-Vina"]
     assert "pdbqt" in selection_report["agent_selection_rationale"]
     assert (run_dir / "cases" / "AutoDock-Vina" / "execution_ready.json").exists()
@@ -3700,6 +5128,18 @@ async def test_benchmark_register_agent_expands_to_shared_dataset_group_by_defau
     benchmark_root.mkdir(parents=True)
     pacbio_reads = tmp_path / "pacbio.fastq"
     pacbio_reads.write_text("@r\nACGT\n+\n!!!!\n", encoding="utf-8")
+    dataset_store = DatasetStore(workspace_root / "dataset_store")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "long-read-canu-pacbio",
+            "name": "Shared PacBio long-read assembly dataset",
+            "domain": "genome_assembly",
+            "compatible_operator_ids": [],
+            "files": [
+                {"name": "pacbio", "uri": str(pacbio_reads), "media_type": "fastq"},
+            ],
+        }
+    )
     for name in ("flye", "canu"):
         (tmp_path / f"{name}.wdl").write_text(f"workflow {name.title()}Workflow {{}}", encoding="utf-8")
         (tmp_path / f"{name}.inputs.json").write_text("{}", encoding="utf-8")
@@ -3779,18 +5219,155 @@ async def test_benchmark_register_agent_expands_to_shared_dataset_group_by_defau
         ]
     }
 
-    result = await _invoke_worker_agent(
-        agent=agent,
-        node=node,
+    runner = SupervisorWorkerRunner(
+        base_agent=AsyncMock(),
+        register_selector=agent,
         workspace_root=workspace_root,
     )
+    result = await runner.run(node)
 
     assert result.status == "completed"
-    assert agent.ainvoke.await_count == 1
+    assert agent.ainvoke.await_count >= 1
     selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
-    assert selection_report["selection_strategy"] == "agent_operator_store_search"
+    assert selection_report["selection_strategy"] == "agent_operator_store_exploratory_search"
+    assert selection_report["dataset_strategy"] == "per_operator_dataset"
     assert selection_report["default_preferred_tools"] == ["Flye", "canu"]
     assert selection_report["selected_tools"] == ["Flye", "canu"]
+
+
+@pytest.mark.asyncio
+async def test_benchmark_register_exploratory_assigns_per_operator_datasets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    (workspace_root / "operator_store").mkdir(parents=True)
+    run_dir = workspace_root / "orchestration_runs" / "run-exploratory"
+    run_dir.mkdir(parents=True)
+    fasta_reads = tmp_path / "reads.fa"
+    fastq_reads = tmp_path / "reads.fq"
+    fasta_reads.write_text(">r\nACGT\n", encoding="utf-8")
+    fastq_reads.write_text("@r\nACGT\n+\n!!!!\n", encoding="utf-8")
+    dataset_store = DatasetStore(workspace_root / "dataset_store")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "toy-fasta",
+            "name": "Toy FASTA reads",
+            "domain": "assembly",
+            "files": [
+                {"name": "reads.fa", "uri": str(fasta_reads), "media_type": "fasta"},
+            ],
+        }
+    )
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "toy-fastq",
+            "name": "Toy FASTQ reads",
+            "domain": "assembly",
+            "files": [
+                {"name": "reads.fq", "uri": str(fastq_reads), "media_type": "fastq"},
+            ],
+        }
+    )
+    for name in ("faasm", "fqasm"):
+        (tmp_path / f"{name}.wdl").write_text(f"workflow {name.title()}Workflow {{}}", encoding="utf-8")
+        (tmp_path / f"{name}.inputs.json").write_text(
+            json.dumps({f"{name.title()}Workflow.reads": "/path/to/reads.fa"}),
+            encoding="utf-8",
+        )
+        (tmp_path / f"{name}.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    monkeypatch.setattr(
+        supervisor_runtime,
+        "_collect_benchmark_operator_candidates",
+        lambda **_kwargs: [
+            {
+                "name": "faasm",
+                "family": "github2workspace",
+                "validation_status": "completed",
+                "summary": "Assembler staged with FASTA reads.",
+                "canonical_text": "assembly fasta reads",
+                "input_media_types": ["fasta"],
+                "output_media_types": ["fasta"],
+                "tags": ["wdl-completed", "domain:assembly"],
+                "workflow_path": str(tmp_path / "faasm.wdl"),
+                "inputs_json_path": str(tmp_path / "faasm.inputs.json"),
+                "dockerfile_path": str(tmp_path / "faasm.Dockerfile"),
+                "runtime_image": "faasm",
+                "entry_workflow": "FaasmWorkflow",
+                "inputs": [{"name": "reads_fasta", "path": str(fasta_reads), "media_type": "fasta"}],
+                "outputs": [],
+                "expected_outputs": [],
+                "score": 90,
+                "rank": 0,
+            },
+            {
+                "name": "fqasm",
+                "family": "github2workspace",
+                "validation_status": "completed",
+                "summary": "Assembler staged with FASTQ reads.",
+                "canonical_text": "assembly fastq reads",
+                "input_media_types": ["fastq"],
+                "output_media_types": ["fasta"],
+                "tags": ["wdl-completed", "domain:assembly"],
+                "workflow_path": str(tmp_path / "fqasm.wdl"),
+                "inputs_json_path": str(tmp_path / "fqasm.inputs.json"),
+                "dockerfile_path": str(tmp_path / "fqasm.Dockerfile"),
+                "runtime_image": "fqasm",
+                "entry_workflow": "FqasmWorkflow",
+                "inputs": [{"name": "reads_fastq", "path": str(fastq_reads), "media_type": "fastq"}],
+                "outputs": [],
+                "expected_outputs": [],
+                "score": 89,
+                "rank": 1,
+            },
+        ],
+    )
+    node = TaskNode(
+        node_id="register",
+        title="Register benchmark cases",
+        objective="Register exploratory benchmark cases.",
+        capability_bundles=["plan", "task_manage", "validate"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "请比较 faasm 和 fqasm 两个组装算子，尽量都跑起来，不要求同一数据集。",
+            "run_dir": str(run_dir),
+            "selected_tools": [],
+            "excluded_tools": [],
+        },
+    )
+    agent = AsyncMock()
+    agent.ainvoke.return_value = {
+        "messages": [
+            AIMessage(
+                content='{"selected_tools":["faasm","fqasm"],"selection_rationale":"Run both tools and disclose per-tool datasets."}'
+            )
+        ]
+    }
+
+    runner = SupervisorWorkerRunner(
+        base_agent=AsyncMock(),
+        register_selector=agent,
+        workspace_root=workspace_root,
+    )
+    result = await runner.run(node)
+
+    assert result.status == "completed"
+    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
+    assert selection_report["dataset_strategy"] == "per_operator_dataset"
+    assert selection_report["tool_dataset_keys"] == {
+        "faasm": "toy-fasta",
+        "fqasm": "toy-fastq",
+    }
+    dataset_resolution = json.loads((run_dir / "dataset_resolution.json").read_text(encoding="utf-8"))
+    assert dataset_resolution["dataset_strategy"] == "per_operator_dataset"
+    assert dataset_resolution["repo_to_dataset"] == {
+        "faasm": "toy-fasta",
+        "fqasm": "toy-fastq",
+    }
+    fa_manifest = json.loads((run_dir / "cases" / "faasm" / "manifest.json").read_text(encoding="utf-8"))
+    fq_manifest = json.loads((run_dir / "cases" / "fqasm" / "manifest.json").read_text(encoding="utf-8"))
+    assert fa_manifest["dataset_key"] == "toy-fasta"
+    assert fq_manifest["dataset_key"] == "toy-fastq"
 
 
 def test_benchmark_candidate_allows_partial_wdl_completed_operator(
@@ -3817,6 +5394,151 @@ def test_benchmark_candidate_allows_partial_wdl_completed_operator(
     assert candidate is not None
     assert candidate["name"] == "AQUARIUM-HB"
     assert candidate["_score"] >= 1
+
+
+def test_benchmark_candidate_infers_registered_ready_status_from_tags(
+    tmp_path: Path,
+) -> None:
+    operator_path = tmp_path / "flye.operator.json"
+    payload = {
+        "name": "Flye",
+        "family": "benchmark",
+        "summary": "Long-read assembler.",
+        "tags": ["benchmark", "execution-ready", "registered_ready", "wdl"],
+        "runtime": {
+            "workflow_path": str(tmp_path / "flye.wdl"),
+            "inputs_json_path": str(tmp_path / "flye.inputs.json"),
+            "dockerfile_path": str(tmp_path / "flye.Dockerfile"),
+        },
+        "inputs": [
+            {"name": "reads", "path": str(tmp_path / "reads.fastq"), "media_type": "fastq"}
+        ],
+        "outputs": [],
+        "expected_outputs": [],
+    }
+
+    candidate = supervisor_runtime._benchmark_candidate_from_operator_payload(
+        payload=payload,
+        operator_path=operator_path,
+        excluded_tools=set(),
+    )
+
+    assert candidate is not None
+    assert candidate["validation_status"] == "registered_ready"
+
+
+def test_benchmark_dataset_compatibility_does_not_count_read_aliases_as_distinct_inputs() -> None:
+    operator = {
+        "name": "Flye",
+        "operator_id": "benchmark:Flye",
+        "input_media_types": ["fastq", "json"],
+        "inputs": [
+            {"name": "pacbio", "media_type": "fastq", "path": "/data/pacbio.fastq"},
+            {"name": "pacbio.fastq", "media_type": "fastq", "path": "/data/pacbio.fastq.gz"},
+            {"name": "pacbio.fastq.gz", "media_type": "fastq", "path": "/data/pacbio.fastq.gz"},
+            {"name": "input_json", "media_type": "json", "path": "/case/inputs.json"},
+        ],
+    }
+    dataset = {
+        "dataset_id": "long-read-canu-pacbio-real-tests",
+        "compatible_operator_ids": [],
+        "files": [
+            {"name": "pacbio.fastq", "media_type": "fastq", "uri": "/datasets/pacbio.fastq"},
+        ],
+    }
+
+    assert supervisor_runtime._benchmark_operator_compatible_with_dataset(
+        operator=operator,
+        dataset_candidate=dataset,
+    )
+
+
+def test_benchmark_dataset_compatibility_accepts_megahit_style_fastq_dataset_from_inputs_json(
+    tmp_path: Path,
+) -> None:
+    inputs_json = tmp_path / "megahit.inputs.json"
+    inputs_json.write_text(
+        json.dumps(
+            {
+                "MegahitAssembly.read1": "/legacy/r3_1.fa",
+                "MegahitAssembly.read2": "/legacy/r3_2.fa",
+                "MegahitAssembly.output_prefix": "megahit_output",
+            }
+        ),
+        encoding="utf-8",
+    )
+    operator = {
+        "name": "megahit",
+        "operator_id": "benchmark:megahit",
+        "input_media_types": ["fasta", "json"],
+        "inputs_json_path": str(inputs_json),
+        "inputs": [
+            {"name": "r3_1.fa", "media_type": "fasta", "path": "/legacy/r3_1.fa"},
+            {"name": "r3_2.fa", "media_type": "fasta", "path": "/legacy/r3_2.fa"},
+            {"name": "input_json", "media_type": "json", "path": str(inputs_json)},
+        ],
+    }
+    dataset = {
+        "dataset_id": "short-read-ecoli-srr001666",
+        "compatible_operator_ids": [],
+        "files": [
+            {"name": "SRR001666_1.fastq", "media_type": "fastq", "uri": "/datasets/SRR001666_1.fastq.gz"},
+            {"name": "SRR001666_2.fastq", "media_type": "fastq", "uri": "/datasets/SRR001666_2.fastq.gz"},
+        ],
+    }
+
+    assert supervisor_runtime._benchmark_operator_compatible_with_dataset(
+        operator=operator,
+        dataset_candidate=dataset,
+    )
+
+
+def test_benchmark_candidate_from_operator_payload_normalizes_megahit_inputs_to_fastq(
+    tmp_path: Path,
+) -> None:
+    inputs_json = tmp_path / "megahit.inputs.json"
+    inputs_json.write_text(
+        json.dumps(
+            {
+                "MegahitAssembly.read1": "/legacy/r3_1.fa",
+                "MegahitAssembly.read2": "/legacy/r3_2.fa",
+                "MegahitAssembly.output_prefix": "megahit_output",
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = {
+        "operator_id": "benchmark:megahit",
+        "name": "megahit",
+        "family": "benchmark",
+        "status": "registered_ready",
+        "summary": "megahit is registered and execution-ready.",
+        "canonical_text": "megahit benchmark operator",
+        "input_media_types": ["fasta", "json"],
+        "output_media_types": ["fasta"],
+        "tags": ["benchmark", "registered_ready", "execution-ready", "wdl"],
+        "runtime": {
+            "image_ref": "benchmark/megahit",
+            "workflow_path": str(tmp_path / "megahit.wdl"),
+            "inputs_json_path": str(inputs_json),
+            "entry_workflow": "MegahitAssembly",
+        },
+        "inputs": [
+            {"name": "r3_1.fa", "media_type": "fasta", "path": "/legacy/r3_1.fa"},
+            {"name": "r3_2.fa", "media_type": "fasta", "path": "/legacy/r3_2.fa"},
+            {"name": "input_json", "media_type": "json", "path": str(inputs_json)},
+        ],
+        "outputs": [],
+    }
+
+    candidate = supervisor_runtime._benchmark_candidate_from_operator_payload(
+        payload=payload,
+        operator_path=tmp_path / "operator.json",
+        excluded_tools=set(),
+    )
+
+    assert candidate is not None
+    assert candidate["input_media_types"] == ["fastq", "json"]
 
 
 @pytest.mark.asyncio
@@ -4003,7 +5725,7 @@ async def test_benchmark_register_prefers_local_benchmark_case_workflow_when_pre
     assert staged_wdl.exists()
     assert "LocalAquariumWorkflow" in staged_wdl.read_text(encoding="utf-8")
     manifest = json.loads((run_dir / "cases" / "AQUARIUM-HB" / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["selected_input_source"] == "benchmark_root_case_artifacts"
+    assert manifest["selected_input_source"] == "missing_inputs"
     assert manifest["source_case_dir"] == str(case_dir)
 
 
@@ -4203,7 +5925,7 @@ async def test_benchmark_register_hydrates_placeholder_paths_from_selected_input
 
 
 @pytest.mark.asyncio
-async def test_benchmark_register_falls_back_when_agentic_selection_output_is_invalid(
+async def test_benchmark_register_blocks_when_agentic_selection_output_is_invalid(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4279,19 +6001,35 @@ async def test_benchmark_register_falls_back_when_agentic_selection_output_is_in
     (tmp_path / "esm.wdl").write_text("workflow ESMWorkflow {}", encoding="utf-8")
     (tmp_path / "esm.inputs.json").write_text("{}", encoding="utf-8")
     (tmp_path / "esm.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    fasta = tmp_path / "proteins.fasta"
+    fasta.write_text(">p\nAAAA\n", encoding="utf-8")
+    dataset_store = DatasetStore(workspace_root / "dataset_store")
+    dataset_store.write_dataset(
+        {
+            "dataset_id": "immune-escape-covabdab-structural-bundle",
+            "name": "Immune escape sequence bundle",
+            "domain": "immune_escape",
+            "compatible_operator_ids": [],
+            "files": [
+                {"name": "proteins", "uri": str(fasta), "media_type": "fasta"},
+            ],
+        }
+    )
     agent = AsyncMock()
     agent.ainvoke.return_value = {"messages": [AIMessage(content="not-json")]}
-    result = await _invoke_worker_agent(
-        agent=agent,
-        node=node,
+    runner = SupervisorWorkerRunner(
+        base_agent=AsyncMock(),
+        register_selector=agent,
         workspace_root=workspace_root,
     )
+    result = await runner.run(node)
 
-    assert result.status == "completed"
-    assert agent.ainvoke.await_count == 1
-    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
-    assert selection_report["selection_strategy"] == "operator_store_search"
-    assert selection_report["selected_tools"] == ["AutoDock-Vina"]
+    assert result.status == "blocked"
+    assert agent.ainvoke.await_count >= 1
+    debug_report = json.loads(
+        (run_dir / "register_agentic_selection_debug.json").read_text(encoding="utf-8")
+    )
+    assert debug_report["failure_reason"]
 
 
 @pytest.mark.asyncio
@@ -4395,9 +6133,18 @@ async def test_invoke_worker_agent_falls_back_to_wdl_when_repo_native_command_is
     )
     run_dir.joinpath("manifest.json").write_text(json.dumps({"case_order": ["circompara2"]}), encoding="utf-8")
 
-    def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
-        if phase != "run-wdl:circompara2":
-            raise AssertionError(f"unexpected phase: {phase}")
+    node = TaskNode(
+        node_id="circompara2",
+        title="Run circompara2",
+        objective="Execute the staged benchmark workload for circompara2 and record outputs, logs, and failure reasons.",
+        capability_bundles=["docker_build_run", "wdl_run", "metric_compute"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "运行 circompara2 benchmark。",
+            "run_dir": str(run_dir),
+        },
+    )
+    async def fake_agent_run(*args, **kwargs):
         output_file = case_dir / "wdl" / "circompara2.out"
         output_file.write_text("ok\n", encoding="utf-8")
         (case_dir / "wdl" / "status.json").write_text(
@@ -4419,21 +6166,6 @@ async def test_invoke_worker_agent_falls_back_to_wdl_when_repo_native_command_is
             json.dumps({"outputs": {"CirComPara2Workflow.output": str(output_file)}}),
             encoding="utf-8",
         )
-        return {"phase": phase, "command": command, "stdout": {"repo": "circompara2"}}
-
-    node = TaskNode(
-        node_id="circompara2",
-        title="Run circompara2",
-        objective="Execute the staged benchmark workload for circompara2 and record outputs, logs, and failure reasons.",
-        capability_bundles=["docker_build_run", "wdl_run", "metric_compute"],
-        metadata={
-            "task_type": "benchmark",
-            "task": "运行 circompara2 benchmark。",
-            "run_dir": str(run_dir),
-        },
-    )
-    async def fake_agent_run(*args, **kwargs):
-        fake_helper([], cwd=workspace_root, phase="run-wdl:circompara2")
         (case_dir / "run" / "status.json").write_text(
             json.dumps(
                 {
@@ -4492,19 +6224,42 @@ async def test_invoke_worker_agent_uses_agent_owned_benchmark_case(
             "selected_tools": ["spades", "megahit"],
         },
     )
-    def fake_register_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
-        if phase == "resolve-datasets":
-            (run_dir / "dataset_resolution.json").write_text("{}", encoding="utf-8")
-            (run_dir / "dataset_resolution.md").write_text("# datasets\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {}}
-        if phase == "init":
-            (run_dir / "benchmark_plan.json").write_text("{}", encoding="utf-8")
-            (run_dir / "benchmark_plan.md").write_text("# plan\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"case_order": ["spades", "megahit"]}}
-        repo = phase.split(":", 1)[1]
-        case_dir = run_dir / "cases" / repo
-        case_dir.mkdir(parents=True, exist_ok=True)
-        if phase.startswith("prepare-case:"):
+    with (
+        patch.object(
+            supervisor_runtime,
+            "_resolve_benchmark_selected_tools",
+            return_value=(
+                ["spades", "megahit"],
+                {
+                    "selected_tools": ["spades", "megahit"],
+                    "selected_operators": [
+                        {"name": "spades", "operator_id": "benchmark:spades"},
+                        {"name": "megahit", "operator_id": "benchmark:megahit"},
+                    ],
+                    "dataset_key": "short-read-ecoli-srr001666",
+                    "selection_strategy": "metadata_selected_tools",
+                    "requested_tools": ["spades", "megahit"],
+                    "excluded_tools": [],
+                },
+            ),
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_materialize_benchmark_selection_cases",
+            return_value=[
+                {"phase": "materialize-selection", "stdout": {"case_order": ["spades", "megahit"]}},
+                {"phase": "resolve-datasets", "stdout": {"repo_to_dataset": {"spades": "short-read-ecoli-srr001666", "megahit": "short-read-ecoli-srr001666"}}},
+            ],
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_materialize_benchmark_operator_products",
+            return_value=[],
+        ),
+    ):
+        for repo in ("spades", "megahit"):
+            case_dir = run_dir / "cases" / repo
+            case_dir.mkdir(parents=True, exist_ok=True)
             (case_dir / "manifest.json").write_text(
                 json.dumps(
                     {
@@ -4519,8 +6274,6 @@ async def test_invoke_worker_agent_uses_agent_owned_benchmark_case(
             (case_dir / "dataset_selection.json").write_text("{}", encoding="utf-8")
             (case_dir / "dataset_manifest.json").write_text("{}", encoding="utf-8")
             (case_dir / "agent_task.md").write_text("# task\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"repo": repo}}
-        if phase.startswith("execution-ready:"):
             (case_dir / "execution_ready.json").write_text(
                 json.dumps(
                     {
@@ -4532,10 +6285,6 @@ async def test_invoke_worker_agent_uses_agent_owned_benchmark_case(
                 ),
                 encoding="utf-8",
             )
-            return {"phase": phase, "command": command, "stdout": {"repo": repo}}
-        raise AssertionError(f"unexpected phase: {phase}")
-
-    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_register_helper):
         await _invoke_worker_agent(
             agent=AsyncMock(),
             node=register_node,
@@ -4553,86 +6302,48 @@ async def test_invoke_worker_agent_uses_agent_owned_benchmark_case(
             "run_dir": str(run_dir),
         },
     )
-    def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
+    async def fake_agent_run(*args, **kwargs):
         case_dir = run_dir / "cases" / "megahit"
         output_dir = case_dir / "run" / "repo_native_output"
         output_dir.mkdir(parents=True, exist_ok=True)
-        if phase == "run-repo-native:megahit":
-            (case_dir / "run" / "repo_native.log").write_text(
-                "ALL DONE\n",
-                encoding="utf-8",
-            )
-            (output_dir / "final.contigs.fa").write_text(">c1\nAAAA\n", encoding="utf-8")
-            (output_dir / "log").write_text("done\n", encoding="utf-8")
-            (case_dir / "run" / "status.json").write_text(
-                json.dumps(
-                    {
-                        "success": True,
-                        "returncode": 0,
-                        "elapsed_seconds": 1.5,
-                        "command": command,
-                        "log_path": str(case_dir / "run" / "repo_native.log"),
-                        "output_dir": str(output_dir),
-                        "output_artifacts": [
-                            str(output_dir / "final.contigs.fa"),
-                            str(output_dir / "log"),
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            return {"phase": phase, "command": command, "stdout": {"repo": "megahit"}}
-        if phase == "run-wdl:megahit":
-            wdl_out = case_dir / "wdl" / "megahit.out"
-            wdl_out.parent.mkdir(parents=True, exist_ok=True)
-            wdl_out.write_text("ok\n", encoding="utf-8")
-            (case_dir / "wdl" / "outputs.json").write_text(
-                json.dumps({"outputs": {"MegahitAssembly.output": str(wdl_out)}}),
-                encoding="utf-8",
-            )
-            (case_dir / "wdl" / "status.json").write_text(
-                json.dumps(
-                    {
-                        "success": True,
-                        "returncode": 0,
-                        "elapsed_seconds": 1.0,
-                        "started_at": "2026-05-15T00:00:00Z",
-                        "finished_at": "2026-05-15T00:00:01Z",
-                        "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
-                        "outputs_path": str(case_dir / "wdl" / "outputs.json"),
-                        "output_artifacts": [str(wdl_out)],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            return {"phase": phase, "command": command, "stdout": {"repo": "megahit"}}
-        if phase == "analyze-case:megahit":
-            (case_dir / "analysis.json").write_text(
-                json.dumps(
-                    {
-                        "family": "short-read-assembly",
-                        "artifact_paths": [
-                            str(output_dir / "final.contigs.fa"),
-                            str(output_dir / "log"),
-                        ],
-                        "artifact_checksums": {},
-                        "metrics": {
-                            "contig_count": 1,
-                            "assembly_size": 4,
-                            "n50": 4,
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"repo": "megahit"}}
-        raise AssertionError(f"unexpected phase: {phase}")
-
-    async def fake_agent_run(*args, **kwargs):
-        fake_helper([], cwd=workspace_root, phase="run-repo-native:megahit")
-        fake_helper([], cwd=workspace_root, phase="analyze-case:megahit")
-        case_dir = run_dir / "cases" / "megahit"
+        (case_dir / "run" / "repo_native.log").write_text("ALL DONE\n", encoding="utf-8")
+        (output_dir / "final.contigs.fa").write_text(">c1\nAAAA\n", encoding="utf-8")
+        (output_dir / "log").write_text("done\n", encoding="utf-8")
+        (case_dir / "run" / "status.json").write_text(
+            json.dumps(
+                {
+                    "success": True,
+                    "returncode": 0,
+                    "elapsed_seconds": 1.5,
+                    "log_path": str(case_dir / "run" / "repo_native.log"),
+                    "output_dir": str(output_dir),
+                    "output_artifacts": [
+                        str(output_dir / "final.contigs.fa"),
+                        str(output_dir / "log"),
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (case_dir / "analysis.json").write_text(
+            json.dumps(
+                {
+                    "family": "short-read-assembly",
+                    "artifact_paths": [
+                        str(output_dir / "final.contigs.fa"),
+                        str(output_dir / "log"),
+                    ],
+                    "artifact_checksums": {},
+                    "metrics": {
+                        "contig_count": 1,
+                        "assembly_size": 4,
+                        "n50": 4,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
         (case_dir / "run" / "result_manifest.json").write_text(
             json.dumps(
                 {
@@ -4716,64 +6427,20 @@ async def test_agent_owned_benchmark_case_marks_missing_expected_outputs_partial
             "run_dir": str(run_dir),
         },
     )
-    def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
-        if phase == "run-repo-native:canu":
-            (case_dir / "run" / "status.json").write_text(
-                json.dumps(
-                    {
-                        "success": True,
-                        "returncode": 0,
-                        "elapsed_seconds": 1.5,
-                        "command": command,
-                        "log_path": str(case_dir / "run" / "repo_native.log"),
-                        "output_dir": str(case_dir / "run" / "repo_native_output"),
-                        "output_artifacts": [],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            return {"phase": phase, "command": command, "stdout": {"repo": "canu"}}
-        if phase == "run-wdl:canu":
-            (case_dir / "wdl").mkdir(parents=True, exist_ok=True)
-            (case_dir / "wdl" / "canu.out").write_text("ok\n", encoding="utf-8")
-            (case_dir / "wdl" / "outputs.json").write_text(
-                json.dumps({"outputs": {"canu_workflow.output": str(case_dir / "wdl" / "canu.out")}}),
-                encoding="utf-8",
-            )
-            (case_dir / "wdl" / "status.json").write_text(
-                json.dumps(
-                    {
-                        "success": True,
-                        "returncode": 0,
-                        "elapsed_seconds": 1.0,
-                        "started_at": "2026-05-15T00:00:00Z",
-                        "finished_at": "2026-05-15T00:00:01Z",
-                        "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
-                        "outputs_path": str(case_dir / "wdl" / "outputs.json"),
-                        "output_artifacts": [str(case_dir / "wdl" / "canu.out")],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            return {"phase": phase, "command": command, "stdout": {"repo": "canu"}}
-        if phase == "analyze-case:canu":
-            (case_dir / "analysis.json").write_text(
-                json.dumps(
-                    {
-                        "family": "long-read-assembly",
-                        "artifact_paths": [],
-                        "artifact_checksums": {},
-                        "metrics": {},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"repo": "canu"}}
-        raise AssertionError(f"unexpected phase: {phase}")
-
     async def fake_agent_run(*args, **kwargs):
-        fake_helper([], cwd=workspace_root, phase="run-repo-native:canu")
+        (case_dir / "run" / "status.json").write_text(
+            json.dumps(
+                {
+                    "success": True,
+                    "returncode": 0,
+                    "elapsed_seconds": 1.5,
+                    "log_path": str(case_dir / "run" / "repo_native.log"),
+                    "output_dir": str(case_dir / "run" / "repo_native_output"),
+                    "output_artifacts": [],
+                }
+            ),
+            encoding="utf-8",
+        )
         return {
             "messages": [
                 AIMessage(
@@ -4974,52 +6641,33 @@ async def test_retry_benchmark_case_ignores_invalid_repair_output(
     agent = AsyncMock()
     agent.ainvoke.return_value = {"messages": [AIMessage(content="not-json")]}
 
-    def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
-        if phase == "run-wdl:megahit":
-            output_file = case_dir / "wdl" / "final.contigs.fa"
-            output_file.write_text(">c1\nAAAA\n", encoding="utf-8")
-            (case_dir / "wdl" / "outputs.json").write_text(
-                json.dumps({"outputs": {"MegahitWorkflow.contigs": str(output_file)}}),
-                encoding="utf-8",
-            )
-            (case_dir / "wdl" / "status.json").write_text(
-                json.dumps(
-                    {
-                        "success": True,
-                        "returncode": 0,
-                        "started_at": "2026-05-17T00:00:00Z",
-                        "finished_at": "2026-05-17T00:00:01Z",
-                        "elapsed_seconds": 1.0,
-                        "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
-                        "outputs_path": str(case_dir / "wdl" / "outputs.json"),
-                        "output_artifacts": [str(output_file)],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            return {"phase": phase, "command": command, "stdout": {"repo": "megahit"}}
-        if phase == "analyze-case:megahit":
-            (case_dir / "analysis.json").write_text(
-                json.dumps(
-                    {
-                        "family": "short-read-assembly",
-                        "artifact_paths": [str(case_dir / "wdl" / "run_outputs" / "final.contigs.fa")],
-                        "artifact_checksums": {},
-                        "metrics": {"contig_count": 1},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
-            return {"phase": phase, "command": command, "stdout": {"repo": "megahit"}}
-        raise AssertionError(f"unexpected phase: {phase}")
-
-    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_helper):
-        result = await _invoke_worker_agent(
-            agent=agent,
-            node=node,
-            workspace_root=workspace_root,
-        )
+    (case_dir / "wdl" / "final.contigs.fa").write_text(">c1\nAAAA\n", encoding="utf-8")
+    (case_dir / "wdl" / "outputs.json").write_text(
+        json.dumps(
+            {"outputs": {"MegahitWorkflow.contigs": str(case_dir / "wdl" / "final.contigs.fa")}}
+        ),
+        encoding="utf-8",
+    )
+    (case_dir / "wdl" / "status.json").write_text(
+        json.dumps(
+            {
+                "success": True,
+                "returncode": 0,
+                "started_at": "2026-05-17T00:00:00Z",
+                "finished_at": "2026-05-17T00:00:01Z",
+                "elapsed_seconds": 1.0,
+                "log_path": str(case_dir / "wdl" / "miniwdl_run.log"),
+                "outputs_path": str(case_dir / "wdl" / "outputs.json"),
+                "output_artifacts": [str(case_dir / "wdl" / "final.contigs.fa")],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
 
     assert result.status == "completed"
     assert agent.ainvoke.await_count == 1
@@ -5184,40 +6832,199 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_summary_helper(
     agent = AsyncMock()
     agent.ainvoke.side_effect = AssertionError("benchmark summarize helper path should bypass the model")
 
-    def fake_helper(command: list[str], *, cwd: Path, phase: str) -> dict[str, object]:
-        if phase != "analyze-case:megahit":
-            raise AssertionError(f"unexpected phase: {phase}")
+    result = await _invoke_worker_agent(
+        agent=agent,
+        node=node,
+        workspace_root=workspace_root,
+    )
+
+    assert result.status == "completed"
+    assert (run_dir / "benchmark_supervisor_summary.json").exists()
+    assert (run_dir / "benchmark_supervisor_summary.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_benchmark_summary_counts_agent_owned_completed_cases_without_run_status(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-agent-summary"
+    run_dir.mkdir(parents=True)
+    for repo in ("Flye", "canu"):
+        case_dir = run_dir / "cases" / repo
+        (case_dir / "wdl").mkdir(parents=True)
+        (case_dir / "wdl" / "inputs.json").write_text("{}", encoding="utf-8")
+        (case_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "repo_name": repo,
+                    "family": "long-read-assembly",
+                    "dataset_key": "long-read-canu-pacbio-real-tests",
+                    "metric_keys": [],
+                    "phase_status": {"analysis": "pending", "summary": "pending"},
+                }
+            ),
+            encoding="utf-8",
+        )
         (case_dir / "analysis.json").write_text(
             json.dumps(
                 {
-                    "family": "short-read-assembly",
-                    "artifact_paths": [
-                        str(output_dir / "final.contigs.fa"),
-                        str(output_dir / "log"),
-                    ],
-                    "artifact_checksums": {},
-                    "metrics": {
-                        "contig_count": 1,
-                        "assembly_size": 4,
-                        "n50": 4,
+                    "status": "completed",
+                    "metrics": {},
+                    "artifacts": {
+                        "primary_output": str(case_dir / "run" / f"{repo}.fa"),
                     },
+                    "checks": {"contigs_present": True},
                 }
             ),
             encoding="utf-8",
         )
         (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
-        return {"phase": phase, "command": command, "stdout": {"repo": "megahit"}}
-
-    with patch("code2workspace_cli.supervisor_runtime._run_helper_json_command", side_effect=fake_helper):
-        result = await _invoke_worker_agent(
-            agent=agent,
-            node=node,
-            workspace_root=workspace_root,
+        (case_dir / "result_manifest.json").write_text(
+            json.dumps(
+                {
+                    "status": "completed",
+                    "outputs": {
+                        "primary": {
+                            "path": str(case_dir / "run" / f"{repo}.fa"),
+                            "exists": True,
+                            "size_bytes": 4,
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (run_dir / "worker_outputs").mkdir(exist_ok=True)
+        (run_dir / "worker_outputs" / f"{repo}.json").write_text(
+            json.dumps(
+                {
+                    "round_index": 2,
+                    "node": {"node_id": repo},
+                    "result": {
+                        "status": "completed",
+                        "summary": f"{repo} completed",
+                    },
+                }
+            ),
+            encoding="utf-8",
         )
 
+    node = TaskNode(
+        node_id="summarize",
+        title="Summarize benchmark outcomes",
+        objective="Aggregate tool results, metrics, blockers, and output paths into a benchmark summary.",
+        capability_bundles=["metric_compute", "summarize"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "汇总 benchmark 结果。",
+            "run_dir": str(run_dir),
+            "selected_tools": ["Flye", "canu"],
+        },
+    )
+
+    result = await _invoke_worker_agent(
+        agent=AsyncMock(),
+        node=node,
+        workspace_root=workspace_root,
+    )
+
+    summary_payload = json.loads(
+        (run_dir / "benchmark_supervisor_summary.json").read_text(encoding="utf-8")
+    )
+
     assert result.status == "completed"
-    assert (run_dir / "benchmark_supervisor_summary.json").exists()
-    assert (run_dir / "benchmark_supervisor_summary.md").exists()
+    assert summary_payload["completed_cases"] == 2
+    assert summary_payload["status"] == "completed"
+    assert summary_payload["comparison"] is None
+    assert all(row["success"] is True for row in summary_payload["rows"])
+
+
+@pytest.mark.asyncio
+async def test_benchmark_summary_recognizes_flye_style_result_artifacts(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    run_dir = workspace_root / "orchestration_runs" / "run-flye-style-summary"
+    run_dir.mkdir(parents=True)
+    case_dir = run_dir / "cases" / "Flye"
+    output_path = case_dir / "run" / "flye" / "assembly.fasta"
+    output_path.parent.mkdir(parents=True)
+    output_path.write_text(">c\nAAAA\n", encoding="utf-8")
+    (case_dir / "wdl").mkdir(parents=True)
+    (case_dir / "wdl" / "inputs.json").write_text("{}", encoding="utf-8")
+    (case_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "repo_name": "Flye",
+                "family": "long-read-assembly",
+                "dataset_key": "long-read-canu-pacbio-real-tests",
+                "metric_keys": [],
+                "phase_status": {"analysis": "pending", "summary": "pending"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (case_dir / "analysis.json").write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "metrics": {},
+                "output_presence": {"assembly": True},
+                "output_sizes_bytes": {"assembly": 6},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (case_dir / "result_manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "exit_code": 0,
+                "file_checks": {"assembly": {"exists": True, "size_bytes": 6}},
+                "outputs": {"assembly": str(output_path)},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "worker_outputs").mkdir(exist_ok=True)
+    (run_dir / "worker_outputs" / "Flye.json").write_text(
+        json.dumps(
+            {
+                "round_index": 2,
+                "node": {"node_id": "Flye"},
+                "result": {"status": "completed", "summary": "Flye completed"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    node = TaskNode(
+        node_id="summarize",
+        title="Summarize benchmark outcomes",
+        objective="Aggregate tool results, metrics, blockers, and output paths into a benchmark summary.",
+        capability_bundles=["metric_compute", "summarize"],
+        metadata={
+            "task_type": "benchmark",
+            "task": "汇总 benchmark 结果。",
+            "run_dir": str(run_dir),
+            "selected_tools": ["Flye"],
+        },
+    )
+
+    result = await _invoke_worker_agent(
+        agent=AsyncMock(),
+        node=node,
+        workspace_root=workspace_root,
+    )
+
+    summary_payload = json.loads(
+        (run_dir / "benchmark_supervisor_summary.json").read_text(encoding="utf-8")
+    )
+
+    assert result.status == "completed"
+    assert summary_payload["completed_cases"] == 1
+    assert summary_payload["rows"][0]["success"] is True
 
 
 @pytest.mark.asyncio

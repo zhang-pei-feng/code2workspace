@@ -4,7 +4,7 @@ This is the fastest engineering snapshot for the repository.
 
 ## Snapshot
 
-- Last consolidated update: 2026-05-19
+- Last consolidated update: 2026-05-21
 - Latest local audit: 2026-05-17, see
   `docs/overview/supervisor-flow-experiment-status.md` for the current
   Supervisor Graph flow diagrams, recent experiment-result summary, and
@@ -55,20 +55,28 @@ This is the fastest engineering snapshot for the repository.
   `backend/config/agent_models.json`; report workers still default to the
   compatibility alias `openai_paid:gpt-5.4` in code and fall back to
   `openai:gpt-5.4` when that alias is unavailable.
-- Report-family composition guidance now carries a stronger template-style
-  output contract inspired by Open Deep Research-style final report prompts:
-  title, executive summary, scope/time window, key findings, evidence analysis,
-  uncertainty/limitations, optional recommendations, and a source/evidence
-  appendix. The composition prompt has now been reshaped further to resemble
-  Open Deep Research's stronger report-writer contract: a report-level writing
-  contract, task-type structure archetypes, section quality rules, stable
+- Report-family composition guidance now follows a more Open Deep
+  Research-like report-writer contract instead of a hardcoded default section
+  checklist. The prompt emphasizes report-level writing discipline,
+  task-shaped structure archetypes, section quality rules, stable
   citation/source rules, and forbidden meta-writing patterns, while still
   preserving the local-artifact and evidence-layer semantics needed by this
-  repo. The final chat-facing response also preserves this structure for
-  `report` tasks instead of compressing the deliverable into a short summary.
-  The constraints are split across `init_report` contract setup,
-  `compose_report` writing/source/format rules, and `final_response`
-  structure-preservation rules rather than being hardcoded as runtime logic.
+  repo. The final chat-facing response also preserves the structured report
+  deliverable for `report` tasks instead of compressing it into a short
+  summary, and the remaining repo-local default-outline hints have now been
+  removed from family guidance, init-contract guidance, and final-response
+  runtime instructions so reports can keep a task-shaped structure. The
+  report prompts now also explicitly forbid defaulting to `Executive Summary` /
+  `执行摘要` labels and forbid treating historical full reports as formatting
+  templates; old report artifacts may still be reused as evidence locators or
+  claim cross-checks, but not as house-style exemplars.
+  They now also bias reports toward a total-subtotal-total flow and require
+  Chinese-titled source sections plus relative/concise artifact references
+  instead of absolute filesystem paths in normal user-facing report prose.
+  The
+  constraints are split across `init_report` contract setup, `compose_report`
+  writing/source/format rules, and `final_response` structure-preservation
+  rules rather than being hardcoded as runtime logic.
 - Added `docs/overview/supervisor-agent-function-flows.zh.md` as a
   thesis-facing Chinese explanation of each Supervisor Agent function, including
   Mermaid flowcharts for routing, `generic`, `github2workspace`, `benchmark`,
@@ -78,19 +86,158 @@ This is the fastest engineering snapshot for the repository.
   `supervisor_worker_agent`, `fallback_agent`, report-specific worker runnables,
   classifier model routing, middleware stacks, worker prompt assembly, and
   nested `task` subagent delegation.
+- Refreshed `docs/overview/supervisor-agent-function-flows.zh.md` again to match
+  the latest runtime details: generic now documents `simple / medium /
+  difficult` `generic_approach` selection, benchmark `register` notes the
+  agentic selection pre-pass, and local-computation guidance now distinguishes
+  `existing_data` from `computed_data`.
 - Added `docs/overview/operator-and-history-store-design.zh.md` as a standalone
-  Chinese field-level design note for `operator_store` and
-  `benchmark_comparison_history_store`, separating stable operator management
-  from reusable benchmark comparison history.
+  Chinese field-level design note for `operator_store`, `dataset_store`, and
+  `benchmark_comparison_history_store`, separating stable operator management,
+  reusable input bundles, and reusable benchmark comparison history.
+- Added `docs/overview/agent-skills-design.zh.md` as a Chinese design note for
+  the current project skills layout, distinguishing capability skills from
+  runtime-owned orchestration skills and documenting the Supervisor Graph
+  guidance/experience injection flow with Mermaid diagrams.
+- Added `docs/overview/agent-tool-design.zh.md` as a Chinese design note for
+  the current agent tool system, covering tool sources, middleware injection,
+  filesystem/shell/web/ask_user/MCP/subagent tools, Supervisor capability
+  bundles, worker prompt construction, node execution, tool-call tracing, and
+  Mermaid diagrams for the main flows.
 - Benchmark fan-out execution now keeps one agent per selected operator case:
   after `register` chooses `selected_tools`, each tool node is scheduled in the
   ready batch and enters `worker_agent` instead of being short-circuited by the
-  deterministic case helper. The helper script remains available for the agent
-  to call as a concrete command, while the agent owns command selection,
+  deterministic case helper. The old
+  `.code2workspace/skills/orchestration/benchmark-workflow-orchestrator/`
+  helper has now been removed; the worker agent owns command selection,
   bounded repair, output verification, and analysis artifact creation for that
-  case. Validation:
+  case, while supervisor runtime keeps only thin deterministic register/summary
+  artifact handling. Validation:
   `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
   -> `87 passed`
+- Benchmark `register` is now harder dataset-first in the live agent-owned
+  path. Recent fixes moved more of the selection contract into agent prompts,
+  added explicit agentic-register debug artifacts instead of silent fallback,
+  broadened shared-dataset candidate retrieval so non-query-top-k datasets stay
+  visible, and fixed relative `dataset_store` `record_path` resolution when the
+  CLI process runs from an isolated session workspace. A fresh live rerun at
+  `workspace/20260520213837/orchestration_runs/20260520T133844840531Z`
+  verified that `operator_selection.json` now records
+  `selected_dataset_id = long-read-canu-pacbio` and `selected_tools = [Flye, canu]`
+  for the long-read virus-assembly benchmark before case execution continues.
+- Benchmark `register` no longer reuses the full workspace worker graph for its
+  semantic choice step. It now uses a lightweight no-tools selector model call
+  that still follows the agent/LLM contract:
+  - first choose one shared `selected_dataset_id`
+  - then choose compatible `selected_tools` for that dataset
+  - deterministic runtime still validates compatibility, materializes staged
+    cases, and writes `operator_selection.json` / `register_report.json`
+  - internal selector outputs are tagged as
+    `internal_benchmark_register_selector`, and the CLI/TUI stream adapters now
+    hide those JSON payloads from user-visible output instead of leaking them
+    ahead of the final answer
+- Agent-owned benchmark summary/evaluation now recognize both old helper-style
+  result manifests and newer case-owned artifact shapes:
+  - `benchmark_supervisor_summary.json` now counts completed cases from
+    `worker_outputs/*.json`, root-level `result_manifest.json`, `file_checks`,
+    `output_presence`, and `output_sizes_bytes`, not only from historical
+    `run/status.json` / `output_checks`
+  - benchmark evaluation now treats those same artifact shapes as valid
+    completion evidence and keeps a run at `B7.multi_operator_completed` when
+    two tools successfully finish on the same dataset but no quantitative
+    cross-tool metrics have been extracted yet
+  - fairness claims are now interpreted with more nuance: a final answer may
+    legitimately say the comparison is fair for the narrow question “did both
+    tools run successfully on the same shared dataset?” without being marked as
+    a false positive, as long as it still states that no stronger
+    “which tool is better” conclusion is supported yet
+- Fresh live validation after the lightweight selector + artifact-shape fixes:
+  `workspace/20260521010517/orchestration_runs/20260520T170525775239Z`
+  completed a long-read `Flye` vs `canu` benchmark with:
+  - `selected_dataset_id = long-read-canu-pacbio-real-tests`
+  - both `cases/Flye/wdl/inputs.json` and `cases/canu/wdl/inputs.json`
+    rewritten to the same shared `pacbio.fastq.gz`
+  - both tools completing successfully on that shared dataset
+  - clean non-interactive stdout with no leaked selector JSON
+  - recomputed `benchmark_supervisor_summary.json` showing `completed_cases = 2`
+    and `comparison = null`
+  - recomputed `evaluation.json` at `B7.multi_operator_completed`,
+    `comparison_valid = false`, `false_positive = false`
+- Final chat-facing Supervisor responses now avoid exposing local absolute
+  filesystem paths for main artifacts across task families. The finalizer prompt
+  asks workers to use run-relative paths for current-run artifacts and
+  project-relative paths for other project files, and the runtime applies the
+  same normalization before writing `final_response.md` as a safety net.
+- Short-read benchmark compatibility now treats stale paired-end operator
+  manifests more semantically instead of trusting historical file extensions too
+  literally:
+  - benchmark candidate loading and dataset-compatibility checks now inspect
+    `runtime.inputs_json_path`
+  - when a WDL/input contract clearly represents paired-end reads
+    (`read1/read2`, `r1/r2`, `fastq1/fastq2`), stale legacy manifests that
+    happened to record old `.fa` case files are normalized to the short-read
+    `fastq` benchmark contract for selection purposes
+  - this specifically unblocks `megahit`, whose historical imported operator
+    manifests recorded `r3_1.fa` / `r3_2.fa` even though the tool/WDL path uses
+    paired-end read inputs and can run on shared short-read FASTQ datasets
+  - targeted validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'megahit_inputs_to_fastq or megahit_style_fastq_dataset or does_not_count_read_aliases_as_distinct_inputs' -q`
+    -> `3 passed`
+  - direct selector-path validation now returns
+    `selected_tools = ['spades', 'megahit']` and
+    `dataset_key = short-read-ecoli-srr001666` for the short-read assembly
+    benchmark request
+- Benchmark registration now has two dataset strategies instead of forcing every
+  benchmark into one shared-dataset shape:
+  - `shared_dataset` is used when the user names a concrete dataset or clearly
+    asks for same/shared/fair data
+  - default exploratory registration uses `per_operator_dataset`, where the
+    selector may choose useful tools even if each tool needs a different
+    compatible FASTA/FASTQ bundle
+  - staged case manifests, `dataset_resolution.json`, `register_report.json`,
+    and `agent_task.md` now record the dataset strategy and the per-tool
+    dataset mapping so final summaries can disclose actual inputs
+  - benchmark summaries now refuse to produce a quality ranking when completed
+    cases used different datasets, while still reporting which operators ran or
+    failed
+  - explicit tool-name matching now uses boundaries for short names, preventing
+    `esm` from being accidentally detected across `spades megahit`
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'benchmark or short_tool_name' -q`
+    -> `53 passed`
+- Benchmark registration now treats explicit user-provided data directories as
+  first-class transient dataset candidates:
+  - task text is scanned for absolute, project-relative, and backtick-quoted
+    file/directory paths before local `dataset_store` candidates are ranked
+  - discovered FASTQ/FASTA-style files are staged into the selected benchmark
+    cases and recorded with `source_kind = user_provided_external_path`
+  - this lets a benchmark prompt point at a newly downloaded dataset folder and
+    prevents older `dataset_store` records from silently winning over the
+    user-provided input
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'benchmark_register or benchmark_selection or benchmark_dataset_compatibility or benchmark_candidate_from_operator_payload or benchmark_selected_input_files' -q`
+    -> `26 passed`
+- Fresh external long-read benchmark verification used a newly downloaded,
+  unregistered SARS-CoV-2 ONT FASTQ folder at
+  `workspace/external_benchmark_datasets/sarscov2_ont_srr12209725`:
+  - `register` selected it as
+    `external-sarscov2-ont-srr12209725-a29069ab` with
+    `source_kind = user_provided_external_path`
+  - both `Flye` and `canu` were staged against the same FASTQ
+  - `canu` completed and produced `contigs.fasta`; `Flye` failed after a
+    bounded mode repair with no disjointigs assembled
+  - this exposed a final-response persistence edge case where a useful
+    `partial` finalizer summary was ignored in favor of the placeholder
+    `Worker completed.`
+- Final response rendering now accepts useful `partial` summaries from the
+  `final_response` node and ignores `Worker completed.` placeholder summaries
+  when choosing fallback candidates. This keeps partial benchmark runs from
+  losing the real user-facing result. The relative-path normalization safety net
+  now also strips current-run relative prefixes such as
+  `orchestration_runs/<run_id>/`, so current-run artifacts are shown as
+  `cases/...` where possible. Validation:
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+  -> `118 passed`
 - Added a global execute-timeout clamp for workspace/worker agents so
   agent-owned benchmark cases no longer fail at the tool layer when the model
   proposes oversized shell timeouts:
@@ -115,27 +262,48 @@ This is the fastest engineering snapshot for the repository.
   out report lane is recorded as `partial` with `worker_timeout`, allowing
   downstream composition to proceed with an explicit evidence gap instead of
   waiting forever on one evidence lane.
-- Report `local_data_lane` and generic evidence/computation workers now receive
-  a shared local computation context. The context splits local data into
-  `existing_data` (already materialized database/registry/API/artifact/history
-  evidence) and `computed_data` (values that require retrieving a compatible
-  operator plus dataset/input bundle from the local stores and running its
-  concrete WDL/Docker/entrypoint path). The prompt now enforces a stronger
-  decision order: first judge whether `existing_data` is already sufficient,
-  only then declare a concrete evidence gap, and only then search
-  `operator_store` plus `dataset_store` for new computation. This keeps
-  `benchmark_comparison_history_store` as optional `existing_data` rather than
-  turning every local-data request into an implicit rerun. A focused test still
-  covers the positive compute path where `local_data_lane` selects a local
-  operator from the prompt context, executes it, writes
-  `forecast_result.json`, and returns that artifact through
-  `worker_outputs/local_data_lane.json`.
+- Report planning now uses dynamic evidence lanes instead of a fixed
+  three-lane report graph. `init_report` first produces a report contract and
+  selected `spawned_subgraph`; the next round may include any needed mix of
+  `monitoring_lane`, `existing_data_lane`, `computed_data_lane`, and
+  `literature_lane`, with at most three nodes of one lane type and at most six
+  evidence lanes total. The former combined `local_data_lane` semantics are now
+  represented as two first-class report lanes: `existing_data_lane` queries
+  already materialized local databases, stores, APIs, cached artifacts, dataset
+  records, and benchmark/history records without running operators, while
+  `computed_data_lane` decides whether a concrete evidence gap requires
+  selecting a local operator plus compatible dataset/input bundle and running
+  it. Generic evidence/computation workers still receive the shared local
+  computation context. Validation includes dynamic report planner tests,
+  parser recovery for malformed worker JSON that still contains a usable
+  `spawned_subgraph`, and live historical report reruns:
+  `20260520T054842202029Z` selected only
+  `existing_data_lane_local_records` + `computed_data_lane_operator_decision`
+  for the immune-escape local evidence report, while
+  `20260520T055625932747Z` selected two `existing_data_lane` workers for the
+  Flye/canu history comparison and skipped computed/web lanes.
+- Report evidence lanes now attempt in-lane recovery after ordinary worker/tool
+  exceptions. If a monitoring/literature/local evidence lane hits a recoverable
+  tool error such as a malformed URL, the same lane agent receives the error,
+  raw trace path, and tool-activity path and is asked to continue with alternate
+  sources or record a precise evidence gap. Supervisor-level `partial` handling
+  remains only as a last-resort safety net after recovery fails. Validation:
+  `test_report_lane_agent_recovers_from_tool_exception_inside_lane`; live rerun
+  `workspace/20260520185828/orchestration_runs/20260520T105839964260Z`
+  completed the global COVID/flu/RSV report after the earlier influenza-lane
+  failure case.
 - Added a first-class `dataset_store` alongside `operator_store` and
   `benchmark_comparison_history_store`. It uses file-backed `dataset.json`
   records plus rebuildable SQLite indexes and optional embedding-backed
   semantic retrieval, and Supervisor local-computation prompts now inject
   matching dataset/input-bundle candidates before falling back to operator input
   hints or historical benchmark records.
+- Shared store discovery now auto-finds repository-local `workspace/*/operator_store`,
+  `workspace/dataset_store`, and `workspace/benchmark_comparison_history_store`
+  roots when the current session workspace lives under the repo workspace tree.
+  That means new CLI sessions can see the existing libraries without manually
+  exporting the shared-store environment variables, while temporary test
+  workspaces still stay isolated.
 - The existing benchmark/input datasets have been consolidated under
   `workspace/dataset_store/`: 30 dataset records, 126 materialized files, and
   30 `text-embedding-3-small` embedding records generated through the
@@ -448,7 +616,7 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
     described as a pragmatic retrieval-first bridge rather than a fully mature
     benchmark routing engine
 - Benchmark `register` can now also use an agentic selection pass before the
-  deterministic helper runs:
+  deterministic register materialization runs:
   - when `selected_tools` is empty, the supervisor can gather a bounded set of
     operator-store candidates and ask the worker model to choose the best
     operator subset as JSON
@@ -458,8 +626,8 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
     attempt details
   - invalid or unavailable model output falls back cleanly to the older
     heuristic `operator_store_search`
-  - this keeps `prepare-case` / `execution-ready` deterministic while letting
-    the model contribute only to the ambiguous ranking step
+  - this keeps case materialization deterministic while letting the model
+    contribute only to the ambiguous ranking step
   - the default selection policy now prefers the largest compatible operator
     subset it can find on a shared dataset/input signature, instead of
     defaulting to a single top-ranked operator
@@ -1068,19 +1236,28 @@ Remaining gaps:
 
 ### 6. Report Runtime
 
-Status: report requests run through the supervisor-first report family
+Status: report requests run through the supervisor-first report family with
+dynamic evidence-lane planning
 
 - Formal report requests now use the report family inside Supervisor Graph:
-  `init_report -> monitoring_lane -> local_data_lane -> literature_lane -> compose_report -> summarize`.
+  `init_report` first creates the report contract and `spawned_subgraph`, then
+  selects only the needed mix of `monitoring_lane`, `existing_data_lane`,
+  `computed_data_lane`, and `literature_lane` before `compose_report ->
+  summarize`.
 - Report execution no longer depends on a dedicated `multi-source-report`
   project skill. The active path is the report family runtime plus
   `.code2workspace/skills/orchestration/supervisor-guidance/` report guidance.
-- The current report lane design still emphasizes:
+- The current report lane design emphasizes:
   - authoritative monitoring and surveillance evidence
-  - local structured data or API evidence where available
+  - local structured data, cached artifacts, dataset/operator records, or API
+    evidence where already available
+  - new local computation only when a concrete evidence gap remains
   - literature / technical / primary-source web evidence
   - a final composition step that preserves uncertainty and explicit evidence
     gaps
+- Report lane workers now recover inside the lane after ordinary tool/runtime
+  failures when possible, while timeouts are recorded as `partial` evidence
+  gaps so composition can continue.
 - Focused validation currently recorded:
   - `libs/code2workspace/tests/unit_tests/test_orchestration_runtime.py`
   - `libs/cli/tests/unit_tests/test_supervisor_runtime.py`
@@ -1091,10 +1268,10 @@ Status: report requests run through the supervisor-first report family
 
 Remaining gaps:
 
-- report routing is stable, but live bounded runs still often stall in
-  `init_report` or before all three evidence lanes finish
-- the report pipeline still needs stronger final-body completion and better
-  latency on composition-heavy prompts
+- report routing is stable, but composition-heavy prompts still need latency
+  tuning and more live regression coverage across report shapes
+- dynamic lane planning makes report shape less template-bound, so evaluation
+  should keep checking evidence coverage rather than fixed heading names
 - a chart/image pipeline still does not exist; current report enhancement is
   still text/table-first rather than figure-first
 
@@ -1211,6 +1388,26 @@ Remaining gaps:
 - Tightened formal report composition so numeric evidence could be rendered as
   source-backed Markdown tables when reliable enough, while weak numeric
   fragments were explicitly left un-tabulated.
+
+### 2026-05-20
+
+- Finished the second half of the benchmark dataset-first repair: benchmark
+  case materialization now uses the shared dataset physically, not only by
+  `dataset_key`.
+- `supervisor_runtime.py` now resolves project-relative dataset-store
+  `record_path` values during case materialization, which fixes the live/session
+  path where shared dataset payloads were found during register but lost when
+  individual cases were staged.
+- Staged benchmark `inputs.json` files now rewrite existing absolute dataset
+  file paths for dataset-bound keys such as `reads` / `reads_fastq`, instead of
+  only replacing `/path/to/...` placeholders.
+- Targeted verification passed:
+  - unit tests cover both relative dataset-store reload and absolute FASTQ path
+    rewrite
+  - a direct case-level check against the real `benchmark-Flye` and
+    `benchmark-canu` operator manifests now rewrites both tools to the same
+    shared file:
+    `workspace/dataset_store/files/long-read-canu-pacbio/pacbio.fastq`
 
 ## Read Next
 

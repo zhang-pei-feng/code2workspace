@@ -15,6 +15,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -114,7 +115,13 @@ class SupervisorWorkerSubagent:
     node_ids: frozenset[str] = frozenset()
 
     def matches(self, node: TaskNode) -> bool:
-        return node.node_id in self.node_ids
+        if node.node_id in self.node_ids:
+            return True
+        metadata = node.metadata if isinstance(node.metadata, dict) else {}
+        report_lane_base = str(metadata.get("report_lane_base", "")).strip()
+        if report_lane_base and report_lane_base in self.node_ids:
+            return True
+        return any(node.node_id.startswith(f"{node_id}_") for node_id in self.node_ids)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,11 +141,13 @@ class SupervisorWorkerRunner:
         workspace_root: Path,
         default_subagent: Any | None = None,
         subagents: list[SupervisorWorkerSubagent] | None = None,
+        register_selector: Any | None = None,
     ) -> None:
         self._base_agent = base_agent
         self._workspace_root = workspace_root
         self._default_subagent = default_subagent
         self._subagents = list(subagents or [])
+        self._register_selector = register_selector
 
     async def run(self, node: TaskNode) -> WorkerResult:
         prepared = await asyncio.to_thread(
@@ -149,7 +158,7 @@ class SupervisorWorkerRunner:
         if prepared is not None:
             return prepared
         agentic = await _maybe_run_agentic_benchmark_register(
-            agent=self._select_runnable(node),
+            agent=self._register_selector or self._select_runnable(node),
             node=node,
             workspace_root=self._workspace_root,
         )
@@ -186,13 +195,15 @@ class SupervisorWorkerRunner:
         return self._default_subagent or self._base_agent
 
 
-_BENCHMARK_HELPER_RELATIVE_PATH = (
-    ".code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py"
-)
 _BENCHMARK_REGISTER_AGENTIC_SELECTION_ENV = (
     "CODE2WORKSPACE_BENCHMARK_REGISTER_AGENTIC_SELECTION"
 )
 _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION = "1"
+_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_ENV = (
+    "CODE2WORKSPACE_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS"
+)
+_DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS = 45.0
+_INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG = "internal_benchmark_register_selector"
 _BENCHMARK_CASE_AGENTIC_REPAIR_ENV = "CODE2WORKSPACE_BENCHMARK_CASE_AGENTIC_REPAIR"
 _DEFAULT_BENCHMARK_CASE_AGENTIC_REPAIR = "1"
 _BENCHMARK_REGISTER_AGENTIC_CANDIDATE_LIMIT = 12
@@ -222,6 +233,9 @@ _GENERIC_WORKER_TRANSIENT_RETRIES = 2
 _WORKER_PROMPT_MODE_ENV = "CODE2WORKSPACE_SUPERVISOR_WORKER_PROMPT_MODE"
 _DEFAULT_WORKER_PROMPT_MODE = "messages"
 _URL_RE = re.compile(r"https?://[^\s<>)\"']+")
+_LOCAL_ABSOLUTE_PATH_RE = re.compile(
+    r"(?<![\w:])/(?:[^\s`'\"<>{}\[\]，。；：！？、]+)"
+)
 _GITHUB_REPO_MATERIALIZE_TIMEOUT_SECONDS = 1800
 _LOCAL_REPO_SEARCH_MAX_DEPTH = 4
 _CODE_REPOSITORY_ROOT = Path(__file__).resolve().parents[3] / "code_repository"
@@ -419,6 +433,13 @@ async def run_supervisor_orchestration(
                 has_spawned_subgraph=bool(round_result.node_results[0].spawned_subgraph),
             )
             continue
+        if task_type == "report" and _report_init_round_finished(round_result):
+            _emit_supervisor_event(
+                kind="report_plan_created",
+                run_dir=str(run_dir),
+                has_spawned_subgraph=bool(round_result.node_results[0].spawned_subgraph),
+            )
+            continue
         if task_type == "benchmark" and _benchmark_register_round_finished(round_result):
             _emit_supervisor_event(
                 kind="benchmark_register_completed",
@@ -455,6 +476,7 @@ async def run_supervisor_orchestration(
             rounds=rounds,
             refusal=exc,
         )
+    user_response = _relativize_user_facing_paths(user_response, run_dir=run_dir)
     (run_dir / "final_summary.md").write_text(final_summary, encoding="utf-8")
     (run_dir / "final_response.md").write_text(user_response, encoding="utf-8")
     _write_json(
@@ -534,6 +556,7 @@ def build_supervisor_enabled_agent(
             workspace_root=workspace_root,
             default_subagent=worker_agent,
             subagents=worker_subagents,
+            register_selector=classifier_model,
         )
         result = await run_supervisor_orchestration(
             task=task,
@@ -588,6 +611,16 @@ def _benchmark_selected_tools_from_round_result(round_result: Any) -> list[str]:
     if not isinstance(selected_tools, list):
         return []
     return [str(item) for item in selected_tools if isinstance(item, str) and item.strip()]
+
+
+def _report_init_round_finished(round_result: Any) -> bool:
+    return (
+        round_result.graph.task_type == "report"
+        and round_result.graph.round_index == 1
+        and [item.node_id for item in round_result.node_results] == ["init_report"]
+        and len(getattr(round_result.graph, "nodes", []) or []) == 1
+        and round_result.node_results[0].status == "completed"
+    )
 
 
 def _benchmark_has_repo_native_command(case_manifest: dict[str, object]) -> bool:
@@ -1042,13 +1075,6 @@ async def _invoke_worker_agent(*, agent, node: TaskNode, workspace_root: Path) -
     )
     if prepared is not None:
         return prepared
-    agentic = await _maybe_run_agentic_benchmark_register(
-        agent=agent,
-        node=node,
-        workspace_root=workspace_root,
-    )
-    if agentic is not None:
-        return agentic
     if _is_agent_owned_benchmark_case_node(node):
         return await _invoke_worker_runnable(
             agent=agent,
@@ -1141,6 +1167,37 @@ async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path
                 },
             )
             last_error = exc
+            if _should_recover_report_lane_inside_agent(node=node, exc=exc):
+                _emit_supervisor_event(
+                    kind="worker_recovering_inside_lane",
+                    node_id=node.node_id,
+                    title=node.title,
+                    attempt=attempt + 1,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                try:
+                    return await _invoke_report_lane_recovery(
+                        agent=agent,
+                        node=node,
+                        workspace_root=workspace_root,
+                        base_prompt=prompt,
+                        error=exc,
+                        failed_attempt=attempt + 1,
+                    )
+                except Exception as recovery_exc:
+                    finished_at = datetime.now(UTC)
+                    _append_raw_worker_trace(
+                        node=node,
+                        event={
+                            "event": "worker_lane_recovery_failed",
+                            "node_id": node.node_id,
+                            "failed_attempt": attempt + 1,
+                            "finished_at": finished_at.isoformat(),
+                            "error": f"{type(recovery_exc).__name__}: {recovery_exc}",
+                        },
+                    )
+                    last_error = recovery_exc
+                    raise
             if attempt >= _GENERIC_WORKER_TRANSIENT_RETRIES or not _is_transient_worker_exception(exc):
                 raise
             _emit_supervisor_event(
@@ -1153,6 +1210,84 @@ async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path
             await asyncio.sleep(0.5 * (attempt + 1))
     assert last_error is not None
     raise last_error
+
+
+def _should_recover_report_lane_inside_agent(*, node: TaskNode, exc: Exception) -> bool:
+    if isinstance(exc, (ModelRefusalError, GraphBubbleUp)):
+        return False
+    return _is_report_evidence_lane_node(node)
+
+
+async def _invoke_report_lane_recovery(
+    *,
+    agent,
+    node: TaskNode,
+    workspace_root: Path,
+    base_prompt: str,
+    error: Exception,
+    failed_attempt: int,
+) -> WorkerResult:
+    run_dir = Path(str(node.metadata.get("run_dir", ""))) if isinstance(node.metadata, dict) else Path()
+    raw_trace_path = run_dir / "raw_worker_traces" / f"{node.node_id}.jsonl" if run_dir else Path()
+    tool_activity_path = run_dir / "tool_activity.jsonl" if run_dir else Path()
+    recovery_prompt = (
+        f"{base_prompt}\n\n"
+        "Report lane recovery instruction:\n"
+        f"- The previous attempt for this same lane hit a recoverable tool/runtime error: {type(error).__name__}: {error}\n"
+        "- Do not abandon the lane because one tool call, URL, or source failed.\n"
+        "- Treat the failed URL/tool/source as unavailable, choose an alternate official source when reasonable, or record a precise evidence gap.\n"
+        "- Use evidence already collected in the previous attempt when possible; inspect the raw trace or tool activity only if needed.\n"
+        f"- Previous raw trace path: {raw_trace_path}\n"
+        f"- Tool activity path: {tool_activity_path}\n"
+        "- Complete the assigned lane brief with the best available evidence. Return status completed if the minimum lane brief is usable; return partial only if a material evidence gap remains after recovery.\n"
+    )
+    invoke_payload, invoke_kwargs = _build_worker_invoke_request(recovery_prompt)
+    started_at = datetime.now(UTC)
+    _append_raw_worker_trace(
+        node=node,
+        event={
+            "event": "worker_lane_recovery_started",
+            "node_id": node.node_id,
+            "failed_attempt": failed_attempt,
+            "started_at": started_at.isoformat(),
+            "error": f"{type(error).__name__}: {error}",
+        },
+    )
+    messages = await _collect_worker_messages(
+        agent=agent,
+        invoke_payload=invoke_payload,
+        invoke_kwargs=invoke_kwargs,
+        node=node,
+    )
+    _append_raw_worker_message_events(node=node, attempt=failed_attempt + 1, messages=messages)
+    refusal_message = _extract_messages_refusal(messages)
+    if refusal_message is not None:
+        raise ModelRefusalError(
+            message=refusal_message,
+            stage=f"worker:{node.node_id}:recovery",
+            details={"node_id": node.node_id},
+        )
+    final_text = _last_ai_text(messages)
+    parsed = _parse_worker_result(final_text)
+    finished_at = datetime.now(UTC)
+    model_name, usage = _worker_message_model_and_usage(messages)
+    _append_raw_worker_trace(
+        node=node,
+        event={
+            "event": "worker_lane_recovery_finished",
+            "node_id": node.node_id,
+            "failed_attempt": failed_attempt,
+            "started_at": started_at.isoformat(),
+            "finished_at": finished_at.isoformat(),
+            "duration_seconds": round((finished_at - started_at).total_seconds(), 3),
+            "model_name": model_name,
+            "usage": usage,
+            "source_urls": _extract_source_urls_from_messages(messages),
+            "raw_output": final_text,
+            "parsed_worker_result": parsed.to_dict(),
+        },
+    )
+    return parsed
 
 
 async def _collect_worker_messages(
@@ -1595,7 +1730,7 @@ def _finalize_refusal_run(
         "- Decision: stop\n"
         f"- Reason: model refusal during {refusal.stage}\n"
     )
-    user_response = refusal.user_message
+    user_response = _relativize_user_facing_paths(refusal.user_message, run_dir=run_dir)
     (run_dir / "final_summary.md").write_text(final_summary, encoding="utf-8")
     (run_dir / "final_response.md").write_text(user_response, encoding="utf-8")
     _write_json(
@@ -1780,7 +1915,7 @@ async def _maybe_run_agentic_benchmark_register(
     }
     if not task or not _candidate_operator_store_roots(workspace_root):
         return None
-    agent_selection = await _select_benchmark_tools_with_agent(
+    agent_selection, debug_payload = await _select_benchmark_tools_with_agent(
         agent=agent,
         task=task,
         workspace_root=workspace_root,
@@ -1788,7 +1923,26 @@ async def _maybe_run_agentic_benchmark_register(
         benchmark_root=benchmark_root,
     )
     if agent_selection is None:
-        return None
+        debug_path = _write_benchmark_register_agentic_debug(
+            node=node,
+            payload=debug_payload,
+        )
+        artifacts = [debug_path] if debug_path else []
+        evidence = [debug_path] if debug_path else []
+        return WorkerResult(
+            status="blocked",
+            summary=(
+                "Agent-driven benchmark registration could not choose a shared dataset "
+                "and compatible tool subset."
+            ),
+            artifacts=artifacts,
+            evidence=evidence,
+            next_action_hint=(
+                "Inspect the agentic register debug artifact, then tighten the prompt or "
+                "relax the candidate set as needed."
+            ),
+            failure_reason="agentic_register_selection_failed",
+        )
     override_metadata = dict(metadata)
     override_metadata["_selection_override"] = agent_selection
     selected_tools = agent_selection.get("selected_tools")
@@ -1806,6 +1960,23 @@ async def _maybe_run_agentic_benchmark_register(
         node=selected_node,
         workspace_root=workspace_root,
     )
+
+
+def _write_benchmark_register_agentic_debug(
+    *,
+    node: TaskNode,
+    payload: dict[str, object],
+) -> str | None:
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    run_dir_raw = metadata.get("run_dir")
+    if not isinstance(run_dir_raw, str) or not run_dir_raw.strip():
+        return None
+    path = Path(run_dir_raw) / "register_agentic_selection_debug.json"
+    try:
+        _write_json(path, payload)
+    except OSError:
+        return None
+    return str(path)
 
 
 def _benchmark_case_agentic_repair_enabled() -> bool:
@@ -2011,6 +2182,35 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
         excluded_tools=excluded_tools,
         selection_override=selection_override,
     )
+    selection_dataset_key = str(selection_report.get("dataset_key", "")).strip()
+    selection_dataset_strategy = str(
+        selection_report.get("dataset_strategy", "")
+    ).strip() or _benchmark_dataset_strategy_for_task(task)
+    selection_report["dataset_strategy"] = selection_dataset_strategy
+    if (
+        selection_dataset_strategy == "shared_dataset"
+        and not selection_dataset_key
+        and selected_tools
+    ):
+        dataset_candidate = _resolve_benchmark_dataset_candidate(
+            task=task,
+            workspace_root=workspace_root,
+            operator_candidates=_collect_benchmark_operator_candidates(
+                task=task,
+                workspace_root=workspace_root,
+                excluded_tools=excluded_tools,
+                limit=_BENCHMARK_REGISTER_AGENTIC_CANDIDATE_LIMIT,
+            ),
+            requested_tools=selected_tools,
+            excluded_tools=excluded_tools,
+            benchmark_root=benchmark_root,
+        )
+        if dataset_candidate is not None:
+            selection_dataset_key = str(dataset_candidate.get("dataset_id", "")).strip()
+            if selection_dataset_key:
+                selection_report["dataset_key"] = selection_dataset_key
+                if not isinstance(selection_report.get("selected_dataset"), dict):
+                    selection_report["selected_dataset"] = dataset_candidate
     selection_report_path = run_dir / "operator_selection.json"
     _write_json(selection_report_path, selection_report)
     if not selected_tools:
@@ -2052,98 +2252,23 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
         command_results = _materialize_benchmark_selection_cases(
             run_dir=run_dir,
             task=task,
+            workspace_root=workspace_root,
             benchmark_root=benchmark_root,
             selected_tools=selected_tools,
             selected_operators=selected_operators,
             selection_report=selection_report,
         )
+        _write_json(selection_report_path, selection_report)
     else:
-        repo_root = _locate_repo_root_for_benchmark(node=node, workspace_root=workspace_root)
-        if repo_root is None:
-            return WorkerResult(
-                status="failed",
-                summary="Could not locate the repository root for deterministic benchmark registration.",
-                failure_reason="missing_repo_root",
-            )
-        helper_script = repo_root / _BENCHMARK_HELPER_RELATIVE_PATH
-        if not helper_script.exists():
-            return WorkerResult(
-                status="failed",
-                summary="Benchmark helper script is missing from the repository.",
-                failure_reason="missing_benchmark_helper_script",
-            )
-        task = task or "benchmark register"
-        command_results = []
-        init_command = [
-            sys.executable,
-            str(helper_script),
-            "init",
-            "--task",
-            task,
-            "--output-dir",
-            str(run_dir),
-        ]
-        if benchmark_root:
-            init_command.extend(["--benchmark-root", benchmark_root])
-        init_command.extend(["--repos", *selected_tools])
-        try:
-            command_results.append(
-                _run_helper_json_command(
-                    init_command,
-                    cwd=repo_root,
-                    phase="init",
-                )
-            )
-            command_results.append(
-                _run_helper_json_command(
-                    [
-                        sys.executable,
-                        str(helper_script),
-                        "resolve-datasets",
-                        "--run-dir",
-                        str(run_dir),
-                    ],
-                    cwd=repo_root,
-                    phase="resolve-datasets",
-                )
-            )
-            for repo in selected_tools:
-                command_results.append(
-                    _run_helper_json_command(
-                        [
-                            sys.executable,
-                            str(helper_script),
-                            "prepare-case",
-                            "--repo",
-                            repo,
-                            "--run-dir",
-                            str(run_dir),
-                        ],
-                        cwd=repo_root,
-                        phase=f"prepare-case:{repo}",
-                    )
-                )
-                command_results.append(
-                    _run_helper_json_command(
-                        [
-                            sys.executable,
-                            str(helper_script),
-                            "execution-ready",
-                            "--repo",
-                            repo,
-                            "--run-dir",
-                            str(run_dir),
-                        ],
-                        cwd=repo_root,
-                        phase=f"execution-ready:{repo}",
-                    )
-                )
-        except RuntimeError as exc:
-            return WorkerResult(
-                status="failed",
-                summary="Deterministic benchmark register helper failed.",
-                failure_reason=str(exc),
-            )
+        return WorkerResult(
+            status="failed",
+            summary=(
+                "Benchmark register selected tools but could not materialize runnable operator "
+                "records for them after helper removal."
+            ),
+            failure_reason="missing_selected_operator_records",
+            artifacts=[str(selection_report_path)],
+        )
 
     metric_plan = _write_metric_plan(run_dir=run_dir, selected_tools=selected_tools)
     readiness_rows: list[dict[str, object]] = []
@@ -2202,7 +2327,9 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
         "run_dir": str(run_dir),
         "selected_tools": selected_tools,
         "selection_strategy": selection_report.get("selection_strategy"),
+        "selection_dataset_strategy": selection_report.get("dataset_strategy"),
         "selection_dataset_key": selection_report.get("dataset_key"),
+        "tool_dataset_keys": selection_report.get("tool_dataset_keys", {}),
         "selection_allowed_tools": selection_report.get("allowed_tools"),
         "ready_tools": ready_tools,
         "blocked_tools": blocked_tools,
@@ -2286,52 +2413,162 @@ async def _select_benchmark_tools_with_agent(
     workspace_root: Path,
     excluded_tools: set[str],
     benchmark_root: str = "",
-) -> dict[str, object] | None:
+) -> tuple[dict[str, object] | None, dict[str, object]]:
     candidates = _collect_benchmark_operator_candidates(
         task=task,
         workspace_root=workspace_root,
         excluded_tools=excluded_tools,
         limit=_BENCHMARK_REGISTER_AGENTIC_CANDIDATE_LIMIT,
     )
+    debug_payload: dict[str, object] = {
+        "task": task,
+        "benchmark_root": benchmark_root,
+        "excluded_tools": sorted(excluded_tools),
+        "operator_store_roots": [
+            str(path) for path in _candidate_operator_store_roots(workspace_root)
+        ],
+        "dataset_store_roots": [
+            str(path) for path in _candidate_dataset_store_roots(workspace_root)
+        ],
+        "candidate_names": [
+            str(item.get("name", "")).strip()
+            for item in candidates
+            if str(item.get("name", "")).strip()
+        ],
+    }
     if not candidates:
-        return None
-    preferred_candidates = _select_benchmark_candidate_subset(
+        debug_payload["failure_stage"] = "collect_candidates"
+        debug_payload["failure_reason"] = "no_candidates"
+        return None, debug_payload
+    if _benchmark_dataset_strategy_for_task(task) == "per_operator_dataset":
+        return await _select_benchmark_tools_with_agent_exploratory(
+            agent=agent,
+            task=task,
+            workspace_root=workspace_root,
+            candidates=candidates,
+            excluded_tools=excluded_tools,
+            benchmark_root=benchmark_root,
+            debug_payload=debug_payload,
+        )
+    dataset_options = _benchmark_register_agent_dataset_options(
         task=task,
-        candidates=candidates,
+        workspace_root=workspace_root,
+        operator_candidates=candidates,
+        excluded_tools=excluded_tools,
         benchmark_root=benchmark_root,
     )
-    preferred_names = [
+    if not dataset_options:
+        ranked_dataset_candidates = _rank_local_dataset_store_candidates(
+            task=task,
+            workspace_root=workspace_root,
+            limit=12,
+        )
+        debug_payload["ranked_dataset_ids"] = [
+            str(item.get("dataset_id", "")).strip()
+            for item in ranked_dataset_candidates
+            if str(item.get("dataset_id", "")).strip()
+        ]
+        fallback_dataset = _resolve_benchmark_dataset_candidate(
+            task=task,
+            workspace_root=workspace_root,
+            operator_candidates=candidates,
+            requested_tools=[],
+            excluded_tools=excluded_tools,
+            benchmark_root=benchmark_root,
+        )
+        if fallback_dataset is not None:
+            dataset_options = [fallback_dataset]
+            debug_payload["dataset_option_fallback"] = [
+                str(fallback_dataset.get("dataset_id", "")).strip()
+            ]
+        elif ranked_dataset_candidates:
+            generic_ranked = [
+                item
+                for item in ranked_dataset_candidates
+                if not _dataset_candidate_is_operator_specific(item)
+            ]
+            fallback_dataset = generic_ranked[0] if generic_ranked else ranked_dataset_candidates[0]
+            dataset_options = [fallback_dataset]
+            debug_payload["dataset_option_fallback"] = [
+                str(fallback_dataset.get("dataset_id", "")).strip()
+            ]
+            debug_payload["dataset_option_fallback_source"] = "ranked_dataset_seed"
+    debug_payload["dataset_options"] = dataset_options
+    if not dataset_options:
+        debug_payload["failure_stage"] = "rank_datasets"
+        debug_payload["failure_reason"] = "no_dataset_options"
+        return None, debug_payload
+    dataset_candidate, dataset_selection_debug = await _select_benchmark_dataset_with_agent(
+        agent=agent,
+        task=task,
+        dataset_options=dataset_options,
+        benchmark_root=benchmark_root,
+    )
+    debug_payload["dataset_selection"] = dataset_selection_debug
+    if dataset_candidate is None:
+        dataset_candidate = dataset_options[0]
+        debug_payload["dataset_selection_source"] = "default_first_option"
+    else:
+        debug_payload["dataset_selection_source"] = dataset_selection_debug.get("selection_source")
+    selected_dataset_id = str(dataset_candidate.get("dataset_id", "")).strip()
+    compatible_candidates = [
+        item
+        for item in candidates
+        if _benchmark_operator_compatible_with_dataset(
+            operator=item,
+            dataset_candidate=dataset_candidate,
+        )
+    ]
+    if not compatible_candidates:
+        compatible_candidates = _select_benchmark_candidate_subset(
+            task=task,
+            candidates=candidates,
+            benchmark_root=benchmark_root,
+        )
+        debug_payload["compatible_candidate_fallback"] = [
+            str(item.get("name", "")).strip()
+            for item in compatible_candidates
+            if str(item.get("name", "")).strip()
+        ]
+    debug_payload["compatible_candidate_names"] = [
         str(item.get("name", "")).strip()
-        for item in preferred_candidates
+        for item in compatible_candidates
         if str(item.get("name", "")).strip()
     ]
-    preferred_count = max(1, len(preferred_names))
-    candidate_names = {str(item.get("name", "")).strip() for item in candidates}
+    if not compatible_candidates:
+        debug_payload["failure_stage"] = "filter_compatible_candidates"
+        debug_payload["failure_reason"] = "no_compatible_candidates"
+        return None, debug_payload
     prompt = _build_benchmark_register_selection_prompt(
         task=task,
-        candidates=candidates,
+        candidates=compatible_candidates,
+        benchmark_root=benchmark_root,
         excluded_tools=excluded_tools,
-        preferred_count=preferred_count,
+        dataset_candidate=dataset_candidate,
     )
-    invoke_payload, invoke_kwargs = _build_worker_invoke_request(prompt)
+    timeout_seconds = _benchmark_register_agentic_selection_timeout_seconds()
     attempts: list[dict[str, object]] = []
     text = ""
     parsed: dict[str, object] | None = None
     for attempt_index in range(2):
-        try:
-            result = await agent.ainvoke(invoke_payload, **invoke_kwargs)
-        except (TypeError, ValueError):
-            try:
-                result = await agent.ainvoke(
-                    [
-                        SystemMessage(content=prompt),
-                        HumanMessage(content="Return JSON only."),
-                    ]
-                )
-            except Exception:
-                return None
-        except Exception:
-            return None
+        result, invoke_debug = await _invoke_benchmark_register_selector(
+            selector=agent,
+            prompt=prompt,
+            timeout_seconds=timeout_seconds,
+        )
+        if result is None:
+            debug_payload["failure_stage"] = "tool_selection"
+            debug_payload["failure_reason"] = "agent_invoke_failed"
+            if invoke_debug.get("failure_reason") in {
+                "direct_invoke_timeout",
+                "fallback_invoke_timeout",
+            }:
+                debug_payload["failure_reason"] = "agent_invoke_timeout"
+            if "timeout_seconds" in invoke_debug:
+                debug_payload["timeout_seconds"] = invoke_debug["timeout_seconds"]
+            debug_payload["selector_invocation"] = invoke_debug
+            debug_payload["agent_attempts"] = attempts
+            return None, debug_payload
         usage: dict[str, object] | None = None
         messages = result.get("messages", []) if isinstance(result, dict) else []
         if messages:
@@ -2354,16 +2591,44 @@ async def _select_benchmark_tools_with_agent(
             "attempt": attempt_index + 1,
             "raw_output": text,
             "usage": usage,
+            "selector_invocation": invoke_debug,
         }
         parsed = _extract_generic_json_payload(text)
         attempt_details["parsed_payload_found"] = parsed is not None
+        if parsed is None and text.strip():
+            fallback_tools = _benchmark_selected_tools_from_text(
+                text=text,
+                candidates=compatible_candidates,
+                excluded_tools=excluded_tools,
+            )
+            if fallback_tools:
+                parsed = {
+                    "selected_tools": fallback_tools,
+                    "selection_rationale": "Recovered selected tools from non-JSON agent text.",
+                }
+                attempt_details["text_fallback_selected_tools"] = fallback_tools
         attempts.append(attempt_details)
         if parsed is not None:
             break
         if text.strip():
             break
     if parsed is None:
-        return None
+        debug_payload["failure_stage"] = "tool_selection"
+        debug_payload["failure_reason"] = "agent_output_not_parseable"
+        debug_payload["agent_attempts"] = attempts
+        return None, debug_payload
+    preferred_candidates = _select_benchmark_candidate_subset(
+        task=task,
+        candidates=compatible_candidates,
+        benchmark_root=benchmark_root,
+    )
+    preferred_names = [
+        str(item.get("name", "")).strip()
+        for item in preferred_candidates
+        if str(item.get("name", "")).strip()
+    ]
+    preferred_count = max(1, len(preferred_names))
+    candidate_names = {str(item.get("name", "")).strip() for item in compatible_candidates}
     selected_tools = [
         str(item).strip()
         for item in parsed.get("selected_tools", [])
@@ -2371,11 +2636,16 @@ async def _select_benchmark_tools_with_agent(
     ]
     selected_tools = [tool for tool in selected_tools if tool not in excluded_tools]
     if not selected_tools:
-        return None
+        debug_payload["failure_stage"] = "tool_selection"
+        debug_payload["failure_reason"] = "no_valid_selected_tools"
+        debug_payload["agent_attempts"] = attempts
+        return None, debug_payload
     explicit_mentions = [
         name for name in preferred_names if _task_explicitly_mentions_benchmark_tool(task, name)
     ]
-    if not explicit_mentions and len(preferred_names) > 1 and set(selected_tools).issubset(set(preferred_names)):
+    if explicit_mentions:
+        selected_tools = list(dict.fromkeys([*explicit_mentions, *selected_tools]))
+    elif len(preferred_names) > 1 and set(selected_tools).issubset(set(preferred_names)):
         selected_tools = preferred_names
     elif preferred_count <= 1:
         selected_tools = selected_tools[:1]
@@ -2383,14 +2653,192 @@ async def _select_benchmark_tools_with_agent(
         selected_tools = selected_tools[:preferred_count]
     selected_operators = [
         item
-        for item in candidates
+        for item in compatible_candidates
         if str(item.get("name", "")).strip() in set(selected_tools)
     ]
-    dataset_key = _benchmark_dataset_hint_from_task(task)
-    return {
+    result = {
         "task": task,
-        "dataset_key": dataset_key,
+        "dataset_key": selected_dataset_id or _benchmark_dataset_hint_from_task(task),
         "selection_strategy": "agent_operator_store_search",
+        "selected_tools": selected_tools,
+        "selected_operators": selected_operators,
+        "requested_tools": [],
+        "excluded_tools": sorted(excluded_tools),
+        "allowed_tools": [str(item.get("name", "")) for item in compatible_candidates],
+        "operator_store_roots": [
+            str(path) for path in _candidate_operator_store_roots(workspace_root)
+        ],
+        "catalog_available": False,
+        "candidate_count": len(compatible_candidates),
+        "selected_dataset_id": selected_dataset_id,
+        "dataset_candidates": dataset_options,
+        "default_preferred_tools": preferred_names,
+        "candidates": compatible_candidates,
+        "agent_attempts": attempts,
+        "agent_selection_rationale": str(parsed.get("selection_rationale", "")).strip(),
+        "agent_raw_output": text,
+    }
+    result["selected_dataset"] = dataset_candidate
+    debug_payload["result_preview"] = {
+        "dataset_key": result["dataset_key"],
+        "selected_tools": result["selected_tools"],
+    }
+    return result, debug_payload
+
+
+async def _select_benchmark_tools_with_agent_exploratory(
+    *,
+    agent,
+    task: str,
+    workspace_root: Path,
+    candidates: list[dict[str, object]],
+    excluded_tools: set[str],
+    benchmark_root: str,
+    debug_payload: dict[str, object],
+) -> tuple[dict[str, object] | None, dict[str, object]]:
+    dataset_options = _rank_local_dataset_store_candidates(
+        task=task,
+        workspace_root=workspace_root,
+        limit=12,
+    )
+    debug_payload["dataset_strategy"] = "per_operator_dataset"
+    debug_payload["dataset_options"] = dataset_options
+    prompt = _build_benchmark_register_exploratory_selection_prompt(
+        task=task,
+        candidates=candidates,
+        dataset_options=dataset_options,
+        benchmark_root=benchmark_root,
+        excluded_tools=excluded_tools,
+    )
+    timeout_seconds = _benchmark_register_agentic_selection_timeout_seconds()
+    result, invoke_debug = await _invoke_benchmark_register_selector(
+        selector=agent,
+        prompt=prompt,
+        timeout_seconds=timeout_seconds,
+    )
+    if result is None:
+        debug_payload["failure_stage"] = "exploratory_selection"
+        debug_payload["failure_reason"] = "agent_invoke_failed"
+        if invoke_debug.get("failure_reason") in {
+            "direct_invoke_timeout",
+            "fallback_invoke_timeout",
+        }:
+            debug_payload["failure_reason"] = "agent_invoke_timeout"
+        debug_payload["selector_invocation"] = invoke_debug
+        return None, debug_payload
+
+    messages = result.get("messages", []) if isinstance(result, dict) else []
+    if messages:
+        refusal_message = _extract_messages_refusal(messages)
+        if refusal_message is not None:
+            debug_payload["failure_stage"] = "exploratory_selection"
+            debug_payload["failure_reason"] = "model_refusal"
+            debug_payload["agent_attempts"] = [{"raw_output": refusal_message}]
+            return None, debug_payload
+        text = _last_ai_text(messages)
+        usage_metadata = getattr(messages[-1], "usage_metadata", None)
+    else:
+        refusal_message = _extract_model_refusal_message(result)
+        if refusal_message is not None:
+            debug_payload["failure_stage"] = "exploratory_selection"
+            debug_payload["failure_reason"] = "model_refusal"
+            debug_payload["agent_attempts"] = [{"raw_output": refusal_message}]
+            return None, debug_payload
+        text = _message_text(result)
+        usage_metadata = getattr(result, "usage_metadata", None)
+    usage = (
+        {str(k): v for k, v in usage_metadata.items()}
+        if isinstance(usage_metadata, dict)
+        else None
+    )
+    parsed = _extract_generic_json_payload(text)
+    attempt = {
+        "attempt": 1,
+        "raw_output": text,
+        "usage": usage,
+        "selector_invocation": invoke_debug,
+        "parsed_payload_found": parsed is not None,
+    }
+    if parsed is None and text.strip():
+        fallback_tools = _benchmark_selected_tools_from_text(
+            text=text,
+            candidates=candidates,
+            excluded_tools=excluded_tools,
+        )
+        if fallback_tools:
+            parsed = {
+                "selected_tools": fallback_tools,
+                "selection_rationale": "Recovered selected tools from non-JSON agent text.",
+            }
+            attempt["text_fallback_selected_tools"] = fallback_tools
+    debug_payload["agent_attempts"] = [attempt]
+    if parsed is None:
+        debug_payload["failure_stage"] = "exploratory_selection"
+        debug_payload["failure_reason"] = "agent_output_not_parseable"
+        return None, debug_payload
+
+    preferred_candidates = _select_benchmark_candidate_subset(
+        task=task,
+        candidates=candidates,
+        benchmark_root=benchmark_root,
+    )
+    preferred_names = [
+        str(item.get("name", "")).strip()
+        for item in preferred_candidates
+        if str(item.get("name", "")).strip()
+    ]
+    candidate_names = {str(item.get("name", "")).strip() for item in candidates}
+    selected_tools = [
+        str(item).strip()
+        for item in parsed.get("selected_tools", [])
+        if isinstance(item, str)
+        and str(item).strip() in candidate_names
+        and str(item).strip() not in excluded_tools
+    ]
+    if not selected_tools:
+        debug_payload["failure_stage"] = "exploratory_selection"
+        debug_payload["failure_reason"] = "no_valid_selected_tools"
+        return None, debug_payload
+    explicit_mentions = [
+        name for name in preferred_names if _task_explicitly_mentions_benchmark_tool(task, name)
+    ]
+    if explicit_mentions:
+        selected_tools = list(dict.fromkeys([*explicit_mentions, *selected_tools]))
+    elif len(preferred_names) > 1 and set(selected_tools).issubset(set(preferred_names)):
+        selected_tools = preferred_names
+    elif len(preferred_names) <= 1:
+        selected_tools = selected_tools[:1]
+    else:
+        selected_tools = selected_tools[: len(preferred_names)]
+
+    selected_operators = [
+        item for item in candidates if str(item.get("name", "")).strip() in set(selected_tools)
+    ]
+    raw_tool_dataset_keys = parsed.get("tool_dataset_keys")
+    requested_dataset_keys = (
+        {
+            str(tool): str(dataset_id).strip()
+            for tool, dataset_id in raw_tool_dataset_keys.items()
+            if isinstance(tool, str) and str(dataset_id).strip()
+        }
+        if isinstance(raw_tool_dataset_keys, dict)
+        else {}
+    )
+    tool_dataset_keys, selected_datasets = _resolve_benchmark_dataset_keys_for_tools(
+        task=task,
+        workspace_root=workspace_root,
+        operator_candidates=selected_operators,
+        selected_tools=selected_tools,
+        excluded_tools=excluded_tools,
+        benchmark_root=benchmark_root,
+        requested_dataset_keys=requested_dataset_keys,
+    )
+    unique_dataset_keys = sorted({key for key in tool_dataset_keys.values() if key})
+    result_payload = {
+        "task": task,
+        "dataset_key": unique_dataset_keys[0] if len(unique_dataset_keys) == 1 else "",
+        "dataset_strategy": "per_operator_dataset",
+        "selection_strategy": "agent_operator_store_exploratory_search",
         "selected_tools": selected_tools,
         "selected_operators": selected_operators,
         "requested_tools": [],
@@ -2401,12 +2849,25 @@ async def _select_benchmark_tools_with_agent(
         ],
         "catalog_available": False,
         "candidate_count": len(candidates),
+        "dataset_candidates": dataset_options,
+        "tool_dataset_keys": tool_dataset_keys,
+        "selected_datasets": selected_datasets,
         "default_preferred_tools": preferred_names,
         "candidates": candidates,
-        "agent_attempts": attempts,
+        "agent_attempts": [attempt],
         "agent_selection_rationale": str(parsed.get("selection_rationale", "")).strip(),
         "agent_raw_output": text,
     }
+    if len(unique_dataset_keys) == 1 and selected_datasets:
+        result_payload["selected_dataset_id"] = unique_dataset_keys[0]
+        result_payload["selected_dataset"] = selected_datasets.get(unique_dataset_keys[0])
+    debug_payload["result_preview"] = {
+        "dataset_strategy": "per_operator_dataset",
+        "dataset_key": result_payload["dataset_key"],
+        "tool_dataset_keys": tool_dataset_keys,
+        "selected_tools": selected_tools,
+    }
+    return result_payload, debug_payload
 
 
 def _resolve_benchmark_selected_tools(
@@ -2418,6 +2879,35 @@ def _resolve_benchmark_selected_tools(
     excluded_tools: set[str],
     selection_override: dict[str, object] | None = None,
 ) -> tuple[list[str], dict[str, object]]:
+    candidate_pool = _collect_benchmark_operator_candidates(
+        task=task,
+        workspace_root=workspace_root,
+        excluded_tools=excluded_tools,
+        limit=_BENCHMARK_REGISTER_AGENTIC_CANDIDATE_LIMIT,
+    )
+    dataset_strategy = _benchmark_dataset_strategy_for_task(task)
+    dataset_candidate = (
+        _resolve_benchmark_dataset_candidate(
+            task=task,
+            workspace_root=workspace_root,
+            operator_candidates=candidate_pool,
+            requested_tools=requested_tools,
+            excluded_tools=excluded_tools,
+            benchmark_root=benchmark_root,
+        )
+        if dataset_strategy == "shared_dataset"
+        else None
+    )
+    dataset_key = str(dataset_candidate.get("dataset_id", "")).strip() if dataset_candidate else ""
+    if dataset_candidate is not None:
+        candidate_pool = [
+            item
+            for item in candidate_pool
+            if _benchmark_operator_compatible_with_dataset(
+                operator=item,
+                dataset_candidate=dataset_candidate,
+            )
+        ]
     if selection_override is not None:
         selected_tools = [
             str(item)
@@ -2429,7 +2919,36 @@ def _resolve_benchmark_selected_tools(
         report["benchmark_root"] = benchmark_root
         report["excluded_tools"] = sorted(excluded_tools)
         report.setdefault("task", task)
-        report.setdefault("dataset_key", _benchmark_dataset_hint_from_task(task))
+        report.setdefault("dataset_strategy", dataset_strategy)
+        if report.get("dataset_strategy") == "shared_dataset" and not str(report.get("dataset_key", "")).strip():
+            report["dataset_key"] = dataset_key or _benchmark_dataset_hint_from_task(task)
+        if dataset_candidate is not None and not isinstance(report.get("selected_dataset"), dict):
+            report["selected_dataset"] = dataset_candidate
+        if report.get("dataset_strategy") == "per_operator_dataset":
+            raw_map = report.get("tool_dataset_keys")
+            existing_map = (
+                {
+                    str(tool): str(dataset_id).strip()
+                    for tool, dataset_id in raw_map.items()
+                    if isinstance(tool, str) and str(dataset_id).strip()
+                }
+                if isinstance(raw_map, dict)
+                else {}
+            )
+            if not existing_map:
+                tool_dataset_keys, selected_datasets = _resolve_benchmark_dataset_keys_for_tools(
+                    task=task,
+                    workspace_root=workspace_root,
+                    operator_candidates=candidate_pool,
+                    selected_tools=selected_tools,
+                    excluded_tools=excluded_tools,
+                    benchmark_root=benchmark_root,
+                )
+                report["tool_dataset_keys"] = tool_dataset_keys
+                report["selected_datasets"] = selected_datasets
+                unique_dataset_keys = sorted({key for key in tool_dataset_keys.values() if key})
+                if len(unique_dataset_keys) == 1 and not str(report.get("dataset_key", "")).strip():
+                    report["dataset_key"] = unique_dataset_keys[0]
         report.setdefault("selection_strategy", "agent_operator_store_search")
         report.setdefault("requested_tools", requested_tools)
         report.setdefault(
@@ -2437,7 +2956,11 @@ def _resolve_benchmark_selected_tools(
             [str(path) for path in _candidate_operator_store_roots(workspace_root)],
         )
         report.setdefault("catalog_available", False)
-        report.setdefault("selected_operators", [])
+        if not isinstance(report.get("selected_operators"), list) or not report.get("selected_operators"):
+            selected_names = set(selected_tools)
+            report["selected_operators"] = [
+                item for item in candidate_pool if str(item.get("name", "")).strip() in selected_names
+            ]
         return selected_tools, report
     if requested_tools:
         selected_tools = [
@@ -2445,16 +2968,12 @@ def _resolve_benchmark_selected_tools(
             for tool in requested_tools
             if tool not in excluded_tools
         ]
-        selected_operator_payloads: list[dict[str, object]] = []
+        selected_names = set(selected_tools)
+        selected_operator_payloads = [
+            item for item in candidate_pool if str(item.get("name", "")).strip() in selected_names
+        ]
         final_strategy = "metadata_selected_tools"
-        dataset_key = _benchmark_dataset_hint_from_task(task)
     else:
-        candidate_pool = _collect_benchmark_operator_candidates(
-            task=task,
-            workspace_root=workspace_root,
-            excluded_tools=excluded_tools,
-            limit=_BENCHMARK_REGISTER_AGENTIC_CANDIDATE_LIMIT,
-        )
         selected_operator_payloads = _select_benchmark_candidate_subset(
             task=task,
             candidates=candidate_pool,
@@ -2469,11 +2988,12 @@ def _resolve_benchmark_selected_tools(
             final_strategy = "operator_store_search"
         else:
             final_strategy = "operator_store_search_no_match"
-        dataset_key = _benchmark_dataset_hint_from_task(task)
     report = {
         "task": task,
         "benchmark_root": benchmark_root,
-        "dataset_key": dataset_key,
+        "dataset_key": dataset_key or _benchmark_dataset_hint_from_task(task),
+        "selected_dataset_id": dataset_key if dataset_candidate is not None else "",
+        "dataset_strategy": dataset_strategy,
         "selection_strategy": final_strategy,
         "requested_tools": requested_tools,
         "excluded_tools": sorted(excluded_tools),
@@ -2484,6 +3004,22 @@ def _resolve_benchmark_selected_tools(
         ],
         "catalog_available": False,
     }
+    if dataset_candidate is not None:
+        report["selected_dataset"] = dataset_candidate
+    if dataset_strategy == "per_operator_dataset" and selected_tools:
+        tool_dataset_keys, selected_datasets = _resolve_benchmark_dataset_keys_for_tools(
+            task=task,
+            workspace_root=workspace_root,
+            operator_candidates=selected_operator_payloads,
+            selected_tools=selected_tools,
+            excluded_tools=excluded_tools,
+            benchmark_root=benchmark_root,
+        )
+        report["tool_dataset_keys"] = tool_dataset_keys
+        report["selected_datasets"] = selected_datasets
+        unique_dataset_keys = sorted({key for key in tool_dataset_keys.values() if key})
+        if len(unique_dataset_keys) == 1:
+            report["dataset_key"] = unique_dataset_keys[0]
     return selected_tools, report
 
 
@@ -2561,11 +3097,76 @@ def _collect_benchmark_operator_candidates(
         current = candidates.get(name)
         if current is None or score > current[0] or (score == current[0] and rank < current[1]):
             candidates[name] = (score, rank, candidate)
+    for candidate in _collect_explicit_benchmark_operator_candidates(
+        task=task,
+        workspace_root=workspace_root,
+        excluded_tools=excluded_tools,
+    ):
+        name = str(candidate.get("name", "")).strip()
+        if not name:
+            continue
+        score = int(candidate.get("score", 0)) + 100
+        rank = int(candidate.get("rank", 0))
+        candidate["score"] = score
+        current = candidates.get(name)
+        if current is None or score > current[0] or (score == current[0] and rank < current[1]):
+            candidates[name] = (score, rank, candidate)
     ranked = sorted(
         candidates.values(),
         key=lambda item: (-item[0], item[1], str(item[2].get("name", "")).casefold()),
     )
-    return [item[2] for item in ranked[: max(1, limit)]]
+    ranked_candidates = [item[2] for item in ranked]
+    explicitly_named = [
+        candidate
+        for candidate in ranked_candidates
+        if _task_explicitly_mentions_benchmark_tool(
+            task,
+            str(candidate.get("name", "")).strip(),
+        )
+    ]
+    if explicitly_named:
+        explicit_names = {
+            str(candidate.get("name", "")).strip()
+            for candidate in explicitly_named
+        }
+        target_count = max(1, limit, len(explicitly_named))
+        merged = explicitly_named + [
+            candidate
+            for candidate in ranked_candidates
+            if str(candidate.get("name", "")).strip() not in explicit_names
+        ]
+        return merged[:target_count]
+    return ranked_candidates[: max(1, limit)]
+
+
+def _collect_explicit_benchmark_operator_candidates(
+    *,
+    task: str,
+    workspace_root: Path,
+    excluded_tools: set[str],
+) -> list[dict[str, object]]:
+    candidates: dict[str, dict[str, object]] = {}
+    for store_root in _candidate_operator_store_roots(workspace_root):
+        for operator_path in sorted(store_root.glob("operators/*/operator.json")):
+            try:
+                payload = json.loads(operator_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            candidate = _benchmark_candidate_from_operator_payload(
+                payload=payload,
+                operator_path=operator_path,
+                excluded_tools=excluded_tools,
+            )
+            if candidate is None:
+                continue
+            name = str(candidate.get("name", "")).strip()
+            if not name or not _task_explicitly_mentions_benchmark_tool(task, name):
+                continue
+            current = candidates.get(name)
+            if current is None or int(candidate.get("_score", 0)) > int(current.get("_score", 0)):
+                candidate["rank"] = -100
+                candidates[name] = candidate
+    return list(candidates.values())
 
 
 def _search_operator_store_for_benchmark_tools(
@@ -2597,48 +3198,707 @@ def _benchmark_operator_query(*, task: str) -> str:
 
 
 def _candidate_operator_store_roots(workspace_root: Path) -> list[Path]:
-    roots: list[Path] = []
-    seen: set[Path] = set()
-
-    def add(path: Path | None) -> None:
-        if path is None or not path.exists() or not path.is_dir():
-            return
-        resolved = path.resolve()
-        if resolved in seen:
-            return
-        seen.add(resolved)
-        roots.append(resolved)
-
-    add(workspace_root / "operator_store")
-    shared_root = os.environ.get(_SHARED_OPERATOR_STORE_ROOT_ENV, "").strip()
-    if shared_root:
-        add(Path(shared_root))
-    return roots
+    return _discover_shared_store_roots(
+        workspace_root=workspace_root,
+        store_dirname="operator_store",
+        shared_root_env=_SHARED_OPERATOR_STORE_ROOT_ENV,
+    )
 
 
 def _candidate_dataset_store_roots(workspace_root: Path) -> list[Path]:
-    roots: list[Path] = []
-    seen: set[Path] = set()
-
-    def add(path: Path | None) -> None:
-        if path is None or not path.exists() or not path.is_dir():
-            return
-        resolved = path.resolve()
-        if resolved in seen:
-            return
-        seen.add(resolved)
-        roots.append(resolved)
-
-    add(workspace_root / "dataset_store")
-    shared_root = os.environ.get(_SHARED_DATASET_STORE_ROOT_ENV, "").strip()
-    if shared_root:
-        add(Path(shared_root))
-    return roots
+    return _discover_shared_store_roots(
+        workspace_root=workspace_root,
+        store_dirname="dataset_store",
+        shared_root_env=_SHARED_DATASET_STORE_ROOT_ENV,
+    )
 
 
 def _benchmark_dataset_hint_from_task(task: str) -> str:
     matches = re.findall(r"\b[a-z0-9]+(?:[-_][a-z0-9]+){2,}\b", task.casefold())
     return matches[0] if matches else ""
+
+
+def _benchmark_dataset_strategy_for_task(task: str) -> str:
+    return "shared_dataset" if _benchmark_task_requires_shared_dataset(task) else "per_operator_dataset"
+
+
+def _benchmark_task_requires_shared_dataset(task: str) -> bool:
+    if _benchmark_dataset_hint_from_task(task):
+        return True
+    normalized = task.casefold()
+    relaxed_markers = (
+        "不要求同一",
+        "不需要同一",
+        "不用同一",
+        "无需同一",
+        "不要求共享",
+        "不需要共享",
+        "分别给",
+        "分别使用",
+        "不同数据集",
+        "separate datasets",
+        "different datasets",
+    )
+    if any(marker in normalized for marker in relaxed_markers):
+        return False
+    if "共享" in normalized and "数据" in normalized:
+        return True
+    shared_markers = (
+        "同一份",
+        "同一个数据",
+        "相同数据",
+        "共享数据",
+        "统一数据",
+        "公平比较",
+        "可公平比较",
+        "same dataset",
+        "same input",
+        "same reads",
+        "same fastq",
+        "shared dataset",
+        "fair comparison",
+    )
+    return any(marker in normalized for marker in shared_markers)
+
+
+def _resolve_benchmark_dataset_keys_for_tools(
+    *,
+    task: str,
+    workspace_root: Path,
+    operator_candidates: list[dict[str, object]],
+    selected_tools: list[str],
+    excluded_tools: set[str],
+    benchmark_root: str,
+    requested_dataset_keys: dict[str, str] | None = None,
+) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
+    requested_dataset_keys = requested_dataset_keys or {}
+    operator_by_name = {
+        str(candidate.get("name", "")).strip(): candidate
+        for candidate in operator_candidates
+        if str(candidate.get("name", "")).strip()
+    }
+    resolved: dict[str, str] = {}
+    selected_datasets: dict[str, dict[str, object]] = {}
+    for tool in selected_tools:
+        operator = operator_by_name.get(tool)
+        if operator is None:
+            continue
+        requested_key = requested_dataset_keys.get(tool, "").strip()
+        dataset_candidate = (
+            _find_benchmark_dataset_candidate_by_id(
+                workspace_root=workspace_root,
+                dataset_id=requested_key,
+            )
+            if requested_key
+            else None
+        )
+        if dataset_candidate is not None and not _benchmark_operator_compatible_with_dataset(
+            operator=operator,
+            dataset_candidate=dataset_candidate,
+        ):
+            dataset_candidate = None
+        if dataset_candidate is None:
+            dataset_candidate = _resolve_benchmark_dataset_candidate(
+                task=task,
+                workspace_root=workspace_root,
+                operator_candidates=[operator],
+                requested_tools=[tool],
+                excluded_tools=excluded_tools,
+                benchmark_root=benchmark_root,
+            )
+        if dataset_candidate is None:
+            continue
+        dataset_id = str(dataset_candidate.get("dataset_id", "")).strip()
+        if not dataset_id:
+            continue
+        resolved[tool] = dataset_id
+        selected_datasets[dataset_id] = dataset_candidate
+    return resolved, selected_datasets
+
+
+def _find_benchmark_dataset_candidate_by_id(
+    *,
+    workspace_root: Path,
+    dataset_id: str,
+) -> dict[str, object] | None:
+    dataset_id = dataset_id.strip()
+    if not dataset_id:
+        return None
+    for candidate in _benchmark_user_dataset_candidates(
+        task=dataset_id,
+        workspace_root=workspace_root,
+    ):
+        if str(candidate.get("dataset_id", "")).strip() == dataset_id:
+            return candidate
+    for store_root in _candidate_dataset_store_roots(workspace_root):
+        try:
+            store = DatasetStore(store_root)
+            rows = store.search_datasets(DatasetSearchFilter(dataset_id=dataset_id, limit=3))
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            if str(row.get("dataset_id", "")).strip() == dataset_id:
+                return _local_dataset_candidate_from_search_row(row)
+    return None
+
+
+def _resolve_benchmark_dataset_candidate(
+    *,
+    task: str,
+    workspace_root: Path,
+    operator_candidates: list[dict[str, object]],
+    requested_tools: list[str],
+    excluded_tools: set[str],
+    benchmark_root: str = "",
+) -> dict[str, object] | None:
+    explicit_dataset_key = _benchmark_dataset_hint_from_task(task)
+    ranked_datasets = _rank_local_dataset_store_candidates(
+        task=task,
+        workspace_root=workspace_root,
+        limit=12,
+    )
+    if explicit_dataset_key:
+        for candidate in ranked_datasets:
+            if str(candidate.get("dataset_id", "")).strip() == explicit_dataset_key:
+                return candidate
+        for store_root in _candidate_dataset_store_roots(workspace_root):
+            try:
+                store = DatasetStore(store_root)
+                rows = store.search_datasets(
+                    DatasetSearchFilter(dataset_id=explicit_dataset_key, limit=3)
+                )
+            except sqlite3.Error:
+                continue
+            for row in rows:
+                if str(row.get("dataset_id", "")).strip() == explicit_dataset_key:
+                    return _local_dataset_candidate_from_search_row(row)
+
+    target_names = {
+        tool for tool in requested_tools if tool.strip() and tool not in excluded_tools
+    }
+    if target_names:
+        relevant_operators = [
+            candidate
+            for candidate in operator_candidates
+            if str(candidate.get("name", "")).strip() in target_names
+        ]
+    else:
+        relevant_operators = _select_benchmark_candidate_subset(
+            task=task,
+            candidates=operator_candidates,
+            benchmark_root=benchmark_root,
+        )
+    if not relevant_operators:
+        relevant_operators = operator_candidates
+    if not ranked_datasets or not relevant_operators:
+        return None
+
+    def score(dataset_candidate: dict[str, object]) -> tuple[int, int, int, str]:
+        compatible = [
+            candidate
+            for candidate in relevant_operators
+            if _benchmark_operator_compatible_with_dataset(
+                operator=candidate,
+                dataset_candidate=dataset_candidate,
+            )
+        ]
+        compatibility_count = len(compatible)
+        shared_candidate = (
+            1 if compatibility_count >= 2 or compatibility_count == len(relevant_operators) else 0
+        )
+        generic_bonus = 0 if _dataset_candidate_is_operator_specific(dataset_candidate) else 1
+        query_score = _benchmark_dataset_task_score(task=task, dataset_candidate=dataset_candidate)
+        return (
+            compatibility_count,
+            shared_candidate,
+            query_score + generic_bonus,
+            str(dataset_candidate.get("dataset_id", "")),
+        )
+
+    ranked = sorted(
+        ranked_datasets,
+        key=score,
+        reverse=True,
+    )
+    multi_tool_benchmark = (
+        len(relevant_operators) >= 2 or _task_requests_multiple_benchmark_tools(task)
+    )
+    if multi_tool_benchmark:
+        generic_ranked = [
+            candidate
+            for candidate in ranked
+            if not _dataset_candidate_is_operator_specific(candidate)
+            and score(candidate)[0] > 0
+        ]
+        if generic_ranked:
+            return generic_ranked[0]
+    best = ranked[0]
+    return best if score(best)[0] > 0 else None
+
+
+def _dataset_candidate_is_operator_specific(dataset_candidate: dict[str, object]) -> bool:
+    compatible_ids = [
+        str(item).strip()
+        for item in dataset_candidate.get("compatible_operator_ids", [])
+        if isinstance(item, str) and str(item).strip()
+    ]
+    return bool(compatible_ids)
+
+
+def _benchmark_operator_compatible_with_dataset(
+    *,
+    operator: dict[str, object],
+    dataset_candidate: dict[str, object],
+) -> bool:
+    operator_id = str(operator.get("operator_id", "")).strip()
+    compatible_ids = {
+        str(item).strip()
+        for item in dataset_candidate.get("compatible_operator_ids", [])
+        if isinstance(item, str) and str(item).strip()
+    }
+    if compatible_ids:
+        return operator_id in compatible_ids
+
+    dataset_files = dataset_candidate.get("files")
+    if not isinstance(dataset_files, list) or not dataset_files:
+        return False
+    dataset_media_counts: dict[str, int] = {}
+    for item in dataset_files:
+        if not isinstance(item, dict):
+            continue
+        media = _normalize_benchmark_media_type(str(item.get("media_type", "")).strip())
+        if not media or media == "json":
+            continue
+        dataset_media_counts[media] = dataset_media_counts.get(media, 0) + 1
+    if not dataset_media_counts:
+        return False
+
+    operator_inputs = operator.get("inputs")
+    input_rows = (
+        [item for item in operator_inputs if isinstance(item, dict)]
+        if isinstance(operator_inputs, list)
+        else []
+    )
+    required_media: dict[str, int] = {}
+    input_media_types = operator.get("input_media_types")
+    if isinstance(input_media_types, list):
+        for item in input_media_types:
+            media = _normalize_benchmark_media_type(str(item).strip())
+            if not media or media == "json":
+                continue
+            required_media[media] = max(required_media.get(media, 0), 1)
+    if _operator_looks_paired_end_read_workload(
+        inputs=input_rows,
+        inputs_json_path=str(operator.get("inputs_json_path", "")).strip(),
+    ):
+        required_media.pop("fasta", None)
+        required_media["fastq"] = max(required_media.get("fastq", 0), 2)
+    if _operator_inputs_look_receptor_ligand(input_rows):
+        required_media["pdbqt"] = max(required_media.get("pdbqt", 0), 2)
+    if not required_media:
+        unique_paths_by_media: dict[str, set[str]] = {}
+        for item in input_rows:
+            media = _normalize_benchmark_media_type(str(item.get("media_type", "")).strip())
+            if not media or media == "json":
+                continue
+            path_key = str(item.get("path", "")).strip() or str(item.get("name", "")).strip()
+            if path_key:
+                unique_paths_by_media.setdefault(media, set()).add(path_key)
+        required_media = {
+            media: len(paths)
+            for media, paths in unique_paths_by_media.items()
+            if paths
+        }
+    if not required_media:
+        return False
+    return all(dataset_media_counts.get(media, 0) >= count for media, count in required_media.items())
+
+
+def _operator_inputs_look_paired_end(inputs: list[dict[str, object]]) -> bool:
+    names = {
+        re.sub(r"[^a-z0-9]+", "", str(item.get("name", "")).casefold())
+        for item in inputs
+        if isinstance(item, dict)
+    }
+    has_first = any(name in names for name in {"read1", "r1", "fastq1", "fq1"})
+    has_second = any(name in names for name in {"read2", "r2", "fastq2", "fq2"})
+    return has_first and has_second
+
+
+def _operator_looks_paired_end_read_workload(
+    *,
+    inputs: list[dict[str, object]],
+    inputs_json_path: str,
+) -> bool:
+    return _operator_inputs_look_paired_end(inputs) or _inputs_json_looks_paired_end(
+        inputs_json_path
+    )
+
+
+@lru_cache(maxsize=256)
+def _inputs_json_looks_paired_end(inputs_json_path: str) -> bool:
+    path_str = inputs_json_path.strip()
+    if not path_str:
+        return False
+    path = Path(path_str)
+    if not path.exists() or not path.is_file():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    names = {
+        re.sub(r"[^a-z0-9]+", "", str(key).casefold().split(".")[-1])
+        for key in payload
+        if isinstance(key, str) and str(key).strip()
+    }
+    has_first = any(name in names for name in {"read1", "r1", "fastq1", "fq1"})
+    has_second = any(name in names for name in {"read2", "r2", "fastq2", "fq2"})
+    return has_first and has_second
+
+
+def _operator_inputs_look_receptor_ligand(inputs: list[dict[str, object]]) -> bool:
+    names = {
+        re.sub(r"[^a-z0-9]+", "", str(item.get("name", "")).casefold())
+        for item in inputs
+        if isinstance(item, dict)
+    }
+    return any("receptor" in name for name in names) and any(
+        "ligand" in name for name in names
+    )
+
+
+def _normalize_benchmark_media_type(value: str) -> str:
+    lowered = value.casefold().strip()
+    if not lowered:
+        return ""
+    if "fastq" in lowered or lowered in {"fq", "reads"}:
+        return "fastq"
+    if "fasta" in lowered or lowered in {"fa", "fna"}:
+        return "fasta"
+    if "json" in lowered:
+        return "json"
+    if "gtf" in lowered:
+        return "gtf"
+    if "pdbqt" in lowered:
+        return "pdbqt"
+    if "pdb" in lowered:
+        return "pdb"
+    return lowered
+
+
+def _benchmark_media_type_from_path(path: Path) -> str:
+    name = path.name.casefold()
+    if name.endswith((".fastq.gz", ".fq.gz", ".fastq", ".fq")):
+        return "fastq"
+    if name.endswith((".fasta.gz", ".fa.gz", ".fna.gz", ".fasta", ".fa", ".fna")):
+        return "fasta"
+    if name.endswith(".gtf"):
+        return "gtf"
+    if name.endswith(".pdbqt"):
+        return "pdbqt"
+    if name.endswith(".pdb"):
+        return "pdb"
+    if name.endswith(".json"):
+        return "json"
+    if name.endswith(".csv"):
+        return "csv"
+    if name.endswith(".tsv"):
+        return "tsv"
+    return ""
+
+
+def _benchmark_data_file_role(path: Path, *, media_type: str) -> str:
+    name = path.name.casefold()
+    if media_type == "fastq":
+        if re.search(r"(^|[_\-.])(?:r?1|read1)(?=[_\-.])", name):
+            return "read1"
+        if re.search(r"(^|[_\-.])(?:r?2|read2)(?=[_\-.])", name):
+            return "read2"
+        if "pacbio" in name:
+            return "pacbio"
+        return "reads_fastq"
+    if media_type == "fasta":
+        if any(marker in name for marker in ("ref", "reference", "genome")):
+            return "reference_fasta"
+        return "reads_fasta"
+    if media_type == "gtf":
+        return "reference_gtf"
+    return media_type
+
+
+def _benchmark_task_path_candidates(task: str, *, workspace_root: Path) -> list[Path]:
+    raw_values: list[str] = []
+    raw_values.extend(re.findall(r"`([^`]+)`", task))
+    raw_values.extend(
+        re.findall(
+            r"(?<![\w])(?:/[^\s`\"'，。；;）)]+|(?:workspace|experiments|data|datasets)/[^\s`\"'，。；;）)]+)",
+            task,
+        )
+    )
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for raw in raw_values:
+        cleaned = raw.strip().strip("`'\"“”‘’<>[]{}")
+        cleaned = cleaned.rstrip(".,，。;；:)）")
+        if not cleaned:
+            continue
+        raw_path = Path(cleaned)
+        candidates = (
+            [raw_path]
+            if raw_path.is_absolute()
+            else [workspace_root / raw_path, _PROJECT_ROOT / raw_path, Path.cwd() / raw_path]
+        )
+        for candidate in candidates:
+            if not candidate.exists():
+                continue
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                resolved = candidate
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            paths.append(resolved)
+            break
+    return paths
+
+
+def _benchmark_data_files_from_path(path: Path) -> list[Path]:
+    if path.is_file():
+        return [path] if _benchmark_media_type_from_path(path) else []
+    if not path.is_dir():
+        return []
+
+    def data_files(candidates: list[Path]) -> list[Path]:
+        return [
+            candidate
+            for candidate in sorted(candidates)
+            if candidate.is_file() and _benchmark_media_type_from_path(candidate)
+        ]
+
+    immediate = data_files(list(path.iterdir()))
+    if immediate:
+        return immediate[:64]
+    nested = data_files(list(path.glob("*/*")))
+    return nested[:64]
+
+
+def _benchmark_user_dataset_candidate_from_path(path: Path) -> dict[str, object] | None:
+    files = _benchmark_data_files_from_path(path)
+    files = [item for item in files if _benchmark_media_type_from_path(item) != "json"] or files
+    if not files:
+        return None
+    dataset_root = path if path.is_dir() else path.parent
+    try:
+        resolved_root = dataset_root.resolve()
+    except OSError:
+        resolved_root = dataset_root
+    slug = re.sub(r"[^a-z0-9]+", "-", resolved_root.name.casefold()).strip("-")
+    digest = hashlib.sha1(str(resolved_root).encode("utf-8")).hexdigest()[:8]
+    dataset_id = f"external-{slug or 'dataset'}-{digest}"
+    file_records: list[dict[str, object]] = []
+    media_types: set[str] = set()
+    for file_path in files:
+        media_type = _benchmark_media_type_from_path(file_path)
+        if not media_type:
+            continue
+        media_types.add(media_type)
+        try:
+            size_bytes = file_path.stat().st_size
+        except OSError:
+            size_bytes = None
+        file_records.append(
+            {
+                "name": file_path.name,
+                "role": _benchmark_data_file_role(file_path, media_type=media_type),
+                "media_type": media_type,
+                "uri": str(file_path),
+                "sha256": "",
+                "size_bytes": size_bytes,
+            }
+        )
+    if not file_records:
+        return None
+    domain = "genome_assembly" if {"fastq", "fasta"} & media_types else "local_dataset"
+    summary = (
+        "User-provided external benchmark dataset discovered from the task text. "
+        f"Root: {resolved_root}"
+    )
+    canonical_text = "\n".join(
+        [
+            f"dataset_id: {dataset_id}",
+            f"name: user provided {resolved_root.name}",
+            f"domain: {domain}",
+            summary,
+            "files: "
+            + " ".join(
+                f"{item['name']} {item['media_type']} {item['uri']}" for item in file_records
+            ),
+        ]
+    )
+    return {
+        "dataset_id": dataset_id,
+        "name": f"user provided {resolved_root.name}",
+        "version": "user-provided",
+        "domain": domain,
+        "summary": summary,
+        "canonical_text": canonical_text,
+        "files": file_records,
+        "tags": ["benchmark", "user-provided", "external", domain],
+        "compatible_operator_ids": [],
+        "record_path": "",
+        "source_kind": "user_provided_external_path",
+        "dataset_root": str(resolved_root),
+    }
+
+
+def _benchmark_user_dataset_candidates(
+    *,
+    task: str,
+    workspace_root: Path,
+) -> list[dict[str, object]]:
+    candidates: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for path in _benchmark_task_path_candidates(task, workspace_root=workspace_root):
+        candidate = _benchmark_user_dataset_candidate_from_path(path)
+        if candidate is None:
+            continue
+        dataset_id = str(candidate.get("dataset_id", "")).strip()
+        if not dataset_id or dataset_id in seen:
+            continue
+        seen.add(dataset_id)
+        candidates.append(candidate)
+    return candidates
+
+
+def _benchmark_dataset_task_score(*, task: str, dataset_candidate: dict[str, object]) -> int:
+    dataset_text = "\n".join(
+        [
+            str(dataset_candidate.get("dataset_id", "")),
+            str(dataset_candidate.get("name", "")),
+            str(dataset_candidate.get("summary", "")),
+            str(dataset_candidate.get("domain", "")),
+            str(dataset_candidate.get("canonical_text", "")),
+        ]
+    )
+    score = _benchmark_query_overlap_score(query=task, searchable_text=dataset_text)
+    score += _benchmark_intent_hint_score(query=task, searchable_text=dataset_text)
+    if str(dataset_candidate.get("source_kind", "")).strip() == "user_provided_external_path":
+        score += 1000
+        task_lower_for_source = task.casefold()
+        if any(
+            marker in task_lower_for_source
+            for marker in (
+                "不要使用 dataset_store",
+                "不用 dataset_store",
+                "不使用 dataset_store",
+                "临时提供",
+                "新数据目录",
+                "new data",
+                "external dataset",
+                "provided dataset",
+            )
+        ):
+            score += 300
+
+    task_lower = task.casefold()
+    dataset_lower = dataset_text.casefold()
+    domain = str(dataset_candidate.get("domain", "")).strip().casefold()
+
+    wants_assembly = any(marker in task_lower for marker in ("assembly", "组装"))
+    wants_long_read = any(marker in task_lower for marker in ("long read", "长读", "pacbio", "hifi", "ont", "nanopore"))
+    wants_short_read = any(marker in task_lower for marker in ("short read", "短读", "paired-end", "paired end"))
+    wants_circrna = any(marker in task_lower for marker in ("circrna", "circ", "环状rna"))
+    wants_immune_escape = any(marker in task_lower for marker in ("immune", "escape", "免疫逃逸"))
+
+    if wants_assembly:
+        if domain == "genome_assembly" or "assembly" in dataset_lower or "组装" in dataset_lower:
+            score += 20
+        else:
+            score -= 20
+    if wants_long_read:
+        if any(marker in dataset_lower for marker in ("long-read", "long read", "长读", "pacbio", "hifi", "ont", "nanopore")):
+            score += 24
+        else:
+            score -= 12
+    if wants_short_read:
+        if any(marker in dataset_lower for marker in ("short-read", "short read", "短读", "paired")):
+            score += 16
+    if wants_circrna:
+        if "circrna" in domain or any(marker in dataset_lower for marker in ("circrna", "circ", "环状rna")):
+            score += 20
+        else:
+            score -= 10
+    if wants_immune_escape:
+        if any(marker in dataset_lower for marker in ("immune", "escape", "免疫逃逸", "covabdab", "pdbqt")):
+            score += 20
+        else:
+            score -= 10
+    return score
+
+
+def _candidate_benchmark_result_store_roots(workspace_root: Path) -> list[Path]:
+    return _discover_shared_store_roots(
+        workspace_root=workspace_root,
+        store_dirname=_BENCHMARK_COMPARISON_HISTORY_STORE_DIR,
+        shared_root_env=_SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT_ENV,
+    )
+
+
+def _discover_shared_store_roots(
+    *,
+    workspace_root: Path,
+    store_dirname: str,
+    shared_root_env: str,
+) -> list[Path]:
+    roots: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path | None) -> None:
+        if path is None or not path.exists() or not path.is_dir():
+            return
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        roots.append(resolved)
+
+    def sort_key(path: Path) -> tuple[int, str]:
+        try:
+            mtime = path.stat().st_mtime_ns
+        except OSError:
+            mtime = 0
+        return (-mtime, path.as_posix())
+
+    add(workspace_root / store_dirname)
+    shared_root = os.environ.get(shared_root_env, "").strip()
+    if shared_root:
+        add(Path(shared_root))
+
+    shared_workspace_root = _PROJECT_ROOT / "workspace"
+    try:
+        workspace_in_repo = workspace_root.resolve().is_relative_to(shared_workspace_root.resolve())
+    except OSError:
+        workspace_in_repo = False
+    except RuntimeError:
+        workspace_in_repo = False
+    if workspace_in_repo:
+        add(shared_workspace_root / store_dirname)
+    if workspace_in_repo and shared_workspace_root.exists() and shared_workspace_root.is_dir():
+        session_roots = sorted(
+            (
+                candidate
+                for candidate in shared_workspace_root.glob(f"*/{store_dirname}")
+                if candidate.is_dir()
+            ),
+            key=sort_key,
+        )
+        for candidate in session_roots:
+            add(candidate)
+    return roots
 
 
 def _benchmark_candidate_from_search_row(
@@ -2673,12 +3933,31 @@ def _benchmark_candidate_from_operator_payload(
     if not name or name in excluded_tools:
         return None
     family = str(payload.get("family", "")).strip()
-    status = str(payload.get("validation_status", "")).strip()
     tags = [
         str(tag).strip()
         for tag in payload.get("tags", [])
         if isinstance(tag, str) and tag.strip()
     ]
+    validation_payload = payload.get("validation")
+    validation_status = (
+        validation_payload.get("status")
+        if isinstance(validation_payload, dict)
+        else ""
+    )
+    status = str(
+        payload.get("validation_status")
+        or payload.get("status")
+        or validation_status
+        or ""
+    ).strip()
+    if not status:
+        tag_set = set(tags)
+        if "registered_ready" in tag_set or "execution-ready" in tag_set:
+            status = "registered_ready"
+        elif "completed" in tag_set:
+            status = "completed"
+        elif "registered" in tag_set:
+            status = "registered"
     if family not in {"benchmark", "github2workspace"}:
         return None
     partial_but_wdl_ready = status == "partial" and (
@@ -2699,6 +3978,33 @@ def _benchmark_candidate_from_operator_payload(
         score += 1
     if "execution-ready" in tags or "wdl-completed" in tags:
         score += 2
+    input_media_types = [
+        str(item).strip()
+        for item in payload.get("input_media_types", [])
+        if isinstance(item, str) and item.strip()
+    ]
+    inputs_json_path = str(
+        (payload.get("runtime") or {}).get("inputs_json_path", "")
+        if isinstance(payload.get("runtime"), dict)
+        else ""
+    ).strip()
+    input_rows = [
+        item
+        for item in payload.get("inputs", [])
+        if isinstance(item, dict)
+    ]
+    if _operator_looks_paired_end_read_workload(
+        inputs=input_rows,
+        inputs_json_path=inputs_json_path,
+    ):
+        normalized_input_media_types = [
+            media
+            for media in (
+                _normalize_benchmark_media_type(item) for item in input_media_types
+            )
+            if media and media != "json" and media != "fasta"
+        ]
+        input_media_types = sorted({"fastq", *normalized_input_media_types, "json"})
     return {
         "name": name,
         "operator_id": str(payload.get("operator_id", "")).strip(),
@@ -2706,11 +4012,7 @@ def _benchmark_candidate_from_operator_payload(
         "validation_status": status,
         "summary": str(payload.get("summary", "")),
         "canonical_text": str(payload.get("canonical_text", "")),
-        "input_media_types": [
-            str(item).strip()
-            for item in payload.get("input_media_types", [])
-            if isinstance(item, str) and item.strip()
-        ],
+        "input_media_types": input_media_types,
         "output_media_types": [
             str(item).strip()
             for item in payload.get("output_media_types", [])
@@ -2732,11 +4034,7 @@ def _benchmark_candidate_from_operator_payload(
             if isinstance(payload.get("runtime"), dict)
             else ""
         ).strip(),
-        "inputs_json_path": str(
-            (payload.get("runtime") or {}).get("inputs_json_path", "")
-            if isinstance(payload.get("runtime"), dict)
-            else ""
-        ).strip(),
+        "inputs_json_path": inputs_json_path,
         "entry_workflow": str(
             (payload.get("runtime") or {}).get("entry_workflow", "")
             if isinstance(payload.get("runtime"), dict)
@@ -2817,6 +4115,14 @@ def _task_explicitly_mentions_benchmark_tool(task: str, name: str) -> bool:
     if lowered_name in lowered_task:
         return True
     normalized_name = re.sub(r"[^a-z0-9]+", "", lowered_name)
+    if len(normalized_name) <= 3:
+        return bool(
+            normalized_name
+            and re.search(
+                rf"(?<![a-z0-9]){re.escape(normalized_name)}(?![a-z0-9])",
+                lowered_task,
+            )
+        )
     normalized_task = re.sub(r"[^a-z0-9]+", "", lowered_task)
     return bool(normalized_name) and normalized_name in normalized_task
 
@@ -3031,21 +4337,92 @@ def _benchmark_register_agentic_selection_enabled() -> bool:
     return value.lower() not in {"0", "false", "no", "off"}
 
 
+def _benchmark_register_agentic_selection_timeout_seconds() -> float:
+    raw_value = os.environ.get(
+        _BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_ENV,
+        str(_DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS),
+    ).strip()
+    try:
+        timeout = float(raw_value)
+    except ValueError:
+        timeout = _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS
+    return timeout if timeout > 0 else _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS
+
+
+async def _invoke_benchmark_register_selector(
+    *,
+    selector: Any,
+    prompt: str,
+    timeout_seconds: float,
+) -> tuple[Any | None, dict[str, object]]:
+    """Invoke the register selector as a no-tools model when possible.
+
+    Benchmark register needs semantic judgment, but it is still a pure JSON
+    selection step. Prefer direct chat-model messages so the selector does not
+    enter the full workspace tool graph. The fallback keeps unit tests and
+    older call sites working when a workspace agent is passed explicitly.
+    """
+
+    direct_messages = [
+        SystemMessage(content=prompt),
+        HumanMessage(content="Return JSON only. Do not call tools."),
+    ]
+    debug: dict[str, object] = {"mode": "direct_messages"}
+    internal_config = {
+        "callbacks": [],
+        "run_name": _INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG,
+        "tags": [_INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG],
+    }
+    try:
+        result = await asyncio.wait_for(
+            selector.ainvoke(direct_messages, config=internal_config),
+            timeout=timeout_seconds,
+        )
+        return result, debug
+    except asyncio.TimeoutError:
+        debug["failure_reason"] = "direct_invoke_timeout"
+        debug["timeout_seconds"] = timeout_seconds
+        return None, debug
+    except Exception as direct_exc:
+        debug["direct_error"] = f"{type(direct_exc).__name__}: {direct_exc}"
+
+    invoke_payload, invoke_kwargs = _build_worker_invoke_request(prompt)
+    debug["mode"] = "worker_agent_fallback"
+    try:
+        result = await asyncio.wait_for(
+            selector.ainvoke(invoke_payload, config=internal_config, **invoke_kwargs),
+            timeout=timeout_seconds,
+        )
+        return result, debug
+    except asyncio.TimeoutError:
+        debug["failure_reason"] = "fallback_invoke_timeout"
+        debug["timeout_seconds"] = timeout_seconds
+        return None, debug
+    except Exception as fallback_exc:
+        debug["failure_reason"] = "fallback_invoke_exception"
+        debug["fallback_error"] = f"{type(fallback_exc).__name__}: {fallback_exc}"
+        return None, debug
+
+
 def _build_benchmark_register_selection_prompt(
     *,
     task: str,
     candidates: list[dict[str, object]],
+    benchmark_root: str,
     excluded_tools: set[str],
-    preferred_count: int,
+    dataset_candidate: dict[str, object],
 ) -> str:
     lines = [
-        "You are selecting local benchmark operators from a candidate set.",
+        "You are selecting benchmark operators for one already-chosen shared dataset.",
         "Return JSON only.",
+        "Do not call tools.",
+        "Do not inspect files, run shell commands, browse the web, or delegate.",
         "",
         "Rules:",
-        f"- Choose at most {preferred_count} tool(s).",
-        "- Only choose from the provided candidates.",
-        "- By default, choose as many compatible tools as possible when they can run on the same shared dataset or input files while still satisfying the user request.",
+        "- The shared dataset is already fixed for this benchmark.",
+        "- Only choose from the provided operator candidates.",
+        "- After choosing the dataset, choose only tools that are compatible with that same dataset.",
+        "- By default, choose as many compatible tools as possible when they can run on the chosen shared dataset while still satisfying the user request.",
         "- Prefer semantic fit to the user request, then compatibility with inputs/outputs, then stronger validation status.",
         "- If the request implies docking, pay close attention to pdbqt/receptor/ligand clues.",
         "- If the request implies sequence or protein language modeling, prefer fasta/protein/scoring clues.",
@@ -3058,8 +4435,18 @@ def _build_benchmark_register_selection_prompt(
         "User task:",
         task,
         "",
-        "Candidates:",
+        f"Benchmark root: {benchmark_root or 'unknown'}",
+        "",
+        "Chosen shared dataset:",
+        (
+            f"- dataset_id={dataset_candidate.get('dataset_id')} | "
+            f"name={dataset_candidate.get('name')} | "
+            f"domain={dataset_candidate.get('domain')} | "
+            f"files={_dataset_store_files_preview(dataset_candidate)}"
+        ),
+        "",
     ]
+    lines.append("Operator candidates:")
     for index, candidate in enumerate(candidates, start=1):
         lines.append(
             (
@@ -3070,6 +4457,290 @@ def _build_benchmark_register_selection_prompt(
             )
         )
     return "\n".join(lines)
+
+
+def _build_benchmark_register_exploratory_selection_prompt(
+    *,
+    task: str,
+    candidates: list[dict[str, object]],
+    dataset_options: list[dict[str, object]],
+    benchmark_root: str,
+    excluded_tools: set[str],
+) -> str:
+    lines = [
+        "You are selecting operators for an exploratory local benchmark run.",
+        "Return JSON only.",
+        "Do not call tools.",
+        "Do not inspect files, run shell commands, browse the web, or delegate.",
+        "",
+        "Mode:",
+        "- The user did not fix one concrete dataset for every tool.",
+        "- Choose useful tools even when no single shared dataset covers them all.",
+        "- If a tool can reasonably run on FASTQ even though an old manifest used FASTA, keep it selectable and let the execution agent try the staged FASTQ case.",
+        "- A failed run is acceptable; do not reject a useful tool only because compatibility is uncertain.",
+        "- When tools use different datasets, the final summary must disclose that and must not claim a fair quality comparison.",
+        f"- Excluded tools: {', '.join(sorted(excluded_tools)) or 'none'}",
+        "",
+        "Return schema:",
+        '{"selected_tools":["tool_name"],"tool_dataset_keys":{"tool_name":"dataset_id_or_empty"},"selection_rationale":"short explanation"}',
+        "",
+        "User task:",
+        task,
+        "",
+        f"Benchmark root: {benchmark_root or 'unknown'}",
+        "",
+        "Dataset options:",
+    ]
+    if dataset_options:
+        for index, dataset_candidate in enumerate(dataset_options, start=1):
+            lines.append(
+                (
+                    f"{index}. dataset_id={dataset_candidate.get('dataset_id')} | "
+                    f"name={dataset_candidate.get('name')} | "
+                    f"domain={dataset_candidate.get('domain')} | "
+                    f"files={_dataset_store_files_preview(dataset_candidate)}"
+                )
+            )
+    else:
+        lines.append("- none; tools may fall back to operator-store manifest inputs.")
+    lines.extend(["", "Operator candidates:"])
+    for index, candidate in enumerate(candidates, start=1):
+        compatible_dataset_ids = [
+            str(dataset.get("dataset_id", "")).strip()
+            for dataset in dataset_options
+            if str(dataset.get("dataset_id", "")).strip()
+            and _benchmark_operator_compatible_with_dataset(
+                operator=candidate,
+                dataset_candidate=dataset,
+            )
+        ][:4]
+        lines.append(
+            (
+                f"{index}. name={candidate.get('name')} | family={candidate.get('family')} | "
+                f"status={candidate.get('validation_status')} | inputs={candidate.get('input_media_types')} | "
+                f"outputs={candidate.get('output_media_types')} | tags={candidate.get('tags')} | "
+                f"compatible_datasets={compatible_dataset_ids or ['operator_manifest_fallback']} | "
+                f"summary={candidate.get('summary')}"
+            )
+        )
+    return "\n".join(lines)
+
+
+def _build_benchmark_dataset_selection_prompt(
+    *,
+    task: str,
+    dataset_options: list[dict[str, object]],
+    benchmark_root: str,
+) -> str:
+    lines = [
+        "You are selecting the one shared dataset for a local benchmark run.",
+        "Return JSON only.",
+        "Do not call tools.",
+        "Do not inspect files, run shell commands, browse the web, or delegate.",
+        "",
+        "Rules:",
+        "- Choose exactly one dataset from the provided options.",
+        "- Prefer the dataset that best matches the user task semantically and supports a fair comparison for multiple tools.",
+        "- If the request implies assembly, prefer assembly datasets over unrelated FASTQ datasets.",
+        "- If the request implies long-read assembly, prefer PacBio/HiFi/ONT long-read datasets and avoid short-read or unrelated domain datasets.",
+        "- Do not choose a dataset just because one tool already has stale local inputs for it.",
+        "",
+        "Return schema:",
+        '{"selected_dataset_id":"dataset_id","selection_rationale":"short explanation"}',
+        "",
+        "User task:",
+        task,
+        "",
+        f"Benchmark root: {benchmark_root or 'unknown'}",
+        "",
+        "Dataset options:",
+    ]
+    for index, dataset_candidate in enumerate(dataset_options, start=1):
+        lines.append(
+            (
+                f"{index}. dataset_id={dataset_candidate.get('dataset_id')} | "
+                f"name={dataset_candidate.get('name')} | "
+                f"domain={dataset_candidate.get('domain')} | "
+                f"files={_dataset_store_files_preview(dataset_candidate)}"
+            )
+        )
+    return "\n".join(lines)
+
+
+async def _select_benchmark_dataset_with_agent(
+    *,
+    agent,
+    task: str,
+    dataset_options: list[dict[str, object]],
+    benchmark_root: str,
+) -> tuple[dict[str, object] | None, dict[str, object]]:
+    debug_payload: dict[str, object] = {
+        "task": task,
+        "benchmark_root": benchmark_root,
+        "dataset_option_ids": [
+            str(item.get("dataset_id", "")).strip()
+            for item in dataset_options
+            if str(item.get("dataset_id", "")).strip()
+        ],
+        "attempts": [],
+    }
+    if not dataset_options:
+        debug_payload["failure_reason"] = "no_dataset_options"
+        return None, debug_payload
+    prompt = _build_benchmark_dataset_selection_prompt(
+        task=task,
+        dataset_options=dataset_options,
+        benchmark_root=benchmark_root,
+    )
+    timeout_seconds = _benchmark_register_agentic_selection_timeout_seconds()
+    result, invoke_debug = await _invoke_benchmark_register_selector(
+        selector=agent,
+        prompt=prompt,
+        timeout_seconds=timeout_seconds,
+    )
+    debug_payload["selector_invocation"] = invoke_debug
+    if result is None:
+        debug_payload["failure_reason"] = "agent_invoke_failed"
+        if invoke_debug.get("failure_reason") == "direct_invoke_timeout":
+            debug_payload["failure_reason"] = "agent_invoke_timeout"
+        if invoke_debug.get("failure_reason") == "fallback_invoke_timeout":
+            debug_payload["failure_reason"] = "agent_invoke_timeout"
+        if "timeout_seconds" in invoke_debug:
+            debug_payload["timeout_seconds"] = invoke_debug["timeout_seconds"]
+        return None, debug_payload
+    messages = result.get("messages", []) if isinstance(result, dict) else []
+    if messages:
+        refusal_message = _extract_messages_refusal(messages)
+        if refusal_message is not None:
+            debug_payload["failure_reason"] = "model_refusal"
+            debug_payload["attempts"] = [{"raw_output": refusal_message}]
+            return None, debug_payload
+        text = _last_ai_text(messages)
+    else:
+        refusal_message = _extract_model_refusal_message(result)
+        if refusal_message is not None:
+            debug_payload["failure_reason"] = "model_refusal"
+            debug_payload["attempts"] = [{"raw_output": refusal_message}]
+            return None, debug_payload
+        text = _message_text(result)
+    debug_payload["attempts"] = [{"raw_output": text}]
+    parsed = _extract_generic_json_payload(text)
+    selected_dataset_id = ""
+    selection_source = "agent_json"
+    if parsed is not None:
+        selected_dataset_id = str(parsed.get("selected_dataset_id", "")).strip()
+    if not selected_dataset_id and text.strip():
+        selected_dataset_id = _benchmark_dataset_id_from_text(
+            text=text,
+            dataset_options=dataset_options,
+        )
+        if selected_dataset_id:
+            selection_source = "agent_text_fallback"
+    debug_payload["selected_dataset_id"] = selected_dataset_id
+    debug_payload["selection_source"] = selection_source
+    for candidate in dataset_options:
+        if str(candidate.get("dataset_id", "")).strip() == selected_dataset_id:
+            return candidate, debug_payload
+    debug_payload["failure_reason"] = "dataset_not_selected"
+    return None, debug_payload
+
+
+def _benchmark_dataset_id_from_text(
+    *,
+    text: str,
+    dataset_options: list[dict[str, object]],
+) -> str:
+    normalized_text = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", text.casefold())
+    for candidate in dataset_options:
+        dataset_id = str(candidate.get("dataset_id", "")).strip()
+        if not dataset_id:
+            continue
+        normalized_id = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", dataset_id.casefold())
+        if normalized_id and normalized_id in normalized_text:
+            return dataset_id
+    return ""
+
+
+def _benchmark_selected_tools_from_text(
+    *,
+    text: str,
+    candidates: list[dict[str, object]],
+    excluded_tools: set[str],
+) -> list[str]:
+    normalized_text = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", text.casefold())
+    selected: list[str] = []
+    for candidate in candidates:
+        name = str(candidate.get("name", "")).strip()
+        if not name or name in excluded_tools:
+            continue
+        normalized_name = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", name.casefold())
+        if normalized_name and normalized_name in normalized_text:
+            selected.append(name)
+    return selected
+
+
+def _benchmark_register_agent_dataset_options(
+    *,
+    task: str,
+    workspace_root: Path,
+    operator_candidates: list[dict[str, object]],
+    excluded_tools: set[str],
+    benchmark_root: str = "",
+    limit: int = 6,
+) -> list[dict[str, object]]:
+    ranked_datasets = _rank_local_dataset_store_candidates(
+        task=task,
+        workspace_root=workspace_root,
+        limit=max(limit * 2, 12),
+    )
+    if not ranked_datasets:
+        return []
+    relevant_operators = _select_benchmark_candidate_subset(
+        task=task,
+        candidates=operator_candidates,
+        benchmark_root=benchmark_root,
+    )
+    if not relevant_operators:
+        relevant_operators = operator_candidates
+
+    options: list[tuple[int, int, int, dict[str, object]]] = []
+    for dataset_candidate in ranked_datasets:
+        compatible = [
+            candidate
+            for candidate in relevant_operators
+            if str(candidate.get("name", "")).strip() not in excluded_tools
+            and _benchmark_operator_compatible_with_dataset(
+                operator=candidate,
+                dataset_candidate=dataset_candidate,
+            )
+        ]
+        compatibility_count = len(compatible)
+        if compatibility_count <= 0:
+            continue
+        score = _benchmark_dataset_task_score(task=task, dataset_candidate=dataset_candidate)
+        shared_bonus = 1 if compatibility_count >= 2 or compatibility_count == len(relevant_operators) else 0
+        options.append((compatibility_count, shared_bonus, score, dataset_candidate))
+    options.sort(
+        key=lambda item: (
+            -item[0],
+            -item[1],
+            -item[2],
+            str(item[3].get("dataset_id", "")).casefold(),
+        )
+    )
+    ranked_options = [item[3] for item in options]
+    multi_tool_benchmark = (
+        len(relevant_operators) >= 2 or _task_requests_multiple_benchmark_tools(task)
+    )
+    if multi_tool_benchmark:
+        shared_generic = [
+            item
+            for item in ranked_options
+            if not _dataset_candidate_is_operator_specific(item)
+        ]
+        if shared_generic:
+            ranked_options = shared_generic
+    return ranked_options[: max(1, limit)]
 
 
 def _build_benchmark_case_repair_prompt(
@@ -3158,6 +4829,7 @@ def _materialize_benchmark_selection_cases(
     *,
     run_dir: Path,
     task: str,
+    workspace_root: Path,
     benchmark_root: str,
     selected_tools: list[str],
     selected_operators: list[dict[str, object]],
@@ -3168,17 +4840,81 @@ def _materialize_benchmark_selection_cases(
     cases_root = run_dir / "cases"
     cases_root.mkdir(parents=True, exist_ok=True)
     dataset_key = str(selection_report.get("dataset_key", "")).strip()
+    dataset_strategy = str(selection_report.get("dataset_strategy", "")).strip() or _benchmark_dataset_strategy_for_task(task)
+    selection_report["dataset_strategy"] = dataset_strategy
+    raw_tool_dataset_keys = selection_report.get("tool_dataset_keys")
+    tool_dataset_keys: dict[str, str] = (
+        {
+            str(tool): str(dataset_id).strip()
+            for tool, dataset_id in raw_tool_dataset_keys.items()
+            if isinstance(tool, str) and str(dataset_id).strip()
+        }
+        if isinstance(raw_tool_dataset_keys, dict)
+        else {}
+    )
+    if dataset_strategy == "shared_dataset" and not dataset_key and selected_tools:
+        selected_dataset = selection_report.get("selected_dataset")
+        if isinstance(selected_dataset, dict):
+            dataset_key = str(selected_dataset.get("dataset_id", "")).strip()
+        if not dataset_key:
+            dataset_candidate = _resolve_benchmark_dataset_candidate(
+                task=task,
+                workspace_root=workspace_root,
+                operator_candidates=selected_operators,
+                requested_tools=selected_tools,
+                excluded_tools=set(),
+                benchmark_root=benchmark_root,
+            )
+            if dataset_candidate is not None:
+                dataset_key = str(dataset_candidate.get("dataset_id", "")).strip()
+                if dataset_key:
+                    selection_report["dataset_key"] = dataset_key
+                    if not isinstance(selection_report.get("selected_dataset"), dict):
+                        selection_report["selected_dataset"] = dataset_candidate
+    if dataset_strategy == "per_operator_dataset" and not tool_dataset_keys:
+        tool_dataset_keys, selected_datasets = _resolve_benchmark_dataset_keys_for_tools(
+            task=task,
+            workspace_root=workspace_root,
+            operator_candidates=selected_operators,
+            selected_tools=selected_tools,
+            excluded_tools=set(),
+            benchmark_root=benchmark_root,
+        )
+        selection_report["tool_dataset_keys"] = tool_dataset_keys
+        selection_report["selected_datasets"] = selected_datasets
+        unique_dataset_keys = sorted({key for key in tool_dataset_keys.values() if key})
+        if len(unique_dataset_keys) == 1 and not dataset_key:
+            dataset_key = unique_dataset_keys[0]
+            selection_report["dataset_key"] = dataset_key
+    selected_dataset_by_key: dict[str, dict[str, object]] = {}
+    selected_dataset = selection_report.get("selected_dataset")
+    if isinstance(selected_dataset, dict):
+        selected_dataset_id = str(selected_dataset.get("dataset_id", "")).strip()
+        if selected_dataset_id:
+            selected_dataset_by_key[selected_dataset_id] = selected_dataset
+    selected_datasets = selection_report.get("selected_datasets")
+    if isinstance(selected_datasets, dict):
+        for key, value in selected_datasets.items():
+            if isinstance(value, dict):
+                dataset_id = str(value.get("dataset_id", "")).strip() or str(key).strip()
+                if dataset_id:
+                    selected_dataset_by_key[dataset_id] = value
     root_cases: dict[str, dict[str, object]] = {}
     case_rows: list[dict[str, object]] = []
     for operator in selected_operators:
         name = str(operator.get("name", "")).strip()
         if not name or name not in selected_tools:
             continue
+        case_dataset_key = tool_dataset_keys.get(name, dataset_key)
+        case_dataset_candidate = selected_dataset_by_key.get(case_dataset_key)
         row = _materialize_benchmark_selection_case(
             run_dir=run_dir,
+            workspace_root=workspace_root,
             benchmark_root=benchmark_root,
             operator=operator,
-            dataset_key=dataset_key,
+            dataset_key=case_dataset_key,
+            dataset_candidate=case_dataset_candidate,
+            dataset_strategy=dataset_strategy,
             selection_reason=str(selection_report.get("agent_selection_rationale", "")).strip()
             or str(selection_report.get("selection_strategy", "")),
         )
@@ -3192,6 +4928,7 @@ def _materialize_benchmark_selection_cases(
         "case_order": selected_tools,
         "cases": root_cases,
         "selection_strategy": selection_report.get("selection_strategy"),
+        "dataset_strategy": dataset_strategy,
     }
     _write_json(run_dir / "benchmark_plan.json", benchmark_plan)
     (run_dir / "benchmark_plan.md").write_text(
@@ -3210,9 +4947,20 @@ def _materialize_benchmark_selection_cases(
     dataset_resolution = {
         "run_dir": str(run_dir),
         "benchmark_root": benchmark_root,
+        "dataset_strategy": dataset_strategy,
         "repo_to_dataset": {
             repo: str(root_cases.get(repo, {}).get("dataset_key", ""))
             for repo in selected_tools
+        },
+        "selected_datasets": {
+            key: {
+                "dataset_id": value.get("dataset_id"),
+                "name": value.get("name"),
+                "source_kind": value.get("source_kind"),
+                "dataset_root": value.get("dataset_root"),
+                "files": value.get("files"),
+            }
+            for key, value in selected_dataset_by_key.items()
         },
     }
     _write_json(run_dir / "dataset_resolution.json", dataset_resolution)
@@ -3221,6 +4969,7 @@ def _materialize_benchmark_selection_cases(
             [
                 "# Dataset Resolution",
                 "",
+                f"- dataset_strategy: `{dataset_strategy}`",
                 *[
                     f"- `{repo}` -> `{dataset_resolution['repo_to_dataset'][repo]}`"
                     for repo in selected_tools
@@ -3248,9 +4997,12 @@ def _materialize_benchmark_selection_cases(
 def _materialize_benchmark_selection_case(
     *,
     run_dir: Path,
+    workspace_root: Path,
     benchmark_root: str,
     operator: dict[str, object],
     dataset_key: str,
+    dataset_candidate: dict[str, object] | None,
+    dataset_strategy: str,
     selection_reason: str,
 ) -> dict[str, object]:
     name = str(operator.get("name", "")).strip()
@@ -3258,7 +5010,12 @@ def _materialize_benchmark_selection_case(
     (case_dir / "wdl").mkdir(parents=True, exist_ok=True)
     (case_dir / "run").mkdir(parents=True, exist_ok=True)
     (case_dir / "docker").mkdir(parents=True, exist_ok=True)
-    selected_input_files = _benchmark_selected_input_files_from_operator(operator)
+    selected_input_files, selected_input_source = _benchmark_selected_input_files_for_case(
+        operator=operator,
+        dataset_key=dataset_key,
+        dataset_candidate=dataset_candidate,
+        workspace_root=workspace_root,
+    )
     runtime_image = str(operator.get("runtime_image", "")).strip()
     workflow_path = str(operator.get("workflow_path", "")).strip()
     inputs_json_path = str(operator.get("inputs_json_path", "")).strip()
@@ -3279,20 +5036,33 @@ def _materialize_benchmark_selection_case(
         dockerfile_path = local_dockerfile_path
     expected_outputs = _benchmark_expected_outputs_from_operator(operator)
     metric_keys: list[str] = []
+    shared_dataset_mode = dataset_strategy == "shared_dataset"
+    constraints = (
+        [
+            "Use the shared dataset selected during benchmark registration.",
+            "Use operator-store supplied workflow and inputs discovered during benchmark registration.",
+            "Do not switch to a different case-local dataset unless the shared dataset is truly unavailable and you return a blocker.",
+        ]
+        if shared_dataset_mode
+        else [
+            "Use the dataset/input bundle assigned to this operator during benchmark registration.",
+            "This exploratory benchmark may assign different datasets to different operators; record the actual dataset and inputs used.",
+            "Do not claim a fair same-dataset quality comparison unless all selected operators actually ran on the same dataset.",
+        ]
+    )
     manifest = {
         "repo_name": name,
         "repo_url": str(operator.get("source_repo", "")).strip(),
         "family": str(operator.get("family", "benchmark")).strip() or "benchmark",
         "dataset_key": dataset_key,
+        "dataset_strategy": dataset_strategy,
         "image_tag": runtime_image,
         "runtime_image": runtime_image,
         "repo_native_entry": "",
         "wdl_workflow_name": str(operator.get("entry_workflow", "")).strip() or name,
         "expected_outputs": expected_outputs,
         "metric_keys": metric_keys,
-        "constraints": [
-            "Use operator-store supplied workflow and inputs discovered during benchmark registration."
-        ],
+        "constraints": constraints,
         "case_dir": str(case_dir),
         "wdl_path": workflow_path or None,
         "inputs_path": inputs_json_path or None,
@@ -3302,12 +5072,9 @@ def _materialize_benchmark_selection_case(
         "input_json_candidates": [inputs_json_path] if inputs_json_path else [],
         "repo_native_command_candidates": [],
         "local_result_candidates": expected_outputs,
-        "selected_input_source": (
-            "benchmark_root_case_artifacts"
-            if local_workflow_path or local_dockerfile_path
-            else "operator_store_manifest"
-        ),
+        "selected_input_source": selected_input_source,
         "selected_input_files": selected_input_files,
+        "selected_dataset": dataset_candidate or {},
         "missing_input_keys": [],
         "selection_reason": selection_reason,
         "phase_status": {
@@ -3337,6 +5104,8 @@ def _materialize_benchmark_selection_case(
     _write_json(case_dir / "manifest.json", manifest)
     dataset_selection = {
         "dataset_key": dataset_key,
+        "dataset_strategy": dataset_strategy,
+        "selected_dataset": dataset_candidate or {},
         "dataset_download_dir": "",
         "selected_input_source": manifest["selected_input_source"],
         "selected_input_files": selected_input_files,
@@ -3349,6 +5118,8 @@ def _materialize_benchmark_selection_case(
         case_dir / "dataset_manifest.json",
         {
             "dataset_key": dataset_key,
+            "dataset_strategy": dataset_strategy,
+            "selected_dataset": dataset_candidate or {},
             "selected_input_files": selected_input_files,
             "source": manifest["selected_input_source"],
             "selection_reason": selection_reason,
@@ -3361,9 +5132,29 @@ def _materialize_benchmark_selection_case(
                 "",
                 f"- repo: `{name}`",
                 f"- operator_id: `{manifest['operator_id']}`",
+                f"- shared_dataset_key: `{dataset_key or 'missing'}`",
+                f"- dataset_strategy: `{dataset_strategy}`",
+                f"- selected_input_source: `{selected_input_source}`",
                 f"- workflow_path: `{workflow_path or 'missing'}`",
                 f"- inputs_json_path: `{inputs_json_path or 'missing'}`",
                 f"- runtime_image: `{runtime_image or 'missing'}`",
+                "",
+                "Rules:",
+                (
+                    "- Use the shared dataset selected by registration for this case."
+                    if shared_dataset_mode
+                    else "- Use the dataset/input bundle assigned to this operator by registration."
+                ),
+                (
+                    "- Do not fall back to a different local case dataset without first repairing the staged inputs in this case directory."
+                    if shared_dataset_mode
+                    else "- If the assigned dataset is unusable, you may try the operator-store manifest inputs or a compatible FASTQ/FASTA input implied by the staged workflow, but record the change and evidence clearly."
+                ),
+                (
+                    "- If the staged inputs and declared shared dataset disagree, fix the staged inputs before execution or return a blocker."
+                    if shared_dataset_mode
+                    else "- This case may use a different dataset from other tools; do not report a fair same-dataset comparison from this case alone."
+                ),
                 "",
                 selection_reason,
             ]
@@ -3413,6 +5204,7 @@ def _materialize_benchmark_selection_case(
                 "repo_url",
                 "family",
                 "dataset_key",
+                "dataset_strategy",
                 "image_tag",
                 "repo_native_entry",
                 "wdl_workflow_name",
@@ -3467,7 +5259,14 @@ def _sanitize_benchmark_inputs_json(
         if isinstance(value, list):
             if (
                 selected_input_files
-                and all(isinstance(item, str) and item.strip().startswith("/path/to/") for item in value)
+                and all(
+                    isinstance(item, str)
+                    and (
+                        item.strip().startswith("/path/to/")
+                        or _looks_like_existing_input_path(item.strip())
+                    )
+                    for item in value
+                )
                 and _looks_like_fastq_key(key_hint)
             ):
                 fastq_candidates = _benchmark_selected_paths_for_suffixes(
@@ -3477,18 +5276,19 @@ def _sanitize_benchmark_inputs_json(
                 if fastq_candidates:
                     return fastq_candidates[: len(value)]
             return [sanitize(item, key_hint=key_hint) for item in value]
-        if (
-            isinstance(value, str)
-            and selected_input_files
-            and value.strip().startswith("/path/to/")
-        ):
-            replacement = _benchmark_placeholder_replacement(
-                key_hint=key_hint,
-                placeholder=value,
-                selected_input_files=selected_input_files,
-            )
-            if replacement:
-                return replacement
+        if isinstance(value, str) and selected_input_files:
+            stripped_value = value.strip()
+            if stripped_value.startswith("/path/to/") or (
+                _looks_like_existing_input_path(stripped_value)
+                and _looks_like_benchmark_input_key(key_hint)
+            ):
+                replacement = _benchmark_placeholder_replacement(
+                    key_hint=key_hint,
+                    placeholder=value,
+                    selected_input_files=selected_input_files,
+                )
+                if replacement:
+                    return replacement
         return value
 
     cleaned_payload = sanitize(payload)
@@ -3506,6 +5306,38 @@ def _sanitize_benchmark_inputs_json(
 def _looks_like_fastq_key(key_hint: str) -> bool:
     lowered = key_hint.casefold()
     return "fastq" in lowered or "read" in lowered
+
+
+def _looks_like_benchmark_input_key(key_hint: str) -> bool:
+    lowered = key_hint.casefold()
+    return (
+        _looks_like_fastq_key(key_hint)
+        or "fasta" in lowered
+        or "gtf" in lowered
+        or "reference" in lowered
+        or "genome" in lowered
+    )
+
+
+def _looks_like_existing_input_path(value: str) -> bool:
+    if not value:
+        return False
+    if value.startswith(("/", "./", "../")):
+        return True
+    suffixes = (
+        ".fastq",
+        ".fq",
+        ".fastq.gz",
+        ".fq.gz",
+        ".fasta",
+        ".fa",
+        ".fna",
+        ".gtf",
+        ".json",
+        ".csv",
+    )
+    lowered = value.casefold()
+    return any(lowered.endswith(suffix) for suffix in suffixes)
 
 
 def _benchmark_selected_paths_for_suffixes(
@@ -3545,6 +5377,12 @@ def _benchmark_placeholder_replacement(
             suffixes=(".fastq", ".fq", ".fastq.gz", ".fq.gz"),
         )
         return fastq_candidates[1] if len(fastq_candidates) > 1 else None
+    if _looks_like_fastq_key(key_hint):
+        fastq_candidates = _benchmark_selected_paths_for_suffixes(
+            selected_input_files,
+            suffixes=(".fastq", ".fq", ".fastq.gz", ".fq.gz"),
+        )
+        return fastq_candidates[0] if fastq_candidates else None
     if "gtf" in lowered_key:
         gtf_candidates = _benchmark_selected_paths_for_suffixes(
             selected_input_files,
@@ -3556,7 +5394,15 @@ def _benchmark_placeholder_replacement(
             selected_input_files,
             suffixes=(".fa", ".fasta", ".fna"),
         )
-        return fasta_candidates[0] if fasta_candidates else None
+        if fasta_candidates:
+            return fasta_candidates[0]
+        if "reference" not in lowered_key and "genome" not in lowered_key:
+            fastq_candidates = _benchmark_selected_paths_for_suffixes(
+                selected_input_files,
+                suffixes=(".fastq", ".fq", ".fastq.gz", ".fq.gz"),
+            )
+            return fastq_candidates[0] if fastq_candidates else None
+        return None
     for suffix in (".bwt", ".pac", ".ann", ".amb", ".sa", ".csv"):
         if lowered_key.endswith(suffix.lstrip(".")) or placeholder_name.casefold().endswith(suffix):
             candidates = _benchmark_selected_paths_for_suffixes(
@@ -3581,6 +5427,137 @@ def _benchmark_selected_input_files_from_operator(operator: dict[str, object]) -
             continue
         selected[name] = str(path)
     return selected
+
+
+def _benchmark_selected_input_files_for_case(
+    *,
+    operator: dict[str, object],
+    dataset_key: str,
+    dataset_candidate: dict[str, object] | None = None,
+    workspace_root: Path,
+) -> tuple[dict[str, str], str]:
+    candidate_selected = _benchmark_selected_input_files_from_dataset_candidate(
+        dataset_candidate=dataset_candidate,
+        dataset_key=dataset_key,
+    )
+    if candidate_selected:
+        source_kind = str(dataset_candidate.get("source_kind", "")).strip() if dataset_candidate else ""
+        return candidate_selected, source_kind or "selected_dataset"
+    dataset_selected = _benchmark_selected_input_files_from_dataset_store(
+        operator=operator,
+        dataset_key=dataset_key,
+        workspace_root=workspace_root,
+    )
+    if dataset_selected:
+        return dataset_selected, "dataset_store"
+    selected = _benchmark_selected_input_files_from_operator(operator)
+    if selected:
+        return selected, "operator_store_manifest"
+    return {}, "missing_inputs"
+
+
+def _benchmark_selected_input_files_from_dataset_candidate(
+    *,
+    dataset_candidate: dict[str, object] | None,
+    dataset_key: str,
+) -> dict[str, str]:
+    if not isinstance(dataset_candidate, dict):
+        return {}
+    candidate_id = str(dataset_candidate.get("dataset_id", "")).strip()
+    if dataset_key.strip() and candidate_id and candidate_id != dataset_key.strip():
+        return {}
+    files = dataset_candidate.get("files")
+    if not isinstance(files, list):
+        return {}
+    selected: dict[str, str] = {}
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        uri = str(item.get("uri", "")).strip()
+        if not uri:
+            continue
+        path = Path(uri)
+        if not path.is_absolute():
+            path = _PROJECT_ROOT / path
+        if not path.exists() or not path.is_file():
+            continue
+        path_text = str(path)
+        name = str(item.get("name", "")).strip()
+        role = str(item.get("role", "")).strip()
+        if name:
+            selected[name] = path_text
+        if role and role not in selected:
+            selected[role] = path_text
+        filename = path.name
+        if filename and filename not in selected:
+            selected[filename] = path_text
+    return selected
+
+
+def _benchmark_selected_input_files_from_dataset_store(
+    *,
+    operator: dict[str, object],
+    dataset_key: str,
+    workspace_root: Path,
+) -> dict[str, str]:
+    dataset_key = dataset_key.strip()
+    if not dataset_key:
+        return {}
+    operator_id = str(operator.get("operator_id", "")).strip()
+    for store_root in _candidate_dataset_store_roots(workspace_root):
+        try:
+            store = DatasetStore(store_root)
+            rows = store.search_datasets(DatasetSearchFilter(dataset_id=dataset_key, limit=3))
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            if str(row.get("dataset_id", "")).strip() != dataset_key:
+                continue
+            record_path_raw = row.get("record_path")
+            if not isinstance(record_path_raw, str) or not record_path_raw.strip():
+                continue
+            record_path = Path(record_path_raw.strip())
+            if not record_path.is_absolute():
+                project_relative = _PROJECT_ROOT / record_path
+                if project_relative.exists():
+                    record_path = project_relative
+            payload = _read_json_file(record_path)
+            if not isinstance(payload, dict):
+                continue
+            compatible_ids = {
+                str(item).strip()
+                for item in payload.get("compatible_operator_ids", [])
+                if str(item).strip()
+            }
+            if compatible_ids and operator_id and operator_id not in compatible_ids:
+                continue
+            files = payload.get("files")
+            if not isinstance(files, list):
+                continue
+            selected: dict[str, str] = {}
+            for item in files:
+                if not isinstance(item, dict):
+                    continue
+                uri = str(item.get("uri", "")).strip()
+                name = str(item.get("name", "")).strip()
+                role = str(item.get("role", "")).strip()
+                if not uri:
+                    continue
+                path = Path(uri)
+                if not path.is_absolute():
+                    path = _PROJECT_ROOT / uri
+                if not path.exists() or not path.is_file():
+                    continue
+                if name:
+                    selected[name] = str(path)
+                if role and role not in selected:
+                    selected[role] = str(path)
+                filename = path.name
+                if filename and filename not in selected:
+                    selected[filename] = str(path)
+            if selected:
+                return selected
+    return {}
 
 
 def _benchmark_expected_outputs_from_operator(operator: dict[str, object]) -> list[str]:
@@ -3704,226 +5681,16 @@ def _run_deterministic_benchmark_case(
     if not isinstance(run_dir_raw, str) or not run_dir_raw.strip():
         return WorkerResult(
             status="failed",
-            summary=f"Benchmark {repo} helper is missing run_dir metadata.",
+            summary=f"Benchmark {repo} runtime is missing run_dir metadata.",
             failure_reason="missing_run_dir",
-        )
-    repo_root = _locate_repo_root_for_benchmark(node=node, workspace_root=workspace_root)
-    if repo_root is None:
-        return WorkerResult(
-            status="failed",
-            summary=f"Could not locate the repository root for deterministic benchmark execution of {repo}.",
-            failure_reason="missing_repo_root",
-        )
-    helper_script = repo_root / _BENCHMARK_HELPER_RELATIVE_PATH
-    if not helper_script.exists():
-        return WorkerResult(
-            status="failed",
-            summary="Benchmark helper script is missing from the repository.",
-            failure_reason="missing_benchmark_helper_script",
-        )
-    run_dir = Path(run_dir_raw)
-    case_dir = run_dir / "cases" / repo
-    manifest_path = case_dir / "manifest.json"
-    if not manifest_path.exists():
-        return WorkerResult(
-            status="failed",
-            summary=f"Benchmark case manifest for {repo} is missing.",
-            failure_reason="missing_case_manifest",
-        )
-    manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    reused_result = _try_reuse_benchmark_result_record(
-        repo=repo,
-        task=str(metadata.get("task", "")).strip(),
-        workspace_root=workspace_root,
-        run_dir=run_dir,
-        case_dir=case_dir,
-        manifest=manifest_payload,
-    )
-    if reused_result is not None:
-        operator_artifacts = _materialize_benchmark_operator_products(
-            run_dir=run_dir,
-            selected_tools=[repo],
-            source_repo="",
-        )
-        reused_result.artifacts.extend(operator_artifacts)
-        return reused_result
-    status_path = case_dir / "run" / "status.json"
-    wdl_status_path = case_dir / "wdl" / "status.json"
-    repo_native_available = _benchmark_has_repo_native_command(manifest_payload)
-    if repo_native_available:
-        if not _status_payload_is_success(status_path):
-            try:
-                _run_helper_json_command(
-                    [
-                        sys.executable,
-                        str(helper_script),
-                        "run-repo-native",
-                        "--repo",
-                        repo,
-                        "--run-dir",
-                        str(run_dir),
-                    ],
-                    cwd=repo_root,
-                    phase=f"run-repo-native:{repo}",
-                )
-            except RuntimeError as exc:
-                return WorkerResult(
-                    status="failed",
-                    summary=f"Deterministic benchmark execution failed for {repo}.",
-                    failure_reason=str(exc),
-                )
-        if not status_path.exists():
-            return WorkerResult(
-                status="failed",
-                summary=f"Benchmark execution for {repo} did not produce run/status.json.",
-                failure_reason="missing_run_status",
-            )
-        status_payload = json.loads(status_path.read_text(encoding="utf-8"))
-    else:
-        try:
-            _run_helper_json_command(
-                [
-                    sys.executable,
-                    str(helper_script),
-                    "run-wdl",
-                    "--repo",
-                    repo,
-                    "--run-dir",
-                    str(run_dir),
-                    "--timeout-seconds",
-                    str(_BENCHMARK_PREBUILD_TIMEOUT_SECONDS),
-                ],
-                cwd=repo_root,
-                phase=f"run-wdl:{repo}",
-            )
-        except RuntimeError as exc:
-            return WorkerResult(
-                status="failed",
-                summary=f"Deterministic WDL execution failed for {repo}.",
-                failure_reason=str(exc),
-            )
-        if not wdl_status_path.exists():
-            return WorkerResult(
-                status="failed",
-                summary=f"Benchmark WDL execution for {repo} did not produce wdl/status.json.",
-                failure_reason="missing_wdl_status",
-            )
-        wdl_status = json.loads(wdl_status_path.read_text(encoding="utf-8"))
-        wdl_output_dir = case_dir / "wdl" / "run_outputs"
-        wdl_output_dir.mkdir(parents=True, exist_ok=True)
-        copied_artifacts: list[str] = []
-        for artifact in wdl_status.get("output_artifacts", []):
-            try:
-                source = Path(str(artifact))
-            except (TypeError, ValueError):
-                continue
-            if not source.exists() or not source.is_file():
-                continue
-            target = wdl_output_dir / source.name
-            shutil.copy2(source, target)
-            copied_artifacts.append(str(target))
-        status_payload = {
-            "attempted": True,
-            "completed": True,
-            "success": bool(wdl_status.get("success")),
-            "returncode": wdl_status.get("returncode"),
-            "started_at": wdl_status.get("started_at"),
-            "finished_at": wdl_status.get("finished_at"),
-            "elapsed_seconds": wdl_status.get("elapsed_seconds"),
-            "command": ["run-wdl", repo],
-            "log_path": wdl_status.get("log_path"),
-            "output_dir": str(wdl_output_dir),
-            "output_artifacts": copied_artifacts,
-            "failure_reason": wdl_status.get("failure_reason"),
-            "execution_mode": "wdl_only",
-        }
-        _write_json(status_path, status_payload)
-    analysis_paths = _ensure_benchmark_analysis(
-        repo=repo,
-        run_dir=run_dir,
-        repo_root=repo_root,
-        helper_script=helper_script,
-    )
-    result_manifest = _write_benchmark_result_manifest(
-        repo=repo,
-        case_dir=case_dir,
-        status_payload=status_payload,
-    )
-    _materialize_benchmark_result_record(
-        repo=repo,
-        run_dir=run_dir,
-        case_dir=case_dir,
-        manifest=manifest_payload,
-        status_payload=status_payload,
-        result_manifest=result_manifest,
-    )
-    operator_artifacts = _materialize_benchmark_operator_products(
-        run_dir=run_dir,
-        selected_tools=[repo],
-        source_repo="",
-    )
-    artifacts = [
-        str(status_path),
-        *[
-            str(path)
-            for path in _benchmark_expected_output_paths(repo=repo, case_dir=case_dir, status_payload=status_payload)
-            if path.exists()
-        ],
-        str(case_dir / "run" / "result_manifest.json"),
-    ]
-    if (case_dir / "run" / "repo_native.log").exists():
-        artifacts.append(str(case_dir / "run" / "repo_native.log"))
-    if wdl_status_path.exists():
-        artifacts.append(str(wdl_status_path))
-    artifacts.extend(operator_artifacts)
-    artifacts.extend(str(path) for path in analysis_paths if path.exists())
-    evidence = [
-        str(case_dir / "execution_ready.json"),
-        str(case_dir / "dataset_manifest.json"),
-        str(status_path),
-        str(wdl_status_path),
-        str(case_dir / "run" / "result_manifest.json"),
-    ]
-    run_succeeded = bool(status_payload.get("success"))
-    expected_output_found = any(
-        item["exists"] for item in result_manifest["expected_outputs"].values()
-    )
-    wdl_only_mode = status_payload.get("execution_mode") == "wdl_only"
-    if wdl_only_mode:
-        expected_output_found = bool(status_payload.get("output_artifacts"))
-    success = run_succeeded and expected_output_found
-    summary = (
-        f"Executed the staged {repo} benchmark via the prepared helper path; "
-        f"repo-native run {'succeeded' if run_succeeded else 'did not complete successfully'}"
-    )
-    if status_payload.get("returncode") is not None:
-        summary += f" with exit code {status_payload['returncode']}."
-    else:
-        summary += "."
-    if run_succeeded and not expected_output_found:
-        return WorkerResult(
-            status="partial",
-            summary=summary + " Expected benchmark output files were not found, so this case is partial.",
-            artifacts=artifacts,
-            evidence=evidence,
-            next_action_hint="summary",
-            failure_reason="expected_outputs_missing",
-        )
-    if success:
-        return WorkerResult(
-            status="completed",
-            summary=summary,
-            artifacts=artifacts,
-            evidence=evidence,
-            next_action_hint="summary",
         )
     return WorkerResult(
         status="failed",
-        summary=summary,
-        artifacts=artifacts,
-        evidence=evidence,
-        next_action_hint="summary",
-        failure_reason=_optional_str(status_payload.get("failure_reason")) or "repo_native_failed",
+        summary=(
+            f"Deterministic benchmark case execution for {repo} has been removed; "
+            "benchmark case nodes must now run through the agent-owned execution path."
+        ),
+        failure_reason="deterministic_benchmark_case_removed",
     )
 
 
@@ -3946,9 +5713,6 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
         cases_root = run_dir / "cases"
         if cases_root.exists():
             selected_tools = sorted(path.name for path in cases_root.iterdir() if path.is_dir())
-    repo_root = _locate_repo_root_for_benchmark(node=node, workspace_root=workspace_root)
-    helper_script = repo_root / _BENCHMARK_HELPER_RELATIVE_PATH if repo_root is not None else None
-
     rows: list[dict[str, object]] = []
     artifacts: list[str] = []
     evidence: list[str] = []
@@ -3959,17 +5723,16 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
         if not manifest_path.exists():
             rows.append({"repo": repo, "status": "missing_case_manifest"})
             continue
-        if helper_script is not None and helper_script.exists():
-            analysis_paths = _ensure_benchmark_analysis(
-                repo=repo,
-                run_dir=run_dir,
-                repo_root=repo_root,
-                helper_script=helper_script,
-            )
-            artifacts.extend(str(path) for path in analysis_paths if path.exists())
+        analysis_paths = _ensure_benchmark_analysis(
+            repo=repo,
+            run_dir=run_dir,
+        )
+        artifacts.extend(str(path) for path in analysis_paths if path.exists())
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         status_path = case_dir / "run" / "status.json"
         analysis_path = case_dir / "analysis.json"
+        result_manifest_path = _benchmark_result_manifest_path(case_dir)
+        worker_result = _benchmark_case_worker_result(run_dir=run_dir, repo=repo)
         status_payload = (
             json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
         )
@@ -3978,7 +5741,17 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
             if analysis_path.exists()
             else {"artifact_paths": [], "metrics": {}, "artifact_checksums": {}}
         )
-        success = bool(status_payload.get("success"))
+        result_manifest = (
+            _read_json_file(result_manifest_path)
+            if result_manifest_path is not None
+            else {}
+        )
+        success = _benchmark_case_completed_from_artifacts(
+            worker_result=worker_result,
+            run_status=status_payload if isinstance(status_payload, dict) else {},
+            analysis_payload=analysis_payload if isinstance(analysis_payload, dict) else {},
+            result_manifest=result_manifest if isinstance(result_manifest, dict) else {},
+        )
         if success:
             completed_cases += 1
         rows.append(
@@ -3986,8 +5759,14 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
                 "repo": repo,
                 "dataset_key": manifest.get("dataset_key"),
                 "success": success,
-                "returncode": status_payload.get("returncode"),
-                "artifact_paths": analysis_payload.get("artifact_paths", []),
+                "returncode": _benchmark_case_returncode(
+                    worker_result=worker_result,
+                    run_status=status_payload if isinstance(status_payload, dict) else {},
+                    result_manifest=result_manifest if isinstance(result_manifest, dict) else {},
+                ),
+                "artifact_paths": _benchmark_case_analysis_artifact_paths(
+                    analysis_payload if isinstance(analysis_payload, dict) else {}
+                ),
                 "metrics": analysis_payload.get("metrics", {}),
             }
         )
@@ -3998,12 +5777,16 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
                     status_path,
                     analysis_path,
                     case_dir / "analysis.md",
-                    case_dir / "run" / "result_manifest.json",
+                    result_manifest_path,
                 )
-                if path.exists()
+                if path is not None and path.exists()
             ]
         )
-        evidence.extend(str(path) for path in (status_path, analysis_path) if path.exists())
+        evidence.extend(
+            str(path)
+            for path in (status_path, analysis_path, result_manifest_path)
+            if path is not None and path.exists()
+        )
         manifest["phase_status"] = {
             **dict(manifest.get("phase_status", {})),
             "analysis": "completed" if analysis_path.exists() else manifest.get("phase_status", {}).get("analysis"),
@@ -4012,6 +5795,20 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
         _write_json(manifest_path, manifest)
 
     overall_completed = bool(rows) and completed_cases == len(selected_tools)
+    completed_dataset_keys = sorted(
+        {
+            str(row.get("dataset_key", "")).strip()
+            for row in rows
+            if row.get("success") is True and str(row.get("dataset_key", "")).strip()
+        }
+    )
+    dataset_consistency = (
+        "same_dataset"
+        if len(completed_dataset_keys) == 1 and completed_cases >= 2
+        else "mixed_or_unverified"
+        if len(completed_dataset_keys) > 1
+        else "single_or_unknown"
+    )
     comparison = _build_benchmark_comparison(rows)
     payload = {
         "run_dir": str(run_dir),
@@ -4019,6 +5816,7 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
         "case_count": len(selected_tools),
         "completed_cases": completed_cases,
         "status": "completed" if overall_completed else "partial",
+        "dataset_consistency": dataset_consistency,
         "comparison": comparison,
         "rows": rows,
     }
@@ -4030,6 +5828,7 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
         f"- selected_tools: `{', '.join(selected_tools)}`",
         f"- completed_cases: `{completed_cases}` / `{len(selected_tools)}`",
         f"- status: `{payload['status']}`",
+        f"- dataset_consistency: `{dataset_consistency}`",
         "",
         "## Rows",
         "",
@@ -4090,6 +5889,175 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
     )
 
 
+def _benchmark_case_worker_result(*, run_dir: Path, repo: str) -> dict[str, object]:
+    payload = _read_json_file(run_dir / "worker_outputs" / f"{repo}.json")
+    if not isinstance(payload, dict):
+        return {}
+    result = payload.get("result")
+    return result if isinstance(result, dict) else {}
+
+
+def _benchmark_result_manifest_path(case_dir: Path) -> Path | None:
+    candidates = [
+        case_dir / "run" / "result_manifest.json",
+        case_dir / "result_manifest.json",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def _benchmark_case_completed_from_artifacts(
+    *,
+    worker_result: dict[str, object],
+    run_status: dict[str, object],
+    analysis_payload: dict[str, object],
+    result_manifest: dict[str, object],
+) -> bool:
+    success_markers = [
+        run_status.get("success") is True,
+        str(worker_result.get("status", "")).strip() == "completed",
+        str(analysis_payload.get("status", "")).strip() == "completed",
+        str(result_manifest.get("status", "")).strip() == "completed",
+        result_manifest.get("exit_code") == 0,
+        (
+            isinstance(result_manifest.get("workflow"), dict)
+            and result_manifest["workflow"].get("exit_code") == 0
+        ),
+    ]
+    if not any(success_markers):
+        return False
+    return _benchmark_case_has_output_evidence(
+        run_status=run_status,
+        analysis_payload=analysis_payload,
+        result_manifest=result_manifest,
+    )
+
+
+def _benchmark_case_has_output_evidence(
+    *,
+    run_status: dict[str, object],
+    analysis_payload: dict[str, object],
+    result_manifest: dict[str, object],
+) -> bool:
+    expected_outputs = result_manifest.get("expected_outputs")
+    if isinstance(expected_outputs, dict) and expected_outputs:
+        if any(
+            isinstance(item, dict) and item.get("exists") is True
+            for item in expected_outputs.values()
+        ):
+            return True
+    output_checks = result_manifest.get("output_checks")
+    if isinstance(output_checks, dict) and output_checks:
+        if any(
+            isinstance(item, dict)
+            and (
+                item.get("exists") is True
+                or item.get("present") is True
+                or int(item.get("size_bytes", 0) or 0) > 0
+            )
+            for item in output_checks.values()
+        ):
+            return True
+    file_checks = result_manifest.get("file_checks")
+    if isinstance(file_checks, dict) and file_checks:
+        if any(
+            isinstance(item, dict)
+            and (
+                item.get("exists") is True
+                or item.get("present") is True
+                or int(item.get("size_bytes", 0) or 0) > 0
+            )
+            for item in file_checks.values()
+        ):
+            return True
+    outputs = result_manifest.get("outputs")
+    if isinstance(outputs, dict) and outputs:
+        if any(
+            (
+                isinstance(item, dict)
+                and (
+                    item.get("exists") is True
+                    or item.get("present") is True
+                    or int(item.get("size_bytes", 0) or 0) > 0
+                )
+            )
+            or (isinstance(item, str) and bool(item.strip()))
+            for item in outputs.values()
+        ):
+            return True
+    analysis_checks = analysis_payload.get("output_checks")
+    if isinstance(analysis_checks, dict) and analysis_checks:
+        if any(
+            isinstance(item, dict)
+            and (
+                item.get("present") is True
+                or item.get("exists") is True
+                or int(item.get("size_bytes", 0) or 0) > 0
+            )
+            for item in analysis_checks.values()
+        ):
+            return True
+    output_presence = analysis_payload.get("output_presence")
+    if isinstance(output_presence, dict) and output_presence:
+        if any(value is True for value in output_presence.values()):
+            return True
+    output_sizes = analysis_payload.get("output_sizes_bytes")
+    if isinstance(output_sizes, dict) and output_sizes:
+        if any(int(value or 0) > 0 for value in output_sizes.values()):
+            return True
+    checks = analysis_payload.get("checks")
+    if isinstance(checks, dict):
+        if any(
+            key.endswith("_present") and value is True
+            for key, value in checks.items()
+        ):
+            return True
+    if analysis_payload.get("real_contigs_fasta_present") is True:
+        return True
+    output_artifacts = run_status.get("output_artifacts")
+    if isinstance(output_artifacts, list) and output_artifacts:
+        return True
+    return False
+
+
+def _benchmark_case_returncode(
+    *,
+    worker_result: dict[str, object],
+    run_status: dict[str, object],
+    result_manifest: dict[str, object],
+) -> int | None:
+    returncode = run_status.get("returncode")
+    if isinstance(returncode, int):
+        return returncode
+    workflow = result_manifest.get("workflow")
+    if isinstance(workflow, dict):
+        workflow_exit = workflow.get("exit_code")
+        if isinstance(workflow_exit, int):
+            return workflow_exit
+    manifest_exit = result_manifest.get("exit_code")
+    if isinstance(manifest_exit, int):
+        return manifest_exit
+    if str(worker_result.get("status", "")).strip() == "completed":
+        return 0
+    return None
+
+
+def _benchmark_case_analysis_artifact_paths(analysis_payload: dict[str, object]) -> list[str]:
+    artifact_paths = analysis_payload.get("artifact_paths")
+    if isinstance(artifact_paths, list) and artifact_paths:
+        return [str(item) for item in artifact_paths if str(item).strip()]
+    artifacts = analysis_payload.get("artifacts")
+    if isinstance(artifacts, dict):
+        return [
+            str(value)
+            for value in artifacts.values()
+            if isinstance(value, str) and value.strip()
+        ]
+    return []
+
+
 def _build_benchmark_comparison(rows: list[dict[str, object]]) -> dict[str, str] | None:
     completed_rows = [
         row
@@ -4098,10 +6066,19 @@ def _build_benchmark_comparison(rows: list[dict[str, object]]) -> dict[str, str]
     ]
     if not completed_rows:
         return None
+    dataset_keys = {
+        str(row.get("dataset_key", "")).strip()
+        for row in completed_rows
+        if str(row.get("dataset_key", "")).strip()
+    }
+    if len(dataset_keys) > 1:
+        return None
 
     best_n50 = _best_metric_repo(completed_rows, "n50", higher_is_better=True)
     lowest_contigs = _best_metric_repo(completed_rows, "contig_count", higher_is_better=False)
     largest_assembly = _best_metric_repo(completed_rows, "assembly_size", higher_is_better=True)
+    if not any((best_n50, lowest_contigs, largest_assembly)):
+        return None
     winners = [repo for repo in (best_n50, largest_assembly) if repo]
     if winners:
         overall_repo = max(set(winners), key=winners.count)
@@ -4363,30 +6340,111 @@ def _ensure_benchmark_analysis(
     *,
     repo: str,
     run_dir: Path,
-    repo_root: Path,
-    helper_script: Path,
 ) -> tuple[Path, Path]:
     analysis_json = run_dir / "cases" / repo / "analysis.json"
     analysis_md = run_dir / "cases" / repo / "analysis.md"
     if analysis_json.exists() and analysis_md.exists():
         return analysis_json, analysis_md
-    try:
-        _run_helper_json_command(
-            [
-                sys.executable,
-                str(helper_script),
-                "analyze-case",
-                "--repo",
-                repo,
-                "--run-dir",
-                str(run_dir),
-            ],
-            cwd=repo_root,
-            phase=f"analyze-case:{repo}",
+    case_dir = run_dir / "cases" / repo
+    manifest_payload = _read_json_file(case_dir / "manifest.json")
+    if not isinstance(manifest_payload, dict):
+        return analysis_json, analysis_md
+    status_payload = _read_json_file(case_dir / "run" / "status.json")
+    if not isinstance(status_payload, dict):
+        status_payload = _read_json_file(case_dir / "wdl" / "status.json")
+    if not isinstance(status_payload, dict):
+        return analysis_json, analysis_md
+    result_manifest_path = case_dir / "run" / "result_manifest.json"
+    result_manifest = _read_json_file(result_manifest_path)
+    if not isinstance(result_manifest, dict):
+        result_manifest = _write_benchmark_result_manifest(
+            repo=repo,
+            case_dir=case_dir,
+            status_payload=status_payload,
         )
-    except RuntimeError:
-        pass
+    _write_conservative_benchmark_analysis(
+        repo=repo,
+        case_dir=case_dir,
+        manifest=manifest_payload,
+        status_payload=status_payload,
+        result_manifest=result_manifest,
+    )
     return analysis_json, analysis_md
+
+
+def _write_conservative_benchmark_analysis(
+    *,
+    repo: str,
+    case_dir: Path,
+    manifest: dict[str, object],
+    status_payload: dict[str, object],
+    result_manifest: dict[str, object],
+) -> tuple[Path, Path]:
+    analysis_json_path = case_dir / "analysis.json"
+    analysis_md_path = case_dir / "analysis.md"
+    artifact_paths: list[str] = []
+    artifact_checksums: dict[str, str] = {}
+    expected_outputs = result_manifest.get("expected_outputs", {})
+    if isinstance(expected_outputs, dict):
+        for payload in expected_outputs.values():
+            if not isinstance(payload, dict):
+                continue
+            raw_path = payload.get("path")
+            if not isinstance(raw_path, str) or not raw_path.strip():
+                continue
+            path = Path(raw_path.strip())
+            if not path.exists() or not path.is_file():
+                continue
+            if str(path) not in artifact_paths:
+                artifact_paths.append(str(path))
+            checksum = _sha256_file(path)
+            if checksum:
+                artifact_checksums[path.name] = checksum
+    raw_output_artifacts = status_payload.get("output_artifacts")
+    if isinstance(raw_output_artifacts, list):
+        for item in raw_output_artifacts:
+            path = Path(str(item))
+            if not path.exists() or not path.is_file():
+                continue
+            if str(path) not in artifact_paths:
+                artifact_paths.append(str(path))
+            checksum = _sha256_file(path)
+            if checksum:
+                artifact_checksums[path.name] = checksum
+    real_contigs = any(Path(path).name == "contigs.fasta" for path in artifact_paths)
+    payload = {
+        "tool": repo,
+        "dataset_key": str(manifest.get("dataset_key", "")).strip(),
+        "status": "completed" if bool(status_payload.get("success")) else "failed",
+        "family": str(manifest.get("family", "unknown")).strip() or "unknown",
+        "artifact_paths": artifact_paths,
+        "artifact_checksums": artifact_checksums,
+        "metrics": {},
+        "real_contigs_fasta": real_contigs,
+        "summary": {
+            "returncode": status_payload.get("returncode"),
+            "artifact_count": len(artifact_paths),
+            "failure_reason": _optional_str(status_payload.get("failure_reason")),
+        },
+    }
+    _write_json(analysis_json_path, payload)
+    lines = [
+        "# Benchmark analysis",
+        "",
+        f"- Tool: `{repo}`",
+        f"- Dataset: `{payload['dataset_key'] or 'unknown'}`",
+        f"- Status: `{payload['status']}`",
+        f"- Real `contigs.fasta` produced: **{'Yes' if real_contigs else 'No'}**",
+    ]
+    if status_payload.get("returncode") is not None:
+        lines.append(f"- Return code: `{status_payload.get('returncode')}`")
+    if artifact_paths:
+        lines.append(f"- Artifact count: `{len(artifact_paths)}`")
+    failure_reason = _optional_str(status_payload.get("failure_reason"))
+    if failure_reason:
+        lines.append(f"- Failure reason: {failure_reason}")
+    analysis_md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return analysis_json_path, analysis_md_path
 
 
 def _write_benchmark_result_manifest(
@@ -4914,13 +6972,14 @@ async def _run_worker_and_capture(
             timeout_seconds=timeout_seconds,
         )
     except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
         _append_tool_activity_event(
             run_dir=run_dir,
             event={
                 "event": "node_exception",
                 "round_index": graph_round,
                 "node_id": node.node_id,
-                "error": f"{type(exc).__name__}: {exc}",
+                "error": error,
             },
         )
         _emit_supervisor_event(
@@ -4928,9 +6987,27 @@ async def _run_worker_and_capture(
             round_index=graph_round,
             node_id=node.node_id,
             title=node.title,
-            error=f"{type(exc).__name__}: {exc}",
+            error=error,
         )
-        raise
+        if _is_report_evidence_lane_node(node):
+            result = WorkerResult(
+                status="partial",
+                summary=(
+                    f"{node.node_id} stopped after a worker/tool exception; "
+                    "continue composition with available lane traces and mark this lane incomplete."
+                ),
+                artifacts=_report_partial_exception_artifacts(run_dir=run_dir, node=node),
+                evidence=[
+                    f"report evidence lane exception: {error}",
+                    f"raw trace: {run_dir / 'raw_worker_traces' / f'{node.node_id}.jsonl'}",
+                ],
+                failure_reason=f"worker_exception:{error}",
+                next_action_hint=(
+                    "Compose from completed lanes and explicitly state this lane's evidence gap."
+                ),
+            )
+        else:
+            raise
     finally:
         heartbeat_task.cancel()
         try:
@@ -4981,6 +7058,45 @@ async def _run_worker_and_capture(
         evidence=list(result.evidence),
     )
     return result
+
+
+def _is_report_evidence_lane_node(node: TaskNode) -> bool:
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    if str(metadata.get("task_type", "")).strip() != "report":
+        return False
+    node_id = node.node_id.lower()
+    if node_id in {"init_report", "compose_report", "summarize", "final_response"}:
+        return False
+    if node_id.startswith("retry_"):
+        node_id = node_id.removeprefix("retry_")
+    report_lane_base = str(metadata.get("report_lane_base", "")).strip()
+    return (
+        bool(report_lane_base)
+        or node_id.endswith("_lane")
+        or "_lane_" in node_id
+        or node_id.startswith(("monitoring_lane", "existing_data_lane", "computed_data_lane", "local_data_lane", "literature_lane"))
+    )
+
+
+def _report_partial_exception_artifacts(*, run_dir: Path, node: TaskNode) -> list[str]:
+    candidates = [
+        run_dir / "raw_worker_traces" / f"{node.node_id}.jsonl",
+        run_dir / "tool_activity.jsonl",
+    ]
+    artifacts = [str(path) for path in candidates if path.exists()]
+    node_dir_names = {
+        node.node_id,
+        node.node_id.removeprefix("retry_"),
+    }
+    for base_dir in (run_dir / "evidence_layers", run_dir / "artifacts", run_dir / "lanes"):
+        if not base_dir.exists():
+            continue
+        for path in base_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            if any(name in str(path.relative_to(base_dir)) for name in node_dir_names):
+                artifacts.append(str(path))
+    return list(dict.fromkeys(artifacts))
 
 
 def _worker_timeout_seconds(node: TaskNode) -> float | None:
@@ -5119,6 +7235,23 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
                 "Always include a final summarize node unless the graph has exactly one direct synthesis node followed by summarize.",
             ]
         )
+    if node.node_id == "init_report":
+        guidance_lines.extend(
+            [
+                "This node plans the dynamic report evidence graph; do not collect lane evidence or draft the report body here.",
+                "Decide each possible lane independently. Include a lane only when it has a concrete role in satisfying the user's report request.",
+                "Allowed report lane base types are monitoring_lane, existing_data_lane, computed_data_lane, and literature_lane.",
+                "monitoring_lane is for official surveillance, operational monitoring, dashboards, alerts, or latest status evidence.",
+                "existing_data_lane is for querying already materialized local databases, registries, APIs, dataset_store records, cached artifacts, and history records. It must not run new operators.",
+                "computed_data_lane is for cases where the report needs a value that does not already exist and should be produced by selecting a local operator plus compatible dataset/input bundle and running it.",
+                "literature_lane is for literature, preprints, technical reports, or primary-source web material.",
+                "You may create 0-3 nodes for each lane base type and at most 6 evidence-lane nodes total. Use multiple nodes of one base type only for genuinely independent branches, such as different pathogens, datasets, regions, or metrics.",
+                "Put the selected next-round graph in spawned_subgraph with keys nodes and edges. Each node must include node_id, title, objective, and capability_bundles; optional lane_type may name the lane base type.",
+                "Do not include init_report in spawned_subgraph. Include compose_report and summarize only if useful; the runtime will add them when missing.",
+                "Use node_id values that start with one of the lane base types, for example monitoring_lane, existing_data_lane_2, computed_data_lane_growth, or literature_lane_vaccine.",
+                "Use only these capability_bundles: web_search, web_fetch, db_access, api_call, data_filter, operator_filter, metric_compute, wdl_run, docker_build_run, summarize, validate.",
+            ]
+        )
     if node.node_id.startswith("summarize") or node.node_id == "summarize":
         guidance_lines.extend(
             [
@@ -5141,6 +7274,7 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
                 "For judgment-style answers, end the final response with a short section titled '判断轨迹（可审计摘要）'. This section must expose the auditable reasoning path, not private chain-of-thought: list the evidence checked, comparison rule, key inference, and uncertainty or gaps so a reviewer can spot likely false positives.",
                 "When something is partial, phrase it calmly and briefly; do not over-emphasize internal node names, rounds, worker contributions, or supervisor diagnostics.",
                 "Respect strict output constraints from the original user request. If the user asked for an exact short answer, put only that answer in summary.",
+                "When mentioning local files or artifacts in the final answer, do not expose absolute filesystem paths. For files inside the current run directory, use run-relative paths such as `cases/...`; for other files under the project, use project-relative paths such as `workspace/...`.",
                 "For benchmark answers, explicitly state which dataset or input bundle was actually used. If no canonical dataset key was resolved, say that clearly and name the real per-tool input set or benchmark-root case inputs instead.",
                 "Return JSON only; the summary field must contain the final natural-language response itself.",
             ]
@@ -5152,7 +7286,7 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
             guidance_lines.extend(
                 [
                     "For report task final responses, preserve the composed report as a structured Markdown deliverable instead of compressing it into a chat summary.",
-                    "Keep a stable report outline unless the user requested another format: title, executive summary, scope/time window, key findings, evidence analysis, uncertainty/limitations, recommendations or next steps when applicable, and sources/evidence appendix.",
+                    "Keep the report shape chosen by composition unless the user requested another format; do not force a default heading checklist at the final-response step.",
                     "Use one # title, ## section headings, and ### subsections only where they improve readability.",
                     "Write in the same language as the user's report request unless the user explicitly asked otherwise.",
                     "Do not expose worker names, internal node names, or orchestration diagnostics in the report body; mention local artifact paths only in the evidence appendix when useful for auditability.",
@@ -5205,7 +7339,16 @@ def _local_computation_context_material(*, node: TaskNode, workspace_root: Path)
     metadata = node.metadata if isinstance(node.metadata, dict) else {}
     task_type = str(metadata.get("task_type", "")).strip()
     node_id = node.node_id.lower()
-    is_report_local_data = task_type == "report" and "local_data" in node_id
+    report_lane_base = str(metadata.get("report_lane_base", "")).strip().lower()
+    is_report_existing_data = task_type == "report" and (
+        "existing_data" in node_id or report_lane_base == "existing_data_lane"
+    )
+    is_report_computed_data = task_type == "report" and (
+        "computed_data" in node_id
+        or "local_data" in node_id
+        or report_lane_base == "computed_data_lane"
+    )
+    is_report_local_data = is_report_existing_data or is_report_computed_data
     is_generic_evidence_or_compute = task_type == "generic" and (
         node_id in {"worker_context", "worker_solution"}
         or "data" in node_id
@@ -5225,9 +7368,43 @@ def _local_computation_context_material(*, node: TaskNode, workspace_root: Path)
     history_roots = _candidate_benchmark_result_store_roots(workspace_root)
     operator_roots = _candidate_operator_store_roots(workspace_root)
     dataset_roots = _candidate_dataset_store_roots(workspace_root)
-    header = "Report local data source context:" if is_report_local_data else "Local computation context:"
-    footer = "End report local data source context." if is_report_local_data else "End local computation context."
+    if is_report_existing_data:
+        header = "Report existing local data source context:"
+        footer = "End report existing local data source context."
+    elif is_report_computed_data:
+        header = "Report computed local data source context:"
+        footer = "End report computed local data source context."
+    else:
+        header = "Local computation context:"
+        footer = "End local computation context."
     if not history_roots and not operator_roots and not dataset_roots:
+        missing_local_lines = [
+            f"{header}",
+            "- Local report data is split into existing_data and computed_data lanes.",
+        ]
+        if is_report_existing_data:
+            missing_local_lines.extend(
+                [
+                    "- This existing_data lane should query only already materialized local databases, registries, APIs, cached artifacts, dataset_store records, and history records.",
+                    "- Do not run operators from this lane. If no relevant existing local data is available, return an explicit null-result statement.",
+                ]
+            )
+        else:
+            missing_local_lines.extend(
+                [
+                    "- This computed_data lane should first verify that existing data is insufficient, then look for a compatible operator and dataset/input bundle.",
+                    "- No operator_store or dataset_store directory was found under the current workspace or configured shared stores.",
+                    "- If the task needs prediction, simulation, scoring, metric calculation, or other computed evidence, explicitly report that no local operator/data library was available.",
+                ]
+            )
+        missing_local_lines.extend(
+            [
+                "- No local history store was found either; this is optional.",
+                f"{footer}",
+            ]
+        )
+        if is_report_local_data:
+            return "\n".join(missing_local_lines) + "\n"
         return (
             f"{header}\n"
             "- Local data lane split: existing_data comes from local databases, registries, APIs, cached run artifacts, dataset_store records, or history records; computed_data must be produced by selecting a local operator plus a compatible dataset/input bundle and running it.\n"
@@ -5270,23 +7447,35 @@ def _local_computation_context_material(*, node: TaskNode, workspace_root: Path)
     )
     lines = [
         header,
-        "- Local data lane split:",
+        "- Local report data is split into separate lanes:",
         "  - existing_data: already materialized local database rows, registries, APIs, cached run artifacts, dataset_store records, and optional history records.",
         "  - computed_data: values that do not exist yet and must be produced by retrieving a compatible local operator and dataset_store/input bundle, running the operator, then citing its new result artifacts.",
         "- Decision order:",
         "  1. First judge whether existing_data already answers the local-data need well enough.",
         "  2. Only if a concrete evidence gap remains, decide whether computed_data is actually required.",
         "  3. Only if new computation is truly required, search for a compatible operator and dataset/input bundle.",
-        "- Prioritize operator_store records as the local operator library for prediction, simulation, scoring, metric calculation, benchmark reruns, or other computed evidence.",
-        "- Use dataset_store records as the preferred local dataset/input-bundle library before falling back to operator input hints or old benchmark history.",
         "- Treat benchmark_comparison_history_store records as optional existing_data only when they are directly relevant; do not let history lookup distract from selecting and running a needed local operator.",
-        "- Do not run an operator by default just because operator_store candidates exist.",
-        "- When computed_data is needed, first explain why existing_data is insufficient, then choose the operator and dataset_store/input bundle, inspect the operator runtime fields, run the concrete WDL/Docker/entrypoint path if available, and record command, inputs, outputs, status, and metrics as evidence.",
         "- Keep local existing/computed evidence distinct from external web/literature evidence and cite record_path/run_id/operator_path/dataset/input paths when used.",
         f"- benchmark_comparison_history_store_roots: {', '.join(str(root) for root in history_roots) or 'none'}",
         f"- operator_store_roots: {', '.join(str(root) for root in operator_roots) or 'none'}",
         f"- dataset_store_roots: {', '.join(str(root) for root in dataset_roots) or 'none'}",
     ]
+    if is_report_existing_data:
+        lines.extend(
+            [
+                "- This is an existing_data lane: query and summarize only already available local records or APIs.",
+                "- Do not run operators from this lane. If existing_data is insufficient for a computed claim, record the gap for a computed_data lane or composition.",
+            ]
+        )
+    elif is_report_computed_data or is_generic_evidence_or_compute:
+        lines.extend(
+            [
+                "- Prioritize operator_store records as the local operator library for prediction, simulation, scoring, metric calculation, benchmark reruns, or other computed evidence.",
+                "- Use dataset_store records as the preferred local dataset/input-bundle library before falling back to operator input hints or old benchmark history.",
+                "- Do not run an operator by default just because operator_store candidates exist.",
+                "- When computed_data is needed, first explain why existing_data is insufficient, then choose the operator and dataset_store/input bundle, inspect the operator runtime fields, run the concrete WDL/Docker/entrypoint path if available, and record command, inputs, outputs, status, and metrics as evidence.",
+            ]
+        )
     if not ranked:
         lines.append(
             "- No indexed benchmark comparison history records were returned. You may still inspect the store roots for records/benchmark_result_record.json files if the report topic suggests historical benchmark evidence matters."
@@ -5417,12 +7606,43 @@ def _rank_local_dataset_store_candidates(
 ) -> list[dict[str, object]]:
     candidates: dict[str, tuple[int, int, dict[str, object]]] = {}
     query = task.strip()
+    for rank, candidate in enumerate(
+        _benchmark_user_dataset_candidates(task=task, workspace_root=workspace_root)
+    ):
+        dataset_id = str(candidate.get("dataset_id", "")).strip()
+        if not dataset_id:
+            continue
+        score = 100_000 + _benchmark_dataset_task_score(
+            task=task,
+            dataset_candidate=candidate,
+        )
+        candidates[dataset_id] = (score, rank, candidate)
     for store_root in _candidate_dataset_store_roots(workspace_root):
         try:
             store = DatasetStore(store_root)
-            rows = store.search_datasets(DatasetSearchFilter(query=query, limit=max(limit * 2, 12)))
+            query_rows = store.search_datasets(
+                DatasetSearchFilter(query=query, limit=max(limit * 2, 12))
+            )
         except sqlite3.Error:
-            rows = []
+            query_rows = []
+        try:
+            store = DatasetStore(store_root)
+            broad_rows = store.search_datasets(
+                DatasetSearchFilter(limit=max(limit * 6, 48))
+            )
+        except sqlite3.Error:
+            broad_rows = []
+        rows = query_rows
+        seen_dataset_ids = {
+            str(row.get("dataset_id", "")).strip()
+            for row in query_rows
+            if str(row.get("dataset_id", "")).strip()
+        }
+        rows.extend(
+            row
+            for row in broad_rows
+            if str(row.get("dataset_id", "")).strip() not in seen_dataset_ids
+        )
         if not rows:
             try:
                 store = DatasetStore(store_root)
@@ -5443,6 +7663,7 @@ def _rank_local_dataset_store_candidates(
                 ]
             )
             score = 4 * _benchmark_query_overlap_score(query=query, searchable_text=searchable)
+            score += _benchmark_dataset_task_score(task=task, dataset_candidate=candidate)
             current = candidates.get(dataset_id)
             if current is None or score > current[0] or (score == current[0] and rank < current[1]):
                 candidates[dataset_id] = (score, rank, candidate)
@@ -5457,8 +7678,13 @@ def _local_dataset_candidate_from_search_row(row: dict[str, object]) -> dict[str
     record_path_raw = str(row.get("record_path", "")).strip()
     payload: dict[str, object] = {}
     if record_path_raw:
+        record_path = Path(record_path_raw)
+        if not record_path.is_absolute():
+            project_relative = _PROJECT_ROOT / record_path
+            if project_relative.exists():
+                record_path = project_relative
         try:
-            payload = json.loads(Path(record_path_raw).read_text(encoding="utf-8"))
+            payload = json.loads(record_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             payload = {}
     return {
@@ -5745,11 +7971,20 @@ def _final_response_source_material(node: TaskNode) -> str:
             benchmark_dataset_material = _benchmark_final_response_dataset_material(
                 Path(run_dir_raw.strip())
             )
+    run_dir_raw = metadata.get("run_dir")
+    run_dir = (
+        Path(run_dir_raw)
+        if isinstance(run_dir_raw, str) and run_dir_raw.strip()
+        else None
+    )
+    final_summary = str(metadata.get("final_summary", ""))
+    if run_dir is not None:
+        final_summary = _relativize_user_facing_paths(final_summary, run_dir=run_dir)
     return (
         "Final response source material:\n"
         f"- Original user task: {metadata.get('task', '')}\n"
         f"- Supervisor decision: {json.dumps(payload, ensure_ascii=False, sort_keys=True)}\n"
-        f"- Supervisor final summary:\n{metadata.get('final_summary', '')}\n"
+        f"- Supervisor final summary:\n{final_summary}\n"
         f"{benchmark_dataset_material}"
         "End final response source material.\n"
     )
@@ -5829,7 +8064,11 @@ def _benchmark_final_response_dataset_material(run_dir: Path) -> str:
 def _parse_worker_result(text: str) -> WorkerResult:
     payload = _extract_json_object(text)
     if payload is None:
-        return WorkerResult(status="completed", summary=text.strip() or "Worker completed.")
+        return WorkerResult(
+            status="completed",
+            summary=text.strip() or "Worker completed.",
+            spawned_subgraph=_extract_spawned_subgraph_from_text(text),
+        )
     status = str(payload.get("status", "completed"))
     if status not in {"completed", "blocked", "failed", "partial"}:
         status = "partial"
@@ -5844,6 +8083,42 @@ def _parse_worker_result(text: str) -> WorkerResult:
         if isinstance(payload.get("spawned_subgraph"), dict)
         else None,
     )
+
+
+def _extract_spawned_subgraph_from_text(text: str) -> dict[str, Any] | None:
+    """Recover spawned_subgraph when the surrounding worker JSON is slightly malformed."""
+
+    match = re.search(r'"spawned_subgraph"\s*:\s*\{', text)
+    if match is None:
+        return None
+    start = match.end() - 1
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = text[start : index + 1]
+                try:
+                    payload = json.loads(candidate)
+                except json.JSONDecodeError:
+                    return None
+                return payload if isinstance(payload, dict) else None
+    return None
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -6036,10 +8311,26 @@ async def _render_user_response(
     except GraphBubbleUp:
         raise
     except Exception:
-        return fallback
-    if result.status == "completed" and result.summary.strip():
-        return _clean_user_response_text(result.summary)
-    return fallback
+        return _relativize_user_facing_paths(fallback, run_dir=run_dir)
+    finalizer_summary = _clean_user_response_text(result.summary)
+    if (
+        result.status in {"completed", "partial"}
+        and finalizer_summary
+        and not _is_placeholder_worker_summary(finalizer_summary)
+    ):
+        return _relativize_user_facing_paths(
+            finalizer_summary,
+            run_dir=run_dir,
+        )
+    return _relativize_user_facing_paths(fallback, run_dir=run_dir)
+
+
+def _is_placeholder_worker_summary(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.strip()).casefold()
+    return normalized in {
+        "worker completed.",
+        "worker completed",
+    }
 
 
 def _select_user_response_candidate(*, task_type: str, rounds) -> str | None:
@@ -6051,6 +8342,8 @@ def _select_user_response_candidate(*, task_type: str, rounds) -> str | None:
                 continue
             cleaned = _clean_user_response_text(str(item.summary or ""))
             if not cleaned:
+                continue
+            if _is_placeholder_worker_summary(cleaned):
                 continue
             score = (
                 _user_response_node_score(str(item.node_id), task_type=task_type)
@@ -6115,6 +8408,69 @@ def _clean_user_response_text(text: str) -> str:
     if quoted is not None:
         return quoted
     return stripped
+
+
+def _relativize_user_facing_paths(text: str, *, run_dir: Path) -> str:
+    """Hide machine-local absolute paths in user-facing final responses."""
+
+    if not text:
+        return text
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        path_text, trailing = _split_trailing_path_punctuation(token)
+        replacement = _user_facing_relative_path(path_text, run_dir=run_dir)
+        return f"{replacement}{trailing}"
+
+    relativized = _LOCAL_ABSOLUTE_PATH_RE.sub(replace, text)
+    return _strip_current_run_relative_prefixes(relativized, run_dir=run_dir)
+
+
+def _strip_current_run_relative_prefixes(text: str, *, run_dir: Path) -> str:
+    """Prefer run-relative paths for artifacts under the current run directory."""
+
+    prefixes = [f"orchestration_runs/{run_dir.name}/"]
+    try:
+        project_relative_run = run_dir.resolve(strict=False).relative_to(
+            _PROJECT_ROOT.resolve(strict=False)
+        )
+    except ValueError:
+        project_relative_run = None
+    if project_relative_run is not None:
+        prefixes.append(f"{project_relative_run.as_posix()}/")
+    for prefix in sorted(set(prefixes), key=len, reverse=True):
+        text = text.replace(prefix, "")
+    return text
+
+
+def _split_trailing_path_punctuation(path_text: str) -> tuple[str, str]:
+    trailing = ""
+    while path_text and path_text[-1] in ".,;:!?，。；：！？、)]}":
+        trailing = path_text[-1] + trailing
+        path_text = path_text[:-1]
+    return path_text, trailing
+
+
+def _user_facing_relative_path(path_text: str, *, run_dir: Path) -> str:
+    path = Path(path_text)
+    if not path.is_absolute():
+        return path_text
+    resolved = path.resolve(strict=False)
+    run_root = run_dir.resolve(strict=False)
+    project_root = _PROJECT_ROOT.resolve(strict=False)
+    if resolved != run_root and _is_relative_to(resolved, run_root):
+        return resolved.relative_to(run_root).as_posix()
+    if _is_relative_to(resolved, project_root):
+        return resolved.relative_to(project_root).as_posix()
+    return path_text
+
+
+def _is_relative_to(path: Path, base: Path) -> bool:
+    try:
+        path.relative_to(base)
+    except ValueError:
+        return False
+    return True
 
 
 def _extract_quoted_final_answer(text: str) -> str | None:
@@ -6430,29 +8786,6 @@ def _benchmark_result_store_root_for_run_dir(run_dir: Path) -> Path:
     return run_dir.parent / _BENCHMARK_COMPARISON_HISTORY_STORE_DIR
 
 
-def _candidate_benchmark_result_store_roots(workspace_root: Path) -> list[Path]:
-    roots: list[Path] = []
-    seen: set[Path] = set()
-
-    def add(path: Path | None) -> None:
-        if path is None or not path.exists() or not path.is_dir():
-            return
-        resolved = path.resolve()
-        if resolved in seen:
-            return
-        seen.add(resolved)
-        roots.append(resolved)
-
-    add(workspace_root / _BENCHMARK_COMPARISON_HISTORY_STORE_DIR)
-    shared_root = os.environ.get(
-        _SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT_ENV,
-        "",
-    ).strip()
-    if shared_root:
-        add(Path(shared_root))
-    return roots
-
-
 def _ensure_workspace_benchmark_history_backfilled(workspace_root: Path) -> list[Path]:
     target_root = (workspace_root / _BENCHMARK_COMPARISON_HISTORY_STORE_DIR).resolve()
     if target_root in _BENCHMARK_HISTORY_BACKFILL_ATTEMPTED:
@@ -6659,6 +8992,20 @@ def _write_metric_plan(*, run_dir: Path, selected_tools: list[str]) -> dict[str,
     return payload
 
 
+def _locate_repo_root_for_benchmark(*, node: TaskNode, workspace_root: Path) -> Path | None:
+    task = str(node.metadata.get("task", "")) if isinstance(node.metadata, dict) else ""
+    for match in _TASK_PATH_RE.finditer(task):
+        candidate = Path(match.group(1).rstrip("。.,)"))
+        repo_root = _walk_to_repo_root(candidate)
+        if repo_root is not None:
+            return repo_root
+    if workspace_root.parent.name == "workspace":
+        repo_root = _walk_to_repo_root(workspace_root.parent.parent)
+        if repo_root is not None:
+            return repo_root
+    return _walk_to_repo_root(Path(__file__).resolve().parents[3])
+
+
 def _run_helper_json_command(
     command: list[str],
     *,
@@ -6689,24 +9036,10 @@ def _run_helper_json_command(
     }
 
 
-def _locate_repo_root_for_benchmark(*, node: TaskNode, workspace_root: Path) -> Path | None:
-    task = str(node.metadata.get("task", "")) if isinstance(node.metadata, dict) else ""
-    for match in _TASK_PATH_RE.finditer(task):
-        candidate = Path(match.group(1).rstrip("。.,)"))
-        repo_root = _walk_to_repo_root(candidate)
-        if repo_root is not None:
-            return repo_root
-    if workspace_root.parent.name == "workspace":
-        repo_root = _walk_to_repo_root(workspace_root.parent.parent)
-        if repo_root is not None:
-            return repo_root
-    return _walk_to_repo_root(Path(__file__).resolve().parents[3])
-
-
 def _walk_to_repo_root(candidate: Path) -> Path | None:
     start = candidate if candidate.is_dir() else candidate.parent
     for path in (start, *start.parents):
-        if (path / _BENCHMARK_HELPER_RELATIVE_PATH).exists():
+        if (path / ".code2workspace").exists() or (path / ".git").exists():
             return path
     return None
 

@@ -260,21 +260,40 @@ def evaluate_benchmark_run(run_dir: Path) -> EvaluationResult:
     for tool, case_dir in zip(selected_tools, case_dirs, strict=False):
         run_status = _read_json(case_dir / "run" / "status.json")
         wdl_status = _read_json(case_dir / "wdl" / "status.json")
-        if run_status or wdl_status:
+        worker_result = _worker_result(run_dir, tool)
+        analysis_path = case_dir / "analysis.json"
+        result_manifest_path = _benchmark_result_manifest_path(case_dir)
+        if _benchmark_case_execution_started(
+            case_dir=case_dir,
+            run_status=run_status,
+            wdl_status=wdl_status,
+            worker_result=worker_result,
+        ):
             execution_started = True
             evidence.extend(
                 path
-                for path in (case_dir / "run" / "status.json", case_dir / "wdl" / "status.json")
+                for path in (
+                    case_dir / "run" / "status.json",
+                    case_dir / "wdl" / "status.json",
+                    analysis_path,
+                    result_manifest_path,
+                    run_dir / "worker_outputs" / f"{tool}.json",
+                )
                 if path.exists()
             )
-        if _benchmark_case_success(case_dir, run_status, wdl_status):
+        if _benchmark_case_success(
+            case_dir=case_dir,
+            run_status=run_status,
+            wdl_status=wdl_status,
+            worker_result=worker_result,
+        ):
             completed.append(tool)
-        elif run_status or wdl_status:
+        elif run_status or wdl_status or str(worker_result.get("status", "")).strip() in {"failed", "blocked"}:
             failed.append(tool)
-        analysis = _read_json(case_dir / "analysis.json")
+        analysis = _read_json(analysis_path)
         if isinstance(analysis.get("metrics"), dict) and analysis["metrics"]:
             metrics_extracted = True
-            evidence.append(case_dir / "analysis.json")
+            evidence.append(analysis_path)
         if (case_dir / "run" / "reused_result_record.json").exists():
             history_reuse = True
             evidence.append(case_dir / "run" / "reused_result_record.json")
@@ -292,6 +311,7 @@ def evaluate_benchmark_run(run_dir: Path) -> EvaluationResult:
     summary = _read_json(run_dir / "benchmark_supervisor_summary.json")
     comparison_valid = (
         len(completed) >= 2
+        and metrics_extracted
         and dataset_consistency in {"same_dataset", "explicitly_comparable"}
         and isinstance(summary.get("comparison"), dict)
         and bool(summary.get("comparison"))
@@ -545,13 +565,49 @@ def _benchmark_unsupported_claims(
         ("多工具比较", "multi-tool comparison", "工具比较", "两个工具", "多个工具"),
     ):
         claims.append("final response claims multi-operator comparison with fewer than two completed operators")
-    if not comparison_valid and _contains_any(text, ("公平比较", "fair comparison", "comparison is valid", "比较有效")):
+    if (
+        not comparison_valid
+        and _contains_any(text, ("公平比较", "fair comparison", "comparison is valid", "比较有效"))
+        and not _benchmark_execution_only_comparison_claim(text)
+    ):
         claims.append("final response claims a valid/fair comparison without comparable multi-operator evidence")
     return claims
 
 
 def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
     return any(needle in text for needle in needles)
+
+
+def _benchmark_execution_only_comparison_claim(text: str) -> bool:
+    """Allow scoped fairness claims limited to shared-input run success."""
+    success_scope = _contains_any(
+        text,
+        (
+            "能否跑通",
+            "是否跑通",
+            "都跑通",
+            "who ran successfully",
+            "both succeeded",
+            "both ran successfully",
+            "same dataset",
+            "同一数据集",
+            "同一份共享",
+        ),
+    )
+    no_winner_scope = _contains_any(
+        text,
+        (
+            "不能下更优结论",
+            "不能判断谁更优",
+            "不能负责任地下更强结论",
+            "暂时不能下",
+            "can't determine which is better",
+            "cannot determine which is better",
+            "cannot conclude which is better",
+            "no stronger conclusion",
+        ),
+    )
+    return success_scope and no_winner_scope
 
 
 def _first_failed_worker(run_dir: Path, node_order: list[str]) -> dict[str, Any] | None:
@@ -636,21 +692,143 @@ def _benchmark_cases_materialized(case_dirs: list[Path]) -> bool:
     return True
 
 
-def _benchmark_case_success(case_dir: Path, run_status: dict[str, Any], wdl_status: dict[str, Any]) -> bool:
-    if run_status.get("success") is not True and wdl_status.get("success") is not True:
+def _benchmark_case_success(
+    *,
+    case_dir: Path,
+    run_status: dict[str, Any],
+    wdl_status: dict[str, Any],
+    worker_result: dict[str, Any],
+) -> bool:
+    result_manifest = _read_json(_benchmark_result_manifest_path(case_dir))
+    analysis = _read_json(case_dir / "analysis.json")
+    success_markers = [
+        run_status.get("success") is True,
+        wdl_status.get("success") is True,
+        str(worker_result.get("status", "")).strip() == "completed",
+        str(result_manifest.get("status", "")).strip() == "completed",
+        result_manifest.get("exit_code") == 0,
+        (
+            isinstance(result_manifest.get("workflow"), dict)
+            and result_manifest["workflow"].get("exit_code") == 0
+        ),
+        str(analysis.get("status", "")).strip() == "completed",
+    ]
+    if not any(success_markers):
         return False
-    result_manifest = _read_json(case_dir / "run" / "result_manifest.json")
-    expected_outputs = result_manifest.get("expected_outputs")
-    if isinstance(expected_outputs, dict) and expected_outputs:
-        return any(
-            isinstance(item, dict) and item.get("exists") is True
-            for item in expected_outputs.values()
-        )
+    if _benchmark_manifest_has_output_evidence(result_manifest):
+        return True
+    if _benchmark_analysis_has_output_evidence(analysis):
+        return True
     if isinstance(run_status.get("output_artifacts"), list) and run_status["output_artifacts"]:
         return True
     if isinstance(wdl_status.get("output_artifacts"), list) and wdl_status["output_artifacts"]:
         return True
     return run_status.get("success") is True
+
+
+def _benchmark_case_execution_started(
+    *,
+    case_dir: Path,
+    run_status: dict[str, Any],
+    wdl_status: dict[str, Any],
+    worker_result: dict[str, Any],
+) -> bool:
+    if run_status or wdl_status or worker_result:
+        return True
+    if (case_dir / "analysis.json").exists():
+        return True
+    return _benchmark_result_manifest_path(case_dir).exists()
+
+
+def _benchmark_result_manifest_path(case_dir: Path) -> Path:
+    for path in (
+        case_dir / "run" / "result_manifest.json",
+        case_dir / "result_manifest.json",
+    ):
+        if path.exists():
+            return path
+    return case_dir / "run" / "result_manifest.json"
+
+
+def _benchmark_manifest_has_output_evidence(result_manifest: dict[str, Any]) -> bool:
+    expected_outputs = result_manifest.get("expected_outputs")
+    if isinstance(expected_outputs, dict) and expected_outputs:
+        if any(
+            isinstance(item, dict) and item.get("exists") is True
+            for item in expected_outputs.values()
+        ):
+            return True
+    output_checks = result_manifest.get("output_checks")
+    if isinstance(output_checks, dict) and output_checks:
+        if any(
+            isinstance(item, dict)
+            and (
+                item.get("exists") is True
+                or item.get("present") is True
+                or int(item.get("size_bytes", 0) or 0) > 0
+            )
+            for item in output_checks.values()
+        ):
+            return True
+    file_checks = result_manifest.get("file_checks")
+    if isinstance(file_checks, dict) and file_checks:
+        if any(
+            isinstance(item, dict)
+            and (
+                item.get("exists") is True
+                or item.get("present") is True
+                or int(item.get("size_bytes", 0) or 0) > 0
+            )
+            for item in file_checks.values()
+        ):
+            return True
+    outputs = result_manifest.get("outputs")
+    if isinstance(outputs, dict) and outputs:
+        if any(
+            (
+                isinstance(item, dict)
+                and (
+                    item.get("exists") is True
+                    or item.get("present") is True
+                    or int(item.get("size_bytes", 0) or 0) > 0
+                )
+            )
+            or (isinstance(item, str) and bool(item.strip()))
+            for item in outputs.values()
+        ):
+            return True
+    return False
+
+
+def _benchmark_analysis_has_output_evidence(analysis: dict[str, Any]) -> bool:
+    output_checks = analysis.get("output_checks")
+    if isinstance(output_checks, dict) and output_checks:
+        if any(
+            isinstance(item, dict)
+            and (
+                item.get("exists") is True
+                or item.get("present") is True
+                or int(item.get("size_bytes", 0) or 0) > 0
+            )
+            for item in output_checks.values()
+        ):
+            return True
+    output_presence = analysis.get("output_presence")
+    if isinstance(output_presence, dict) and output_presence:
+        if any(value is True for value in output_presence.values()):
+            return True
+    output_sizes = analysis.get("output_sizes_bytes")
+    if isinstance(output_sizes, dict) and output_sizes:
+        if any(int(value or 0) > 0 for value in output_sizes.values()):
+            return True
+    checks = analysis.get("checks")
+    if isinstance(checks, dict):
+        if any(
+            key.endswith("_present") and value is True
+            for key, value in checks.items()
+        ):
+            return True
+    return analysis.get("real_contigs_fasta_present") is True
 
 
 def _dataset_consistency(run_dir: Path, selected_tools: list[str], case_dirs: list[Path]) -> str:

@@ -13,15 +13,25 @@
 - Evidence depth is determined by the evidence need, not by whether the task is report or generic. Monitoring and source-backed judgment tasks should default to D2 evidence collection: targeted trusted-source search plus fetching/reading the concrete source artifacts behind claims.
 - For report monitoring lanes, prioritize user-specified sources, whitelisted official/primary sources, curated project skills or structured APIs, trusted-domain search, and only then full-web discovery for gaps.
 - Escalate monitoring depth to D3 for trend/change/watch-item analysis, and to D4 only for high-stakes, contested, highly uncertain, or explicitly comprehensive requests.
-- Follow a report template by default: title, executive summary, scope/time window, key findings, evidence analysis, uncertainty and limitations, recommendations or next steps when applicable, and sources/evidence appendix.
+- Let the report structure follow the task shape and evidence shape by default rather than forcing one fixed heading checklist.
+- Treat report structure selection as a generic shape-choice problem. Prefer choosing one primary archetype that fits the task and evidence instead of writing every report in the same house style.
+- Prefer a clear opening answer/current state, well-organized major sections, and a closing source list or evidence appendix, but allow section names to adapt to the report type.
+- When the task fits, prefer a total-subtotal-total report flow: opening answer, grouped evidence/findings, and a closing bounded takeaway.
+- Do not default to section labels like `Executive Summary` / `执行摘要` unless the user explicitly asked for them.
+- When historical reports are reused as local evidence, treat them as evidence containers or lead finders, not as formatting templates for the new report.
+- For Chinese reports, keep source-section headings in Chinese and avoid English-only labels when a Chinese heading is sufficient.
+- Avoid absolute filesystem paths in user-facing report prose by default; prefer relative paths or concise source labels unless the absolute path is specifically required for auditability.
 - Write in the same language as the user's report request unless the user explicitly asks otherwise.
 - Use Markdown heading hierarchy consistently: one `#` title, `##` major sections, and `###` subsections only when needed.
 - Do not expose worker names, internal node names, or orchestration diagnostics in the final report body unless they are necessary artifact references for auditability.
 - When external sources are used, keep citations/source references consistent and end with a compact source list or evidence appendix; when only local artifacts are used, list the local artifact paths that directly support the report.
 - Treat the final report as the primary deliverable: be comprehensive, but make the structure easy to scan.
 - If the report is comparative, include a compact comparison table and define the comparison criteria before drawing a conclusion.
+- If the report is a WHO-style risk assessment, include the assessed object, time anchor, risk dimensions, evidence strength, uncertainty, and overall risk/confidence judgment.
 - If the report is a risk assessment, include risk dimensions, evidence strength, uncertainty, and practical implications.
 - If the report is a monitoring brief, include current status, recent change, affected scope, source freshness, and watch items.
+- If the report is an evidence review or synthesis, distinguish direct evidence, proxy evidence, conflicting evidence, and unresolved gaps.
+- If the report is a decision memo, emphasize the decision-relevant bottom line, what matters now, and what remains uncertain.
 - If the report is a technical benchmark or evaluation report, include dataset/input scope, methods, metrics, results, limitations, and reproducibility notes.
 - Do not claim a source-backed fact without either a citation/source note or a clear local artifact reference.
 - Do not silently merge conflicting evidence; surface the conflict and explain which source is more direct, fresher, or more relevant.

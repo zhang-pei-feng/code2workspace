@@ -1041,54 +1041,34 @@ class HeuristicSupervisorPlanner:
                 TaskNode(
                     node_id="init_report",
                     title="Initialize report run",
-                    objective="Create the report run directory, save the request, outline evidence lanes, and define the report contract.",
-                    capability_bundles=["plan", "task_manage", "validate"],
-                    metadata={"decision_check": True},
-                ),
-                TaskNode(
-                    node_id="monitoring_lane",
-                    title="Monitoring lane",
-                    objective="Collect monitoring, operational, and official surveillance evidence relevant to the report topic.",
-                    capability_bundles=["web_search", "web_fetch", "validate"],
-                ),
-                TaskNode(
-                    node_id="local_data_lane",
-                    title="Local data lane",
-                    objective="Collect local structured data, registry, API, or database evidence relevant to the report topic.",
-                    capability_bundles=["db_access", "api_call", "validate"],
-                ),
-                TaskNode(
-                    node_id="literature_lane",
-                    title="Literature and web lane",
-                    objective="Collect literature, technical, and primary-source web evidence that complements the other lanes.",
-                    capability_bundles=["web_search", "web_fetch", "api_call"],
-                ),
-                TaskNode(
-                    node_id="compose_report",
-                    title="Compose report",
                     objective=(
-                        "Compose a full-length report from the completed lanes. Prefer a substantial report body "
-                        "with clear sections, explicit evidence-to-claim linkage, evidence source notes, and "
-                        "preserved uncertainty rather than a short brief."
+                        "Create the report run directory, save the request, define the report contract, "
+                        "and decide which report evidence lanes are actually needed. Split local evidence "
+                        "into existing-data retrieval and computed-data/operator lanes. Return a worker result "
+                        "whose spawned_subgraph contains only the needed lanes plus compose_report and summarize. "
+                        "Allowed lane base types are monitoring_lane, existing_data_lane, computed_data_lane, "
+                        "and literature_lane; use at most three nodes of the same lane base type and at most "
+                        "six evidence lanes total."
                     ),
-                    capability_bundles=["summarize", "validate"],
-                ),
-                TaskNode(
-                    node_id="summarize",
-                    title="Summarize report outcome",
-                    objective="Summarize report completion state, output paths, evidence layers, and remaining blockers.",
-                    capability_bundles=["summarize"],
+                    capability_bundles=["plan", "task_manage", "validate"],
+                    metadata={
+                        "planner_role": "report_dynamic_lane_planner",
+                        "decision_check": True,
+                    },
                 ),
             ]
-            edges = [
-                TaskEdge(source="init_report", target="monitoring_lane"),
-                TaskEdge(source="init_report", target="local_data_lane"),
-                TaskEdge(source="init_report", target="literature_lane"),
-                TaskEdge(source="monitoring_lane", target="compose_report"),
-                TaskEdge(source="local_data_lane", target="compose_report"),
-                TaskEdge(source="literature_lane", target="compose_report"),
-                TaskEdge(source="compose_report", target="summarize"),
-            ]
+            edges = []
+        elif _round_report_init_succeeded(prior_rounds[-1]):
+            graph = _report_graph_from_planner_result(
+                prior_round=prior_rounds[-1],
+                task=task,
+                round_index=round_index,
+                guidance_ids=guidance_ids,
+                retrieved_cases=retrieved_cases,
+            )
+            if graph is not None:
+                return graph
+            nodes, edges = _report_fallback_execution_nodes()
         else:
             failed_nodes = [
                 item.node_id
@@ -1143,6 +1123,223 @@ class HeuristicSupervisorPlanner:
             edges=edges,
             metadata=_graph_metadata(task=task, retrieved_cases=retrieved_cases, guidance_ids=guidance_ids),
         )
+
+
+_REPORT_LANE_CAPABILITIES: dict[str, list[CapabilityBundle]] = {
+    "monitoring_lane": ["web_search", "web_fetch", "validate"],
+    "existing_data_lane": ["db_access", "api_call", "data_filter", "validate"],
+    "computed_data_lane": [
+        "db_access",
+        "api_call",
+        "operator_filter",
+        "data_filter",
+        "metric_compute",
+        "wdl_run",
+        "docker_build_run",
+        "validate",
+    ],
+    "literature_lane": ["web_search", "web_fetch", "api_call", "validate"],
+}
+
+_REPORT_LANE_TITLES: dict[str, str] = {
+    "monitoring_lane": "Monitoring lane",
+    "existing_data_lane": "Existing local data lane",
+    "computed_data_lane": "Computed local data lane",
+    "literature_lane": "Literature and web lane",
+}
+
+_REPORT_LANE_OBJECTIVES: dict[str, str] = {
+    "monitoring_lane": "Collect official surveillance, monitoring, operational, or current-status evidence relevant to the report topic.",
+    "existing_data_lane": "Query local databases, registries, stores, cached artifacts, APIs, and history records for already available evidence relevant to the report topic. Do not run new operators.",
+    "computed_data_lane": "Decide whether a missing report value requires new computation; if so, select a compatible local operator plus dataset/input bundle, run the concrete path, and return computed result artifacts.",
+    "literature_lane": "Collect literature, preprint, technical, and primary-source web evidence that complements the other lanes.",
+}
+
+
+def _round_report_init_succeeded(round_result: TaskExecutionRound) -> bool:
+    return (
+        round_result.graph.task_type == "report"
+        and [item.node_id for item in round_result.node_results] == ["init_report"]
+        and round_result.node_results[0].status == "completed"
+    )
+
+
+def _report_lane_base(node_id: str) -> str | None:
+    normalized = _sanitize_node_id(node_id)
+    for base in _REPORT_LANE_CAPABILITIES:
+        if normalized == base or normalized.startswith(f"{base}_"):
+            return base
+    return None
+
+
+def _report_graph_from_planner_result(
+    *,
+    prior_round: TaskExecutionRound,
+    task: str,
+    round_index: int,
+    guidance_ids: list[str],
+    retrieved_cases: list[CaseTraceRecord],
+) -> TaskGraph | None:
+    planner_result = next(
+        (item for item in prior_round.node_results if item.node_id == "init_report"),
+        None,
+    )
+    if planner_result is None or not isinstance(planner_result.spawned_subgraph, dict):
+        return None
+    payload = planner_result.spawned_subgraph
+    raw_nodes = payload.get("nodes")
+    raw_edges = payload.get("edges", [])
+    if not isinstance(raw_nodes, list) or not raw_nodes:
+        return None
+
+    nodes: list[TaskNode] = []
+    seen_ids: set[str] = set()
+    lane_counts: dict[str, int] = {base: 0 for base in _REPORT_LANE_CAPABILITIES}
+    evidence_lane_count = 0
+    for index, raw_node in enumerate(raw_nodes, start=1):
+        if not isinstance(raw_node, dict):
+            continue
+        raw_id = str(raw_node.get("node_id") or "")
+        node_id = _sanitize_node_id(raw_id or f"report_lane_{index}")
+        if node_id in {"init_report", "summarize", "compose_report"}:
+            continue
+        base = _report_lane_base(node_id)
+        if base is None:
+            base_hint = str(raw_node.get("lane_type") or raw_node.get("base_type") or "")
+            base = _report_lane_base(base_hint)
+        if base is None or evidence_lane_count >= 6 or lane_counts[base] >= 3:
+            continue
+        lane_counts[base] += 1
+        evidence_lane_count += 1
+        if not node_id or node_id in seen_ids or _report_lane_base(node_id) != base:
+            suffix = "" if lane_counts[base] == 1 else f"_{lane_counts[base]}"
+            node_id = f"{base}{suffix}"
+        if node_id in seen_ids:
+            node_id = f"{base}_{lane_counts[base]}"
+        seen_ids.add(node_id)
+        title = str(raw_node.get("title") or _REPORT_LANE_TITLES[base])
+        objective = str(raw_node.get("objective") or _REPORT_LANE_OBJECTIVES[base])
+        capability_bundles = _sanitize_capability_bundles(raw_node.get("capability_bundles"))
+        capability_bundles = [
+            item for item in capability_bundles if item in _REPORT_LANE_CAPABILITIES[base]
+        ] or list(_REPORT_LANE_CAPABILITIES[base])
+        metadata = raw_node.get("metadata")
+        nodes.append(
+            TaskNode(
+                node_id=node_id,
+                title=title[:120],
+                objective=objective[:1000],
+                capability_bundles=capability_bundles,
+                metadata={
+                    **(metadata if isinstance(metadata, dict) else {}),
+                    "report_lane_base": base,
+                },
+            )
+        )
+
+    if not nodes:
+        return None
+    nodes.append(
+        TaskNode(
+            node_id="compose_report",
+            title="Compose report",
+            objective=(
+                "Compose a full-length report from the completed lanes. Prefer a substantial report body "
+                "with clear sections, explicit evidence-to-claim linkage, evidence source notes, and "
+                "preserved uncertainty rather than a short brief."
+            ),
+            capability_bundles=["summarize", "validate"],
+        )
+    )
+    nodes.append(
+        TaskNode(
+            node_id="summarize",
+            title="Summarize report outcome",
+            objective="Summarize report completion state, output paths, evidence layers, and remaining blockers.",
+            capability_bundles=["summarize"],
+        )
+    )
+    node_ids = {node.node_id for node in nodes}
+    edges = _sanitize_edges(raw_edges, node_ids)
+    if not edges:
+        edges = [TaskEdge(source=node.node_id, target="compose_report") for node in nodes if node.node_id not in {"compose_report", "summarize"}]
+        edges.append(TaskEdge(source="compose_report", target="summarize"))
+    edges = _connect_terminal_nodes_to_summarize(nodes, edges)
+    if not any(edge.target == "compose_report" for edge in edges):
+        edges.extend(
+            TaskEdge(source=node.node_id, target="compose_report")
+            for node in nodes
+            if node.node_id not in {"compose_report", "summarize"}
+        )
+    if not any(edge.source == "compose_report" and edge.target == "summarize" for edge in edges):
+        edges.append(TaskEdge(source="compose_report", target="summarize"))
+
+    return TaskGraph(
+        graph_id=f"report-r{round_index}",
+        task_type="report",
+        round_index=round_index,
+        nodes=_attach_common_node_metadata(
+            nodes,
+            task=task,
+            task_type="report",
+            guidance_ids=guidance_ids,
+        ),
+        edges=edges,
+        metadata={
+            **_graph_metadata(task=task, retrieved_cases=retrieved_cases, guidance_ids=guidance_ids),
+            "planner_generated": True,
+            "planner_summary": planner_result.summary,
+            "lane_counts": lane_counts,
+        },
+    )
+
+
+def _report_fallback_execution_nodes() -> tuple[list[TaskNode], list[TaskEdge]]:
+    nodes = [
+        TaskNode(
+            node_id="monitoring_lane",
+            title=_REPORT_LANE_TITLES["monitoring_lane"],
+            objective=_REPORT_LANE_OBJECTIVES["monitoring_lane"],
+            capability_bundles=list(_REPORT_LANE_CAPABILITIES["monitoring_lane"]),
+        ),
+        TaskNode(
+            node_id="existing_data_lane",
+            title=_REPORT_LANE_TITLES["existing_data_lane"],
+            objective=_REPORT_LANE_OBJECTIVES["existing_data_lane"],
+            capability_bundles=list(_REPORT_LANE_CAPABILITIES["existing_data_lane"]),
+        ),
+        TaskNode(
+            node_id="computed_data_lane",
+            title=_REPORT_LANE_TITLES["computed_data_lane"],
+            objective=_REPORT_LANE_OBJECTIVES["computed_data_lane"],
+            capability_bundles=list(_REPORT_LANE_CAPABILITIES["computed_data_lane"]),
+        ),
+        TaskNode(
+            node_id="literature_lane",
+            title=_REPORT_LANE_TITLES["literature_lane"],
+            objective=_REPORT_LANE_OBJECTIVES["literature_lane"],
+            capability_bundles=list(_REPORT_LANE_CAPABILITIES["literature_lane"]),
+        ),
+        TaskNode(
+            node_id="compose_report",
+            title="Compose report",
+            objective="Compose the report from all available evidence lanes.",
+            capability_bundles=["summarize", "validate"],
+        ),
+        TaskNode(
+            node_id="summarize",
+            title="Summarize report outcome",
+            objective="Summarize report completion state, output paths, evidence layers, and remaining blockers.",
+            capability_bundles=["summarize"],
+        ),
+    ]
+    edges = [
+        TaskEdge(source=node.node_id, target="compose_report")
+        for node in nodes
+        if node.node_id not in {"compose_report", "summarize"}
+    ]
+    edges.append(TaskEdge(source="compose_report", target="summarize"))
+    return nodes, edges
 
 
 def _first_unresolved_node(round_result: TaskExecutionRound, *, fallback: str) -> str:
@@ -1353,8 +1550,8 @@ def _sanitize_edges(value: object, node_ids: set[str]) -> list[TaskEdge]:
     for raw_edge in value:
         if not isinstance(raw_edge, dict):
             continue
-        source = _sanitize_node_id(str(raw_edge.get("source") or ""))
-        target = _sanitize_node_id(str(raw_edge.get("target") or ""))
+        source = _sanitize_node_id(str(raw_edge.get("source") or raw_edge.get("from") or ""))
+        target = _sanitize_node_id(str(raw_edge.get("target") or raw_edge.get("to") or ""))
         if source not in node_ids or target not in node_ids or source == target:
             continue
         key = (source, target)
@@ -2129,6 +2326,11 @@ def _node_decision_action(
                 "finalize",
                 "init_report completed but did not expose a report contract, artifact, or evidence note.",
             )
+        if not _report_contract_declares_shape(node=node, result=result):
+            return (
+                "finalize",
+                "init_report completed, but the report contract did not declare a report shape/archetype or equivalent organizing field.",
+            )
 
     metadata = node.metadata if isinstance(node.metadata, dict) else {}
     if (
@@ -2148,6 +2350,73 @@ def _node_decision_action(
             )
 
     return "continue", "Node outcome is sufficient to continue."
+
+
+def _report_contract_declares_shape(*, node: TaskNode, result: WorkerResult) -> bool:
+    contract_payload = _load_report_contract_payload(node=node, result=result)
+    if not isinstance(contract_payload, dict):
+        # Preserve compatibility for runs/tests that only expose a contract artifact label
+        # without a readable JSON payload.
+        return True
+    shape_keys = (
+        "shape_archetype",
+        "report_archetype",
+        "expected_report_shape",
+        "required_sections_outline",
+        "organizing_logic",
+    )
+    return any(_report_contract_shape_value_present(contract_payload.get(key)) for key in shape_keys)
+
+
+def _report_contract_shape_value_present(value: object) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set)):
+        return any(bool(str(item).strip()) for item in value)
+    if isinstance(value, dict):
+        return bool(value)
+    return False
+
+
+def _load_report_contract_payload(*, node: TaskNode, result: WorkerResult) -> dict[str, object] | None:
+    for path in _candidate_report_contract_paths(node=node, result=result):
+        if path.suffix.casefold() != ".json" or not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _candidate_report_contract_paths(*, node: TaskNode, result: WorkerResult) -> list[Path]:
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    run_dir_value = str(metadata.get("run_dir", "")).strip()
+    run_dir = Path(run_dir_value) if run_dir_value else None
+    candidates: list[Path] = []
+
+    def _append_candidate(path_value: str) -> None:
+        raw = str(path_value).strip()
+        if not raw:
+            return
+        candidate = Path(raw)
+        if not candidate.is_absolute() and run_dir is not None:
+            candidate = run_dir / candidate
+        if candidate not in candidates:
+            candidates.append(candidate)
+
+    for artifact in result.artifacts:
+        _append_candidate(str(artifact))
+    if run_dir is not None:
+        for relative_path in (
+            "report_init/report_contract.json",
+            "initialization/report_contract.json",
+            "report_contract.json",
+        ):
+            _append_candidate(relative_path)
+    return candidates
 
 
 def _node_decision_finalizing_nodes(round_result: TaskExecutionRound) -> list[str]:

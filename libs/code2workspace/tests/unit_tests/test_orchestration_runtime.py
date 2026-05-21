@@ -15,8 +15,10 @@ from code2workspace.orchestration_runtime import (
     HeuristicSupervisorPlanner,
     ModelRefusalError,
     TaskEdge,
+    TaskExecutionRound,
     TaskGraph,
     TaskNode,
+    WorkerNodeResult,
     WorkerResult,
     classify_task,
     classify_task_with_model,
@@ -364,18 +366,273 @@ def test_planner_creates_report_graph() -> None:
     assert graph.task_type == "report"
     assert [node.node_id for node in graph.nodes] == [
         "init_report",
-        "monitoring_lane",
-        "local_data_lane",
-        "literature_lane",
+    ]
+    assert graph.nodes[0].capability_bundles == ["plan", "task_manage", "validate"]
+    assert graph.nodes[0].metadata["planner_role"] == "report_dynamic_lane_planner"
+    assert "spawned_subgraph" in graph.nodes[0].objective
+
+
+def test_planner_creates_dynamic_report_lane_graph_from_init_result() -> None:
+    planner = HeuristicSupervisorPlanner()
+    first_graph = planner.plan_round(
+        task="请写一份 XFG.1.1 风险评估报告，需要监测数据、本地历史数据、本地算子计算增长率、文献证据。",
+        retrieved_cases=[],
+        prior_rounds=[],
+    )
+    first_round = TaskExecutionRound(
+        graph=first_graph,
+        node_results=[
+            WorkerNodeResult(
+                node_id="init_report",
+                status="completed",
+                summary="report contract initialized",
+                artifacts=["report_contract.md"],
+                spawned_subgraph={
+                    "nodes": [
+                        {
+                            "node_id": "monitoring_lane_global",
+                            "title": "Global monitoring",
+                            "objective": "Collect global surveillance evidence.",
+                            "capability_bundles": ["web_search", "web_fetch", "validate"],
+                        },
+                        {
+                            "node_id": "existing_data_lane_history",
+                            "title": "History store",
+                            "objective": "Query reusable local history records.",
+                            "capability_bundles": ["db_access", "api_call", "data_filter", "validate"],
+                        },
+                        {
+                            "node_id": "computed_data_lane_growth",
+                            "title": "Growth computation",
+                            "objective": "Run a local operator to compute growth rate if existing data is insufficient.",
+                            "capability_bundles": ["operator_filter", "data_filter", "metric_compute", "wdl_run", "validate"],
+                        },
+                        {
+                            "node_id": "literature_lane_escape",
+                            "title": "Immune escape literature",
+                            "objective": "Collect literature evidence.",
+                            "capability_bundles": ["web_search", "web_fetch", "api_call", "validate"],
+                        },
+                    ],
+                    "edges": [
+                        {"from": "monitoring_lane_global", "to": "compose_report"},
+                        {"source": "existing_data_lane_history", "target": "compose_report"},
+                        {"source": "computed_data_lane_growth", "target": "compose_report"},
+                        {"source": "literature_lane_escape", "target": "compose_report"},
+                        {"source": "compose_report", "target": "summarize"},
+                    ],
+                },
+            )
+        ],
+    )
+
+    graph = planner.plan_round(
+        task="请写一份 XFG.1.1 风险评估报告，需要监测数据、本地历史数据、本地算子计算增长率、文献证据。",
+        retrieved_cases=[],
+        prior_rounds=[first_round],
+    )
+
+    assert [node.node_id for node in graph.nodes] == [
+        "monitoring_lane_global",
+        "existing_data_lane_history",
+        "computed_data_lane_growth",
+        "literature_lane_escape",
         "compose_report",
         "summarize",
     ]
-    assert graph.nodes[0].capability_bundles == ["plan", "task_manage", "validate"]
-    assert graph.nodes[1].capability_bundles == ["web_search", "web_fetch", "validate"]
-    assert graph.nodes[2].capability_bundles == ["db_access", "api_call", "validate"]
-    assert graph.nodes[3].capability_bundles == ["web_search", "web_fetch", "api_call"]
-    assert graph.nodes[4].capability_bundles == ["summarize", "validate"]
-    assert "evidence source notes" in graph.nodes[4].objective
+    assert graph.nodes[1].metadata["report_lane_base"] == "existing_data_lane"
+    assert graph.nodes[2].metadata["report_lane_base"] == "computed_data_lane"
+    assert graph.nodes[2].capability_bundles == [
+        "operator_filter",
+        "data_filter",
+        "metric_compute",
+        "wdl_run",
+        "validate",
+    ]
+
+
+def test_dynamic_report_lane_graph_caps_lane_counts() -> None:
+    planner = HeuristicSupervisorPlanner()
+    first_graph = planner.plan_round(
+        task="请写一份复杂报告。",
+        retrieved_cases=[],
+        prior_rounds=[],
+    )
+    requested_nodes = [
+        {
+            "node_id": f"computed_data_lane_metric_{index}",
+            "title": f"Metric {index}",
+            "objective": "Compute a metric.",
+            "capability_bundles": ["operator_filter", "metric_compute", "validate"],
+        }
+        for index in range(1, 6)
+    ] + [
+        {
+            "node_id": f"monitoring_lane_region_{index}",
+            "title": f"Region {index}",
+            "objective": "Collect monitoring evidence.",
+            "capability_bundles": ["web_search", "web_fetch", "validate"],
+        }
+        for index in range(1, 6)
+    ]
+    first_round = TaskExecutionRound(
+        graph=first_graph,
+        node_results=[
+            WorkerNodeResult(
+                node_id="init_report",
+                status="completed",
+                summary="report contract initialized",
+                artifacts=["report_contract.md"],
+                spawned_subgraph={"nodes": requested_nodes, "edges": []},
+            )
+        ],
+    )
+
+    graph = planner.plan_round(
+        task="请写一份复杂报告。",
+        retrieved_cases=[],
+        prior_rounds=[first_round],
+    )
+
+    evidence_nodes = [
+        node for node in graph.nodes if node.node_id not in {"compose_report", "summarize"}
+    ]
+    assert len(evidence_nodes) == 6
+    assert sum(node.metadata["report_lane_base"] == "computed_data_lane" for node in evidence_nodes) == 3
+    assert sum(node.metadata["report_lane_base"] == "monitoring_lane" for node in evidence_nodes) == 3
+
+
+@pytest.mark.asyncio
+async def test_init_report_without_shape_declared_finalizes_node_decision(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-report-shape-missing"
+    (run_dir / "report_init").mkdir(parents=True)
+    (run_dir / "report_init" / "report_contract.json").write_text(
+        json.dumps(
+            {
+                "language": "zh-CN",
+                "tone": "formal",
+                "citation_style": "numbered",
+            }
+        ),
+        encoding="utf-8",
+    )
+    graph = TaskGraph(
+        graph_id="graph-report-shape-missing",
+        task_type="report",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="init_report",
+                title="Initialize report",
+                objective="plan report graph",
+                capability_bundles=["plan", "task_manage", "validate"],
+                metadata={"decision_check": True, "run_dir": str(run_dir)},
+            ),
+            TaskNode(
+                node_id="summarize",
+                title="Summarize",
+                objective="summarize outcome",
+                capability_bundles=["summarize"],
+            ),
+        ],
+        edges=[TaskEdge(source="init_report", target="summarize")],
+    )
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "init_report":
+            return WorkerResult(
+                status="completed",
+                summary="report contract initialized",
+                artifacts=["report_init/report_contract.json"],
+                spawned_subgraph={
+                    "nodes": [
+                        {
+                            "node_id": "monitoring_lane",
+                            "title": "Monitoring lane",
+                            "objective": "Collect monitoring evidence.",
+                            "capability_bundles": ["web_search", "web_fetch", "validate"],
+                        }
+                    ],
+                    "edges": [],
+                },
+            )
+        raise AssertionError("summarize should not run after a finalizing init_report decision")
+
+    result = await execute_graph_round(graph, worker_runner)
+    decision = decide_supervisor_step(result)
+
+    by_node = {item.node_id: item for item in result.node_results}
+    assert by_node["check_init_report"].status == "partial"
+    assert "did not declare a report shape" in by_node["check_init_report"].summary
+    assert by_node["summarize"].status == "blocked"
+    assert decision.decision == "stop"
+    assert decision.reason == "Node decision check requested finalization."
+    assert decision.failed_nodes == ["init_report"]
+
+
+@pytest.mark.asyncio
+async def test_init_report_with_shape_declared_passes_node_decision(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-report-shape-present"
+    (run_dir / "report_init").mkdir(parents=True)
+    (run_dir / "report_init" / "report_contract.json").write_text(
+        json.dumps(
+            {
+                "shape_archetype": "WHO-style risk assessment",
+                "required_sections_outline": [
+                    "## Current Assessment",
+                    "## Evidence",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    graph = TaskGraph(
+        graph_id="graph-report-shape-present",
+        task_type="report",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="init_report",
+                title="Initialize report",
+                objective="plan report graph",
+                capability_bundles=["plan", "task_manage", "validate"],
+                metadata={"decision_check": True, "run_dir": str(run_dir)},
+            )
+        ],
+        edges=[],
+    )
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:  # noqa: ARG001
+        return WorkerResult(
+            status="completed",
+            summary="report contract initialized",
+            artifacts=["report_init/report_contract.json"],
+            spawned_subgraph={
+                "nodes": [
+                    {
+                        "node_id": "monitoring_lane",
+                        "title": "Monitoring lane",
+                        "objective": "Collect monitoring evidence.",
+                        "capability_bundles": ["web_search", "web_fetch", "validate"],
+                    }
+                ],
+                "edges": [],
+            },
+        )
+
+    result = await execute_graph_round(graph, worker_runner)
+    decision = decide_supervisor_step(result)
+
+    by_node = {item.node_id: item for item in result.node_results}
+    assert by_node["init_report"].status == "completed"
+    assert "check_init_report" not in by_node
+    assert decision.decision == "stop"
+    assert decision.reason == "All nodes completed."
+    assert decision.failed_nodes == []
 
 
 def test_planner_excludes_explicitly_forbidden_benchmark_tools() -> None:

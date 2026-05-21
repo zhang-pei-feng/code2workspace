@@ -24,7 +24,259 @@ and evidence-backed completion judgment.
 
 ## Chronology
 
+### 2026-05-21
+
+- Verified the external-dataset benchmark path on a fresh long-read virus
+  assembly input rather than a pre-registered `dataset_store` record:
+  - downloaded a new SARS-CoV-2 Oxford Nanopore FASTQ under
+    `workspace/external_benchmark_datasets/sarscov2_ont_srr12209725`
+  - the benchmark register step selected it as a transient
+    `user_provided_external_path` dataset and staged both `Flye` and `canu`
+    against the same input file
+  - `canu` produced a contig output while `Flye` failed after one bounded
+    mode repair, giving a useful partial benchmark result on genuinely new
+    external data
+  - the run exposed a separate user-facing artifact bug: a useful `partial`
+    `final_response` worker summary was being discarded and replaced by the
+    placeholder `Worker completed.`
+- Fixed the final-response persistence bug found by that live run:
+  - final rendering now accepts non-placeholder `partial` summaries from the
+    `final_response` node
+  - fallback candidate selection now ignores `Worker completed.` placeholder
+    summaries, so an exception in the finalizer falls back to richer summary
+    material instead of empty boilerplate
+  - relative path normalization still applies before writing
+    `final_response.md`, and now also strips current-run prefixes such as
+    `orchestration_runs/<run_id>/` to keep main artifacts run-relative
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+    -> `118 passed`
+
+- Fixed benchmark registration for prompts that provide a fresh external data
+  directory rather than relying on the local `dataset_store`:
+  - task text is now scanned for absolute, project-relative, and
+    backtick-quoted file/directory paths
+  - those paths are converted into transient dataset candidates with media
+    types, input roles, and `source_kind = user_provided_external_path`
+  - register ranking gives explicit user-provided data priority over older
+    `dataset_store` matches, so a newly downloaded short-read virus dataset can
+    be used even if it is not yet registered in the dataset library
+  - staged benchmark case manifests and WDL `inputs.json` now receive the
+    selected external files directly from the chosen candidate
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'benchmark_register or benchmark_selection or benchmark_dataset_compatibility or benchmark_candidate_from_operator_payload or benchmark_selected_input_files' -q`
+    -> `26 passed`
+
+- Normalized user-facing Supervisor final responses so local artifact references
+  no longer expose machine-specific absolute filesystem paths:
+  - final-response guidance now tells the editor to use run-relative paths for
+    current-run artifacts and project-relative paths for other project files
+  - the runtime applies the same path normalization before writing
+    `final_response.md`, covering benchmark, report, generic, github2workspace,
+    fallback, and refusal paths
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+    -> `116 passed`
+
+- Relaxed benchmark dataset selection into an explicit two-strategy design:
+  - strict `shared_dataset` mode is preserved when the user names a concrete
+    dataset or explicitly asks for same/shared/fair inputs
+  - default exploratory mode now uses `per_operator_dataset`, allowing the
+    register selector to choose useful operators even when one is best staged
+    with FASTA and another with FASTQ
+  - supervisor materialization records per-tool dataset keys in
+    `operator_selection.json`, `dataset_resolution.json`, case manifests, and
+    `agent_task.md`
+  - benchmark case guidance now allows bounded input adaptation in exploratory
+    mode while still forbidding unsupported same-dataset fairness claims
+  - benchmark summary suppresses metric-based winner claims when successful
+    cases used different datasets, so the system can run more tools without
+    converting exploratory evidence into false fair-comparison conclusions
+  - explicit short tool-name matching now uses token boundaries, preventing
+    `esm` from being accidentally selected across the phrase `spades megahit`
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'benchmark or short_tool_name' -q`
+    -> `53 passed`
+
+- Fixed a benchmark-selection mismatch where MEGAHIT was incorrectly excluded
+  from shared short-read benchmarks because old imported operator manifests
+  preserved `.fa` test inputs too literally:
+  - benchmark candidate loading and dataset compatibility now inspect
+    `runtime.inputs_json_path` in addition to stored `input_media_types`
+  - when the staged WDL/input contract clearly indicates paired-end reads
+    (`read1/read2`, `r1/r2`, `fastq1/fastq2`), stale historical manifests are
+    normalized to the short-read `fastq` contract for benchmark selection
+    rather than being pinned to `fasta` only
+  - this keeps the thesis story aligned with tool semantics: dataset/operator
+    compatibility is determined from the executable contract, not only from the
+    accidental file suffixes of one old validation case
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'megahit_inputs_to_fastq or megahit_style_fastq_dataset or does_not_count_read_aliases_as_distinct_inputs' -q`
+    -> `3 passed`
+  - direct runtime verification after the fix shows the short-read benchmark
+    request now produces `selected_tools = ['spades', 'megahit']` on shared
+    dataset `short-read-ecoli-srr001666`
+
+- Reworked benchmark `register` selection to keep the decision semantic and
+  agent/LLM-driven without reusing the full heavy workspace worker graph:
+  - the supervisor runtime now routes benchmark registration through a
+    lightweight no-tools selector model call
+  - the selector prompt enforces dataset-first behavior (`selected_dataset_id`
+    first, then compatible `selected_tools`)
+  - deterministic runtime still owns compatibility checks, staged case
+    materialization, and `operator_selection.json` / `register_report.json`
+    writing
+  - this preserves the thesis claim that dataset/operator choice is not
+    hard-coded rule matching, while avoiding the live-register hangs observed
+    when the full worker agent was used for a pure JSON selection task
+
+- Closed the non-interactive/TUI output leak introduced by internal benchmark
+  selector calls:
+  - internal selector invocations are now tagged as
+    `internal_benchmark_register_selector`
+  - non-interactive and Textual stream adapters hide those internal model
+    messages instead of rendering selector JSON ahead of the final user answer
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_non_interactive.py -k 'classifier_prefix or benchmark_selector_prefix or internal_benchmark_selector_metadata' -q`
+    -> `4 passed`
+
+- Hardened benchmark artifact interpretation for agent-owned case execution:
+  - deterministic benchmark summary now recognizes both helper-style
+    `output_checks` and newer agent-owned shapes such as `file_checks`,
+    string-path `outputs`, `output_presence`, and `output_sizes_bytes`
+  - benchmark evaluation mirrors the same evidence rules, so successful
+    `Flye`/`canu` case nodes are no longer undercounted merely because they did
+    not write the older `run/status.json` contract
+  - fairness-claim evaluation is now narrower: saying “both tools can be
+    fairly compared on the same shared dataset for the question of whether they
+    ran successfully” is allowed, while stronger unsupported winner claims are
+    still flagged
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'flye_style_result_artifacts or benchmark_summary_counts_agent_owned_completed_cases_without_run_status or invoke_benchmark_register_selector_uses_internal_no_stream_config' -q`
+    -> `3 passed`
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_evaluation.py -k 'false_fair_comparison_claim or scoped_same_dataset_success_comparison_claim or flye_style_artifacts_count_as_completed or agent_owned_cases_without_run_status_count_as_completed' -q`
+    -> `4 passed`
+
+- Fresh live long-read benchmark validation after the selector/summary/eval
+  fixes:
+  - run directory:
+    `workspace/20260521010517/orchestration_runs/20260520T170525775239Z`
+  - `register` selected shared dataset
+    `long-read-canu-pacbio-real-tests` and selected `Flye` + `canu`
+  - staged `cases/Flye/wdl/inputs.json` and `cases/canu/wdl/inputs.json` both
+    pointed to the same shared `pacbio.fastq.gz`
+  - both `Flye` and `canu` completed successfully on that shared dataset
+  - the streamed CLI final answer no longer leaked selector JSON
+  - after recomputing summary/evaluation with the final artifact-shape fixes,
+    the run recorded:
+    - `benchmark_supervisor_summary.json`: `completed_cases = 2`,
+      `comparison = null`
+    - `evaluation.json`: `B7.multi_operator_completed`,
+      `comparison_valid = false`,
+      `false_positive = false`
+  - this gives a thesis-friendly demonstration of the current benchmark story:
+    same shared dataset enforced, agent-owned tool execution, evidence-backed
+    success judgment, and explicit refusal to overclaim a winner when metrics
+    are still missing
+
+### 2026-05-20
+
+- Reworked the report-family Supervisor Graph from a fixed evidence-lane shape
+  into a dynamic lane plan:
+  - `init_report` now owns report contract setup plus lane selection and emits a
+    next-round `spawned_subgraph`
+  - local report evidence is split into `existing_data_lane` for already
+    materialized local stores/artifacts/history/API evidence and
+    `computed_data_lane` for operator + dataset/input-bundle computation only
+    when a concrete gap remains
+  - report planning now permits `monitoring_lane`, `existing_data_lane`,
+    `computed_data_lane`, and `literature_lane`, capped at three lanes of one
+    type and six evidence lanes total
+  - report worker model routing and guidance assets now include the two new
+    local-data lane types
+  - the worker-result parser can recover a usable `spawned_subgraph` even when
+    the surrounding model JSON has a local quoting error, which prevents a
+    valid init lane decision from falling back to the default graph
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/code2workspace/tests/unit_tests/test_orchestration_runtime.py -q`
+    -> `28 passed`
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+    -> `91 passed`
+  - live historical report reruns confirmed adaptive lane selection:
+    `workspace/20260520134830/orchestration_runs/20260520T054842202029Z`
+    used only `existing_data_lane_local_records` and
+    `computed_data_lane_operator_decision`;
+    `workspace/20260520135616/orchestration_runs/20260520T055625932747Z`
+    used two `existing_data_lane` workers and skipped computed/web lanes
+- Hardened report evidence-lane error handling after a live global respiratory
+  pathogen report exposed a bad-URL failure in the influenza monitoring lane:
+  - report evidence lanes now recover inside the lane agent after ordinary
+    worker/tool exceptions, with the error plus raw trace/tool-activity paths
+    injected into a recovery prompt
+  - the agent is instructed to skip the bad source, use alternate authoritative
+    sources when available, or finish with an explicit evidence gap instead of
+    letting one tool error terminate the lane
+  - supervisor-level `partial` conversion remains only as a last-resort safety
+    net if the recovery attempt also fails
+  - validation:
+    `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+    -> `94 passed`
+    `uv run --project libs/cli --group test pytest libs/code2workspace/tests/unit_tests/test_orchestration_runtime.py -q`
+    -> `28 passed`
+  - live rerun:
+    `workspace/20260520185828/orchestration_runs/20260520T105839964260Z`
+    completed all COVID/flu/RSV monitoring lanes and generated
+    `artifacts/compose_report/final_report.md`
+
+- Refreshed `docs/overview/supervisor-agent-function-flows.zh.md` so the
+  thesis-facing runtime diagram now matches the latest code:
+  - `generic` documents `simple / medium / difficult` `generic_approach`
+    selection
+  - `benchmark register` notes the agentic selection pre-pass before
+    deterministic materialization
+  - report/generic local-computation guidance now distinguishes
+    `existing_data` from `computed_data`
+
+- Added `docs/overview/agent-skills-design.zh.md` to document the current
+  agent skill design:
+  - separates capability skills from runtime-owned orchestration skills
+  - explains `supervisor-guidance` as stable versioned graph/node strategy
+    assets
+  - explains `generic-experience` as the harness-written case-memory and
+    distilled-guidance loop
+  - records the Supervisor Graph prompt-injection flow and generic experience
+    learning loop with Mermaid diagrams
+- Added `docs/overview/agent-tool-design.zh.md` to document the current
+  intelligent-agent tool architecture:
+  - separates real Workspace Agent tools from middleware injection and
+    Supervisor `capability_bundles`
+  - diagrams the `create_cli_agent -> create_workspace_agent -> supervisor ->
+    worker_agent` path
+  - records how filesystem/shell/web/ask_user/MCP/subagent tools are exposed,
+    constrained, traced, and written into `orchestration_runs`
+  - explains why benchmark and report paths mix deterministic adapters with
+    agent-owned execution
+
 ### 2026-05-19
+
+- Removed the legacy benchmark helper entrypoint
+  `.code2workspace/skills/orchestration/benchmark-workflow-orchestrator/scripts/benchmark_workflow.py`
+  after taking a safety snapshot commit (`15553bb`,
+  `benchmark_workflow.py还存在的版本`):
+  - benchmark per-tool case execution is now fully agent-owned
+  - the remaining deterministic runtime surface is limited to register/case
+    materialization, conservative analysis artifact writing, summary, and
+    reusable history-record persistence
+  - dedicated helper-script tests under `experiments/harness/tests/` were
+    removed, and benchmark unit tests now validate internal runtime functions
+    plus agent-owned case behavior directly
+  - this makes rollback easy while shifting more of benchmark execution policy
+    into prompt guidance and worker behavior
+- Shared `operator_store`, `dataset_store`, and
+  `benchmark_comparison_history_store` discovery now auto-falls back to
+  repository-local `workspace/*/` roots when the active session workspace lives
+  under the repo workspace tree, so the existing benchmark libraries remain
+  visible to fresh sessions without manual environment-variable wiring.
 
 - Reworked the report composition prompt to align more closely with the
   Open Deep Research-style final-report writer pattern:
@@ -35,10 +287,32 @@ and evidence-backed completion judgment.
   - the new prompt keeps this repo's evidence-layer requirements, especially
     direct vs inferred vs proxy evidence and local-artifact citation, while
     reducing the "fill in a template" feel of the previous report writer
+  - after reviewing the prompt against the upstream style, removed the extra
+    repo-local "default section template" block so the report writer now
+    chooses structure from archetypes and writing rules rather than being led
+  - removed the remaining default-outline pressure from `report_synthesis`,
+    `init_report`, and `final_response`, so "executive summary / key findings"
+    style headings are no longer reintroduced downstream after
+    `compose_report.md` was relaxed
+    by a fixed heading checklist
+  - after tracing a remaining regression in real runs, tightened the prompts
+    further so they now explicitly forbid defaulting to `Executive Summary` /
+    `执行摘要` labels and explicitly forbid using historical full report prose
+    as a section-template/style model; historical reports may still be used as
+    evidence containers or lead finders
+  - further tightened report form so generated reports now prefer a
+    total-subtotal-total flow, use Chinese source-section headings, and avoid
+    absolute filesystem paths in ordinary report prose/source appendices unless
+    a full path is genuinely required for auditability
   - updated the compose-report worker-prompt test accordingly
   - validation:
     `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k test_build_worker_prompt_compose_report_includes_template_guidance`
     -> `1 passed`
+
+- Expanded `docs/overview/operator-and-history-store-design.zh.md` into a
+  three-library design note covering `operator_store`, `dataset_store`, and
+  `benchmark_comparison_history_store`, so the thesis trail now has one place
+  to explain the manifest-first / file-backed / SQLite-indexed evidence layer.
 
 - Tightened the local-computation decision contract for report and generic
   evidence workers:
@@ -1909,3 +2183,42 @@ and evidence-backed completion judgment.
   evaluation section of the thesis.
 - When running repo experiments, save prompts, logs, outputs, and final
   judgments in reusable form.
+## 2026-05-20 - benchmark register dataset-first live-path repair
+
+- Tightened the benchmark `register` contract so the agent is responsible for
+  choosing one shared dataset before choosing operators, instead of silently
+  inheriting per-tool stale case inputs.
+- Added `register_agentic_selection_debug.json` when live agentic register
+  fails, so the runtime no longer falls back invisibly to a misleading
+  deterministic selection report.
+- Added tolerant parsing for non-JSON dataset/tool-selection text, plus a
+  dataset-option seed path that keeps broader shared datasets visible even when
+  query-top-k retrieval is skewed by operator-specific benchmark input bundles.
+- Fixed a live-only bug where `dataset_store` search rows carried relative
+  `record_path` values. Under isolated session workspaces the runtime failed to
+  reload dataset payloads, which erased `files`/`compatible_operator_ids` and
+  pushed register toward incorrect per-tool datasets.
+- Verified the repaired live path with
+  `workspace/20260520213837/orchestration_runs/20260520T133844840531Z`:
+  `operator_selection.json` now records
+  `selected_dataset_id = long-read-canu-pacbio` and `selected_tools = [Flye, canu]`
+  for the long-read virus-assembly benchmark before the per-tool agents
+  continue execution.
+
+## 2026-05-20 - benchmark shared-dataset materialization repair
+
+- Closed the next correctness gap after dataset-first register: benchmark case
+  materialization previously kept the shared `dataset_key` but still fell back
+  to stale per-operator FASTQ paths when staging `inputs.json`.
+- Fixed case-level dataset-store reload to resolve project-relative
+  `record_path` values, mirroring the earlier live register fix. Without this,
+  isolated session workspaces could not reload dataset payloads during case
+  staging.
+- Expanded `inputs.json` sanitization so dataset-bound file parameters such as
+  `reads` and `reads_fastq` are rewritten from existing absolute local paths to
+  the selected shared dataset file, not only from `/path/to/...` placeholders.
+- Added targeted unit coverage for both the relative dataset-store reload and
+  the absolute FASTQ-path rewrite.
+- Direct verification against the real `benchmark-Flye` and `benchmark-canu`
+  operator manifests now rewrites both tools to the same shared input file:
+  `workspace/dataset_store/files/long-read-canu-pacbio/pacbio.fastq`.

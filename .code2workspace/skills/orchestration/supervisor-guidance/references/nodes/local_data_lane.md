@@ -1,5 +1,7 @@
 # Local Data Lane Guidance
 
+- `local_data_lane` is a legacy combined lane. New report plans should prefer separate `existing_data_lane` and `computed_data_lane` nodes.
+
 - Focus on structured local data, APIs, registries, or databases relevant to the report topic.
 - Split the lane into `existing_data` and `computed_data`:
   - `existing_data` means already materialized local database rows, registries, APIs, prior orchestration artifacts, cached run outputs, or directly relevant history records.

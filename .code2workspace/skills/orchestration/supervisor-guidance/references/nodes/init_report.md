@@ -4,19 +4,26 @@
 - Required minimum outputs for this node are:
   - a request note that restates the user task
   - a report contract artifact
-  - lane scaffolding with explicit evidence expectations
+  - dynamic lane scaffolding with explicit evidence expectations and skip reasons for lanes that are not needed
   - the directory skeleton needed by downstream report nodes
+  - a `spawned_subgraph` plan for the next report round
 - Do not do first-pass research in this node.
 - Do not draft the final report body in this node.
 - The report contract should include:
   - intended audience and decision context when inferable
   - report language and tone
-  - expected section outline
-  - evidence lanes to consume
+  - expected report shape or organizing logic, chosen from a generic archetype library when helpful (for example: WHO-style risk assessment, monitoring brief, comparison report, evidence review, local evidence report, technical evaluation, or decision memo)
+  - evidence lanes to consume, selected independently from `monitoring_lane`, `existing_data_lane`, `computed_data_lane`, and `literature_lane`
   - citation/source style
   - freshness/date requirements
   - known exclusions or user-specified constraints
-- Create or describe a report outline that downstream composition can follow; prefer stable section names over ad hoc headings.
-- If the user's requested format conflicts with the default report template, record the user's format as authoritative in the contract.
+- Create or describe a report outline that downstream composition can follow, but let section names and grouping adapt to the task instead of forcing one canonical heading set.
+- Do not preseed the contract with default labels such as `Executive Summary` / `执行摘要` / `结论摘要` unless the user explicitly requested that format; describe the opening as a direct answer, current assessment, comparison result, or another task-shaped lead section instead.
+- If the user requested a specific format, section order, or deliverable shape, record that format as authoritative in the contract.
+- Decide each lane independently. Do not include a lane simply because it exists in the template.
+- `existing_data_lane` is for querying local databases, stores, APIs, cached artifacts, dataset_store records, or history records that already exist.
+- `computed_data_lane` is for selecting a local operator plus compatible dataset/input bundle and running it only when a needed report value is missing.
+- You may use 0-3 nodes per lane base type and at most 6 evidence lanes total. Use multiple nodes of the same type only when the branches are truly independent.
+- Return `spawned_subgraph` with keys `nodes` and `edges`. Each selected evidence node must have `node_id`, `title`, `objective`, and `capability_bundles`, and its `node_id` should start with its lane base type.
 - As soon as the minimum initialization artifacts above exist, stop and return a structured JSON result immediately.
 - If some initialization artifact still cannot be created, return `partial` with exact blocker details instead of continuing to think.

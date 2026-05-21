@@ -197,6 +197,171 @@ def test_evaluate_benchmark_flags_false_fair_comparison_claim(
     assert "final response claims a valid/fair comparison without comparable multi-operator evidence" in result.unsupported_claims
 
 
+def test_evaluate_benchmark_allows_scoped_same_dataset_success_comparison_claim(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-benchmark-scoped-fairness"
+    run_dir.mkdir(parents=True)
+    _write_json(run_dir / "final_decision.json", {"task_type": "benchmark", "decision": "stop"})
+    _write_json(
+        run_dir / "operator_selection.json",
+        {"selected_tools": ["Flye", "canu"], "dataset_key": "long-read-canu-pacbio-real-tests"},
+    )
+    _write_json(
+        run_dir / "dataset_resolution.json",
+        {"repo_to_dataset": {"Flye": "long-read-canu-pacbio-real-tests", "canu": "long-read-canu-pacbio-real-tests"}},
+    )
+    rows = []
+    for tool in ("Flye", "canu"):
+        case_dir = run_dir / "cases" / tool
+        output = case_dir / "run" / f"{tool}.fa"
+        output.parent.mkdir(parents=True)
+        output.write_text(">c\nAAAA\n", encoding="utf-8")
+        (case_dir / "wdl").mkdir(parents=True)
+        (case_dir / "wdl" / "inputs.json").write_text("{}", encoding="utf-8")
+        _write_json(case_dir / "manifest.json", {"dataset_key": "long-read-canu-pacbio-real-tests"})
+        _write_json(
+            case_dir / "result_manifest.json",
+            {
+                "status": "completed",
+                "outputs": {"primary": {"path": str(output), "exists": True, "size_bytes": 6}},
+            },
+        )
+        _write_json(
+            case_dir / "analysis.json",
+            {"status": "completed", "metrics": {}, "checks": {"contigs_present": True}},
+        )
+        _write_worker(run_dir, tool, {"status": "completed", "summary": f"{tool} completed"})
+        rows.append({"repo": tool, "success": True, "metrics": {}})
+    _write_json(run_dir / "benchmark_supervisor_summary.json", {"comparison": None, "rows": rows})
+    (run_dir / "final_response.md").write_text(
+        (
+            "Flye 和 canu 都在同一数据集上跑通了，所以可以公平比较谁有没有跑成功；"
+            "但目前不能下更优结论，也不能判断谁更好。"
+        ),
+        encoding="utf-8",
+    )
+
+    result = evaluate_supervisor_run(run_dir)
+
+    assert result.completion_level == "B7.multi_operator_completed"
+    assert result.false_positive is False
+    assert result.unsupported_claims == []
+
+
+def test_evaluate_benchmark_agent_owned_cases_without_run_status_count_as_completed(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-benchmark-agent-owned"
+    run_dir.mkdir(parents=True)
+    _write_json(run_dir / "final_decision.json", {"task_type": "benchmark", "decision": "stop"})
+    _write_json(
+        run_dir / "operator_selection.json",
+        {"selected_tools": ["Flye", "canu"], "dataset_key": "long-read-canu-pacbio-real-tests"},
+    )
+    _write_json(
+        run_dir / "dataset_resolution.json",
+        {"repo_to_dataset": {"Flye": "long-read-canu-pacbio-real-tests", "canu": "long-read-canu-pacbio-real-tests"}},
+    )
+    for tool in ("Flye", "canu"):
+        case_dir = run_dir / "cases" / tool
+        output = case_dir / "run" / f"{tool}.fa"
+        output.parent.mkdir(parents=True)
+        output.write_text(">c\nAAAA\n", encoding="utf-8")
+        (case_dir / "wdl").mkdir(parents=True)
+        (case_dir / "wdl" / "inputs.json").write_text("{}", encoding="utf-8")
+        _write_json(case_dir / "manifest.json", {"dataset_key": "long-read-canu-pacbio-real-tests"})
+        _write_json(
+            case_dir / "result_manifest.json",
+            {
+                "status": "completed",
+                "outputs": {
+                    "primary": {
+                        "path": str(output),
+                        "exists": True,
+                        "size_bytes": 6,
+                    }
+                },
+            },
+        )
+        _write_json(
+            case_dir / "analysis.json",
+            {
+                "status": "completed",
+                "metrics": {},
+                "checks": {"contigs_present": True},
+            },
+        )
+        _write_worker(
+            run_dir,
+            tool,
+            {"status": "completed", "summary": f"{tool} completed"},
+        )
+
+    result = evaluate_supervisor_run(run_dir)
+
+    assert result.task_family == "benchmark"
+    assert result.completion_status == "partial"
+    assert result.completion_level == "B7.multi_operator_completed"
+    assert result.completed_operators == ["Flye", "canu"]
+    assert result.dataset_consistency == "same_dataset"
+    assert result.comparison_valid is False
+    assert result.false_positive is False
+
+
+def test_evaluate_benchmark_flye_style_artifacts_count_as_completed(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-benchmark-flye-style"
+    run_dir.mkdir(parents=True)
+    _write_json(run_dir / "final_decision.json", {"task_type": "benchmark", "decision": "stop"})
+    _write_json(
+        run_dir / "operator_selection.json",
+        {"selected_tools": ["Flye"], "dataset_key": "long-read-canu-pacbio-real-tests"},
+    )
+    _write_json(
+        run_dir / "dataset_resolution.json",
+        {"repo_to_dataset": {"Flye": "long-read-canu-pacbio-real-tests"}},
+    )
+    case_dir = run_dir / "cases" / "Flye"
+    output = case_dir / "run" / "flye" / "assembly.fasta"
+    output.parent.mkdir(parents=True)
+    output.write_text(">c\nAAAA\n", encoding="utf-8")
+    (case_dir / "wdl").mkdir(parents=True)
+    (case_dir / "wdl" / "inputs.json").write_text("{}", encoding="utf-8")
+    _write_json(case_dir / "manifest.json", {"dataset_key": "long-read-canu-pacbio-real-tests"})
+    _write_json(
+        case_dir / "result_manifest.json",
+        {
+            "status": "completed",
+            "exit_code": 0,
+            "file_checks": {"assembly": {"exists": True, "size_bytes": 6}},
+            "outputs": {"assembly": str(output)},
+        },
+    )
+    _write_json(
+        case_dir / "analysis.json",
+        {
+            "status": "completed",
+            "metrics": {},
+            "output_presence": {"assembly": True},
+            "output_sizes_bytes": {"assembly": 6},
+        },
+    )
+    _write_worker(
+        run_dir,
+        "Flye",
+        {"status": "completed", "summary": "Flye completed"},
+    )
+
+    result = evaluate_supervisor_run(run_dir)
+
+    assert result.task_family == "benchmark"
+    assert result.completed_operators == ["Flye"]
+    assert result.completion_level == "B6.single_operator_completed"
+    assert result.false_positive is False
+
+
 def test_evaluate_generic_run_summarizes_trace_for_harness(
     tmp_path: Path,
 ) -> None:

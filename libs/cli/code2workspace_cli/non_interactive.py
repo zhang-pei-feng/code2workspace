@@ -100,6 +100,8 @@ _MAX_HITL_ITERATIONS = 50
 """Safety cap on the number of HITL interrupt round-trips to prevent infinite
 loops (e.g. when the agent keeps retrying rejected commands)."""
 
+_INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG = "internal_benchmark_register_selector"
+
 
 def _write_text(text: str) -> None:
     """Write agent response text to stdout (without a trailing newline).
@@ -225,6 +227,11 @@ class StreamState:
 
 _TASK_TYPE_NAMES = {"benchmark", "github2workspace", "report", "generic"}
 _CLASSIFIER_PAYLOAD_KEYS = {"task_type", "confidence", "reason", "matched_signals"}
+_BENCHMARK_SELECTOR_PAYLOAD_KEYS = {
+    "selected_dataset_id",
+    "selected_tools",
+    "selection_rationale",
+}
 _JSON_OBJECT_START_RE = re.compile(r"^\s*\{", re.DOTALL)
 
 
@@ -265,8 +272,48 @@ def _find_leading_json_object_end(text: str) -> int | None:
     return None
 
 
-def _extract_hidden_classifier_prefix(text: str) -> tuple[str | None, str]:
-    """Strip a leaked leading task-classifier JSON payload when present."""
+def _is_internal_benchmark_selector_chunk(metadata: dict[str, object] | None) -> bool:
+    """Return whether stream metadata belongs to the internal benchmark selector."""
+    if not isinstance(metadata, dict):
+        return False
+    run_name = metadata.get("run_name")
+    if run_name == _INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG:
+        return True
+    tags = metadata.get("tags")
+    if isinstance(tags, str):
+        return tags == _INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG
+    if isinstance(tags, (list, tuple, set)):
+        return _INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG in tags
+    return False
+
+
+def _is_hidden_internal_payload(payload: dict[str, object]) -> bool:
+    """Return whether a leading JSON payload is internal orchestration output."""
+    if _CLASSIFIER_PAYLOAD_KEYS.issubset(payload):
+        task_type = payload.get("task_type")
+        confidence = payload.get("confidence")
+        matched_signals = payload.get("matched_signals")
+        return (
+            task_type in _TASK_TYPE_NAMES
+            and isinstance(confidence, int | float)
+            and isinstance(matched_signals, list)
+        )
+
+    if set(payload).issubset(_BENCHMARK_SELECTOR_PAYLOAD_KEYS):
+        selected_dataset_id = payload.get("selected_dataset_id")
+        selected_tools = payload.get("selected_tools")
+        selection_rationale = payload.get("selection_rationale")
+        has_dataset = isinstance(selected_dataset_id, str) and bool(
+            selected_dataset_id.strip()
+        )
+        has_tools = isinstance(selected_tools, list)
+        return isinstance(selection_rationale, str) and (has_dataset or has_tools)
+
+    return False
+
+
+def _extract_hidden_internal_prefix(text: str) -> tuple[str | None, str]:
+    """Strip leaked leading internal JSON payloads when present."""
     json_end = _find_leading_json_object_end(text)
     if json_end is None:
         return None, text
@@ -277,16 +324,7 @@ def _extract_hidden_classifier_prefix(text: str) -> tuple[str | None, str]:
         return None, text
     if not isinstance(payload, dict):
         return None, text
-    if not _CLASSIFIER_PAYLOAD_KEYS.issubset(payload):
-        return None, text
-    task_type = payload.get("task_type")
-    confidence = payload.get("confidence")
-    matched_signals = payload.get("matched_signals")
-    if task_type not in _TASK_TYPE_NAMES:
-        return None, text
-    if not isinstance(confidence, int | float):
-        return None, text
-    if not isinstance(matched_signals, list):
+    if not _is_hidden_internal_payload(payload):
         return None, text
     return candidate, text[json_end:]
 
@@ -312,7 +350,7 @@ def _handle_text_block(text: str, state: StreamState) -> None:
         return
 
     state.pending_leading_text += text
-    hidden_prefix, remainder = _extract_hidden_classifier_prefix(
+    hidden_prefix, remainder = _extract_hidden_internal_prefix(
         state.pending_leading_text
     )
     if hidden_prefix is not None:
@@ -554,6 +592,9 @@ def _process_message_chunk(
     # conversation history for the LLM. These are internal bookkeeping and
     # should not be rendered to the user.
     if metadata and metadata.get("lc_source") == "summarization":
+        return
+
+    if _is_internal_benchmark_selector_chunk(cast("dict[str, object] | None", metadata)):
         return
 
     if isinstance(message_obj, AIMessage):
@@ -857,7 +898,7 @@ async def _run_agent_loop(
     wall_time = time.monotonic() - start_time
 
     if state.pending_leading_text:
-        hidden_prefix, remainder = _extract_hidden_classifier_prefix(
+        hidden_prefix, remainder = _extract_hidden_internal_prefix(
             state.pending_leading_text
         )
         state.pending_leading_text = ""
