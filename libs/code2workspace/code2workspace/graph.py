@@ -1,4 +1,4 @@
-"""Primary graph assembly module for Code2Workspace.
+"""Primary graph assembly module for EpiMindAgent.
 
 Provides `create_workspace_agent`, the main entry point for constructing a fully
 configured Workspace Agent with planning, filesystem, subagent, and summarization
@@ -99,7 +99,7 @@ this is used as the sole system prompt.
 
 
 def get_default_model() -> ChatAnthropic:
-    """Get the default model for Code2Workspace.
+    """Get the default model for EpiMindAgent.
 
     Used as a fallback when `model=None` is passed to `create_workspace_agent`.
 
@@ -237,7 +237,7 @@ def create_workspace_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph ass
 ) -> CompiledStateGraph[AgentState[ResponseT], ContextT, _InputAgentState, _OutputAgentState[ResponseT]]:  # ty: ignore[invalid-type-arguments]  # ty can't verify generic TypedDicts satisfy StateLike bound
     """Create a Workspace Agent.
 
-    !!! warning "Code2Workspace require a LLM that supports tool calling!"
+    !!! warning "EpiMindAgent requires an LLM that supports tool calling!"
 
     By default, this agent has access to the following tools:
 
@@ -677,8 +677,8 @@ def create_workspace_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph ass
         {
             "recursion_limit": 9_999,
             "metadata": {
-                "ls_integration": "code2workspace",
-                "versions": {"code2workspace": __version__},
+                "ls_integration": "EpiMindAgent",
+                "versions": {"EpiMindAgent": __version__},
                 "lc_agent_name": name,
             },
         }

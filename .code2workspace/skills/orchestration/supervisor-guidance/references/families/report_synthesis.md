@@ -15,14 +15,19 @@
 - Escalate monitoring depth to D3 for trend/change/watch-item analysis, and to D4 only for high-stakes, contested, highly uncertain, or explicitly comprehensive requests.
 - Let the report structure follow the task shape and evidence shape by default rather than forcing one fixed heading checklist.
 - Treat report structure selection as a generic shape-choice problem. Prefer choosing one primary archetype that fits the task and evidence instead of writing every report in the same house style.
-- Prefer a clear opening answer/current state, well-organized major sections, and a closing source list or evidence appendix, but allow section names to adapt to the report type.
+- Prefer a clear opening answer/current state, well-organized numbered major sections, and a closing source list or evidence appendix, but allow section names to adapt to the report type.
 - When the task fits, prefer a total-subtotal-total report flow: opening answer, grouped evidence/findings, and a closing bounded takeaway.
+- Make formal reports paragraph-led by default. Each substantive section should synthesize evidence and interpretation in coherent paragraphs, not as one-sentence bullet notes.
+- Use bullets or numbered lists only where they improve scanability, such as short takeaways, recommendations, risk dimensions, compact enumerations, or source lists. Do not use bullets as the default body style.
+- Distinguish direct evidence, inference, uncertainty, and recommendation in the prose itself unless a compact labeled list is clearly more readable.
 - Do not default to section labels like `Executive Summary` / `执行摘要` unless the user explicitly asked for them.
 - When historical reports are reused as local evidence, treat them as evidence containers or lead finders, not as formatting templates for the new report.
 - For Chinese reports, keep source-section headings in Chinese and avoid English-only labels when a Chinese heading is sufficient.
 - Avoid absolute filesystem paths in user-facing report prose by default; prefer relative paths or concise source labels unless the absolute path is specifically required for auditability.
 - Write in the same language as the user's report request unless the user explicitly asks otherwise.
-- Use Markdown heading hierarchy consistently: one `#` title, `##` major sections, and `###` subsections only when needed.
+- Use Markdown heading hierarchy consistently: one `#` title, numbered `##` major sections, and `###` subsections only when needed.
+- Unless the user explicitly asks for unnumbered headings or a different fixed heading format, number every user-facing `##` major section. For Chinese reports, prefer Chinese section numbers such as `## 一、当前判断`, `## 二、证据分析`, `## 三、结论与建议`; for English reports, prefer simple numeric prefixes such as `## 1. Current Assessment`.
+- Preserve valid Markdown syntax throughout the final report: put one space after heading markers (`### 1.1 标题`, not `###1.1标题`), one space after ordered and unordered list markers (`1. 内容`, `- 内容`, not `1.内容` or `-内容`), and use consistent nested-list indentation such as two spaces before `-`.
 - Do not expose worker names, internal node names, or orchestration diagnostics in the final report body unless they are necessary artifact references for auditability.
 - When external sources are used, keep citations/source references consistent and end with a compact source list or evidence appendix; when only local artifacts are used, list the local artifact paths that directly support the report.
 - Treat the final report as the primary deliverable: be comprehensive, but make the structure easy to scan.

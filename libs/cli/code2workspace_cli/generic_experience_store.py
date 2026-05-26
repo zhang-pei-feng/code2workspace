@@ -54,6 +54,8 @@ _STOPWORDS = {
     "本地",
     "代码",
 }
+_TABLE_SCHEMA_VERSION = 1
+_MAJOR_UPDATE_INTERVAL = 20
 
 
 def repo_root() -> Path:
@@ -70,6 +72,10 @@ def records_dir(root: Path | None = None) -> Path:
 
 def generated_guidance_path(root: Path | None = None) -> Path:
     return experience_skill_root(root) / "generated" / "generic_orchestration_experience.md"
+
+
+def experience_table_path(root: Path | None = None) -> Path:
+    return experience_skill_root(root) / "experience_table.json"
 
 
 @dataclass(slots=True)
@@ -163,39 +169,150 @@ class GenericOrchestrationExperienceRecord:
         )
 
 
+@dataclass(slots=True)
+class ExperienceTableEntry:
+    entry_id: str
+    classification: str
+    problem_abstraction: str
+    explain: str
+    instance_paths: list[str] = field(default_factory=list)
+    instance_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "entry_id": self.entry_id,
+            "classification": self.classification,
+            "problem_abstraction": self.problem_abstraction,
+            "explain": self.explain,
+            "instance_paths": list(self.instance_paths),
+            "instance_count": int(self.instance_count),
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "ExperienceTableEntry":
+        return cls(
+            entry_id=str(payload.get("entry_id") or ""),
+            classification=str(payload.get("classification") or ""),
+            problem_abstraction=str(payload.get("problem_abstraction") or ""),
+            explain=str(payload.get("explain") or ""),
+            instance_paths=[
+                str(path)
+                for path in payload.get("instance_paths", [])
+                if isinstance(path, str) and path.strip()
+            ],
+            instance_count=int(payload.get("instance_count", 0) or 0),
+            created_at=str(payload.get("created_at") or ""),
+            updated_at=str(payload.get("updated_at") or ""),
+        )
+
+
+@dataclass(slots=True)
+class ExperienceTable:
+    schema_version: int = _TABLE_SCHEMA_VERSION
+    total_instance_count: int = 0
+    pending_major_update_count: int = 0
+    last_major_update_at: str | None = None
+    entries: list[ExperienceTableEntry] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": int(self.schema_version),
+            "total_instance_count": int(self.total_instance_count),
+            "pending_major_update_count": int(self.pending_major_update_count),
+            "last_major_update_at": self.last_major_update_at,
+            "entries": [entry.to_dict() for entry in self.entries],
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "ExperienceTable":
+        return cls(
+            schema_version=int(payload.get("schema_version", _TABLE_SCHEMA_VERSION) or _TABLE_SCHEMA_VERSION),
+            total_instance_count=int(payload.get("total_instance_count", 0) or 0),
+            pending_major_update_count=int(payload.get("pending_major_update_count", 0) or 0),
+            last_major_update_at=(
+                str(payload.get("last_major_update_at"))
+                if payload.get("last_major_update_at")
+                else None
+            ),
+            entries=[
+                ExperienceTableEntry.from_dict(entry)
+                for entry in payload.get("entries", [])
+                if isinstance(entry, dict)
+            ],
+        )
+
+
 def load_records(*, root: Path | None = None) -> list[GenericOrchestrationExperienceRecord]:
-    base = records_dir(root)
-    if not base.exists():
-        return []
-    records: list[GenericOrchestrationExperienceRecord] = []
-    for path in sorted(base.glob("*.json")):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict):
-            records.append(GenericOrchestrationExperienceRecord.from_dict(payload))
-    return records
+    return [record for _, record in _load_record_items(root=root)]
 
 
 def write_record(record: GenericOrchestrationExperienceRecord, *, root: Path | None = None) -> Path:
     path = records_dir(root) / f"{record.record_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
+    table_existed = experience_table_path(root).exists()
     path.write_text(
         json.dumps(record.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    _append_record_to_experience_table(
+        record,
+        record_path=path,
+        root=root,
+        include_existing_records=not table_existed,
+    )
+    return path
+
+
+def load_experience_table(*, root: Path | None = None) -> ExperienceTable | None:
+    path = experience_table_path(root)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    table = ExperienceTable.from_dict(payload)
+    _normalize_experience_table(table, reset_pending=False, major_update_at=None)
+    return table
+
+
+def rebuild_experience_table(*, root: Path | None = None) -> Path:
+    table = _build_table_from_record_items(
+        _load_record_items(root=root),
+        root=root,
+        pending_count=0,
+        last_major_update_at=_now_iso(),
+    )
+    _normalize_experience_table(table, reset_pending=True, major_update_at=table.last_major_update_at)
+    path = experience_table_path(root)
+    _write_experience_table(table, path=path)
+    return path
+
+
+def maybe_rebuild_experience_table(*, root: Path | None = None, force: bool = False) -> Path | None:
+    table = load_experience_table(root=root)
+    if table is None:
+        return rebuild_experience_table(root=root)
+    if not force and table.pending_major_update_count < _MAJOR_UPDATE_INTERVAL:
+        return None
+    major_update_at = _now_iso()
+    _normalize_experience_table(table, reset_pending=True, major_update_at=major_update_at)
+    path = experience_table_path(root)
+    _write_experience_table(table, path=path)
     return path
 
 
 def rebuild_distilled_guidance(*, root: Path | None = None) -> Path:
-    records = sorted(
-        load_records(root=root),
-        key=lambda item: (
-            item.confidence,
-            item.trajectory_effect.case_score,
-            item.trajectory_effect.score_delta_vs_previous,
-        ),
+    table = _table_for_read(root=root)
+    entries = sorted(
+        table.entries,
+        key=lambda item: (item.instance_count, item.updated_at, item.entry_id),
         reverse=True,
     )
     path = generated_guidance_path(root)
@@ -208,20 +325,17 @@ def rebuild_distilled_guidance(*, root: Path | None = None) -> Path:
         "- Reuse a recorded trajectory only when its applicability and constraints match the current task.",
         "",
     ]
-    for record in records[:6]:
-        effect = record.trajectory_effect
-        trajectory = record.trajectory
-        abstraction = record.problem_abstraction
+    for entry in entries[:8]:
+        example_paths = ", ".join(entry.instance_paths[:3]) or "n/a"
         lines.extend(
             [
-                f"## {record.record_id}",
+                f"## {entry.entry_id}",
                 "",
-                f"- Applies to: {abstraction.summary}",
-                f"- Preferred trajectory: {trajectory.graph_shape}; nodes={', '.join(trajectory.node_ids[:6]) or 'n/a'}; stop rule={trajectory.stop_rule}",
-                f"- Why it worked: {record.trajectory_explain}",
-                f"- Use when: {record.applicability.use_when}",
-                f"- Avoid when: {record.applicability.avoid_when}",
-                f"- Observed effect: case_score={effect.case_score:.1f}, delta_vs_previous={effect.score_delta_vs_previous:+.1f}, evidence_score={effect.evidence_score:.1f}, efficiency_score={effect.efficiency_score:.1f}, traceability_score={effect.traceability_score:.1f}",
+                f"- Classification: {entry.classification}",
+                f"- Problem abstraction: {entry.problem_abstraction}",
+                f"- Explain: {entry.explain}",
+                f"- Instance count: {entry.instance_count}",
+                f"- Example instance paths: {example_paths}",
                 "",
             ]
         )
@@ -246,26 +360,65 @@ def retrieve_experience_guidance_lines(
 ) -> list[str]:
     if not task.strip():
         return []
+    table = _table_for_read(root=root)
     ranked = sorted(
         (
-            (score_record_for_task(record, task), record)
-            for record in load_records(root=root)
+            (score_table_entry_for_task(entry, task), entry)
+            for entry in table.entries
         ),
-        key=lambda item: (item[0], item[1].confidence, item[1].trajectory_effect.case_score),
+        key=lambda item: (item[0], item[1].instance_count, item[1].updated_at),
         reverse=True,
     )
     lines: list[str] = []
-    for score, record in ranked[:limit]:
+    record_cache = _record_cache_by_instance_path(root=root)
+    for score, entry in ranked[:limit]:
         if score <= 0:
+            continue
+        instance_path, record = _representative_instance(entry, record_cache)
+        if record is None:
+            lines.extend(
+                [
+                    f"Retrieved generic experience ({entry.entry_id}): classification={entry.classification}; instances={entry.instance_count}; example={instance_path or 'n/a'}",
+                    f"Experience abstraction: {entry.problem_abstraction}",
+                    f"Experience rationale: {entry.explain}",
+                ]
+            )
             continue
         lines.extend(
             [
-                f"Retrieved generic experience ({record.record_id}): applies when {record.applicability.use_when}",
+                f"Retrieved generic experience ({entry.entry_id}): classification={entry.classification}; applies when {record.applicability.use_when}; example={instance_path or record.record_id}",
                 f"Preferred trajectory from experience: {record.trajectory.graph_shape}; nodes={', '.join(record.trajectory.node_ids[:5]) or 'n/a'}; tool rhythm={record.trajectory.tool_rhythm or 'keep tool use bounded'}",
-                f"Experience rationale: {record.trajectory_explain}",
+                f"Experience abstraction: {entry.problem_abstraction}",
+                f"Experience rationale: {entry.explain}",
             ]
         )
     return lines
+
+
+def score_table_entry_for_task(entry: ExperienceTableEntry, task: str) -> float:
+    tokens = set(_keywords(task))
+    if not tokens:
+        return 0.0
+    entry_tokens = set(
+        _keywords(
+            " ".join(
+                [
+                    entry.classification.replace("__", " "),
+                    entry.problem_abstraction,
+                    entry.explain,
+                ]
+            )
+        )
+    )
+    overlap = len(tokens & entry_tokens)
+    score = overlap * 10.0
+    if _mentions_local_only(task) and "local_only" in entry.classification:
+        score += 8.0
+    if _mentions_computation(task) and "computed_local" in entry.classification:
+        score += 8.0
+    if _mentions_evidence_boundary(task) and "evidence" in entry.explain.casefold():
+        score += 4.0
+    return score + min(entry.instance_count, 5) * 0.25
 
 
 def score_record_for_task(record: GenericOrchestrationExperienceRecord, task: str) -> float:
@@ -299,6 +452,440 @@ def score_record_for_task(record: GenericOrchestrationExperienceRecord, task: st
     if _mentions_computation(task) and "computed_local" == record.problem_classification.evidence_mode:
         score += 8.0
     return score + record.confidence
+
+
+def _load_record_items(
+    *,
+    root: Path | None = None,
+) -> list[tuple[Path, GenericOrchestrationExperienceRecord]]:
+    base = records_dir(root)
+    if not base.exists():
+        return []
+    items: list[tuple[Path, GenericOrchestrationExperienceRecord]] = []
+    for path in sorted(base.glob("*.json")):
+        record = _load_record_file(path)
+        if record is not None:
+            items.append((path, record))
+    return items
+
+
+def _load_record_file(path: Path) -> GenericOrchestrationExperienceRecord | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return GenericOrchestrationExperienceRecord.from_dict(payload)
+
+
+def _build_table_from_record_items(
+    items: list[tuple[Path, GenericOrchestrationExperienceRecord]],
+    *,
+    root: Path | None,
+    pending_count: int,
+    last_major_update_at: str | None,
+) -> ExperienceTable:
+    table = ExperienceTable(
+        schema_version=_TABLE_SCHEMA_VERSION,
+        pending_major_update_count=pending_count,
+        last_major_update_at=last_major_update_at,
+    )
+    for path, record in items:
+        _append_record_to_table(
+            table,
+            record=record,
+            record_path=path,
+            root=root,
+            timestamp=record.created_at or _now_iso(),
+            count_as_pending=False,
+        )
+    _refresh_table_entry_explains_from_records(table, items=items, root=root)
+    _normalize_experience_table(table, reset_pending=False, major_update_at=last_major_update_at)
+    table.pending_major_update_count = pending_count
+    return table
+
+
+def _append_record_to_experience_table(
+    record: GenericOrchestrationExperienceRecord,
+    *,
+    record_path: Path,
+    root: Path | None,
+    include_existing_records: bool,
+) -> None:
+    if include_existing_records:
+        table = _build_table_from_record_items(
+            [
+                (path, existing_record)
+                for path, existing_record in _load_record_items(root=root)
+                if path.resolve() != record_path.resolve()
+            ],
+            root=root,
+            pending_count=0,
+            last_major_update_at=None,
+        )
+    else:
+        table = load_experience_table(root=root) or ExperienceTable()
+    _append_record_to_table(
+        table,
+        record=record,
+        record_path=record_path,
+        root=root,
+        timestamp=_now_iso(),
+        count_as_pending=True,
+    )
+    path = experience_table_path(root)
+    _write_experience_table(table, path=path)
+    maybe_rebuild_experience_table(root=root)
+
+
+def _append_record_to_table(
+    table: ExperienceTable,
+    *,
+    record: GenericOrchestrationExperienceRecord,
+    record_path: Path,
+    root: Path | None,
+    timestamp: str,
+    count_as_pending: bool,
+) -> None:
+    classification = _classification_key(record)
+    abstraction = record.problem_abstraction.summary
+    instance_path = _instance_path(record_path, root=root)
+    entry = _matching_table_entry(table, classification=classification, abstraction=abstraction)
+    if entry is None:
+        entry = ExperienceTableEntry(
+            entry_id=_entry_id(classification=classification, abstraction=abstraction),
+            classification=classification,
+            problem_abstraction=abstraction,
+            explain=_strategy_explain_for_records([record]),
+            instance_paths=[],
+            instance_count=0,
+            created_at=record.created_at or timestamp,
+            updated_at=timestamp,
+        )
+        table.entries.append(entry)
+    if instance_path not in entry.instance_paths:
+        entry.instance_paths.append(instance_path)
+        entry.instance_count = len(entry.instance_paths)
+        table.total_instance_count += 1
+        if count_as_pending:
+            table.pending_major_update_count += 1
+    entry.updated_at = timestamp
+
+
+def _matching_table_entry(
+    table: ExperienceTable,
+    *,
+    classification: str,
+    abstraction: str,
+) -> ExperienceTableEntry | None:
+    for entry in table.entries:
+        if entry.classification == classification:
+            return entry
+    for entry in table.entries:
+        if entry.problem_abstraction == abstraction:
+            return entry
+    return None
+
+
+def _refresh_table_entry_explains_from_records(
+    table: ExperienceTable,
+    *,
+    items: list[tuple[Path, GenericOrchestrationExperienceRecord]],
+    root: Path | None,
+) -> None:
+    records_by_path = {
+        _instance_path(path, root=root): record
+        for path, record in items
+    }
+    for entry in table.entries:
+        records = [
+            records_by_path[path]
+            for path in entry.instance_paths
+            if path in records_by_path
+        ]
+        if records:
+            entry.explain = _strategy_explain_for_records(records)
+
+
+def _normalize_experience_table(
+    table: ExperienceTable,
+    *,
+    reset_pending: bool,
+    major_update_at: str | None,
+) -> None:
+    normalized_entries: list[ExperienceTableEntry] = []
+    for entry in table.entries:
+        paths = sorted({path for path in entry.instance_paths if path.strip()})
+        if not paths:
+            continue
+        entry.instance_paths = paths
+        entry.instance_count = len(paths)
+        if not entry.entry_id:
+            entry.entry_id = _entry_id(
+                classification=entry.classification,
+                abstraction=entry.problem_abstraction,
+            )
+        if not entry.created_at:
+            entry.created_at = major_update_at or _now_iso()
+        if not entry.updated_at:
+            entry.updated_at = entry.created_at
+        normalized_entries.append(entry)
+    normalized_entries.sort(key=lambda item: (item.classification, item.problem_abstraction, item.entry_id))
+    table.schema_version = _TABLE_SCHEMA_VERSION
+    table.entries = normalized_entries
+    table.total_instance_count = sum(entry.instance_count for entry in normalized_entries)
+    if reset_pending:
+        table.pending_major_update_count = 0
+        table.last_major_update_at = major_update_at or _now_iso()
+
+
+def _write_experience_table(table: ExperienceTable, *, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(table.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _table_for_read(*, root: Path | None = None) -> ExperienceTable:
+    table = load_experience_table(root=root)
+    if table is not None:
+        return table
+    return _build_table_from_record_items(
+        _load_record_items(root=root),
+        root=root,
+        pending_count=0,
+        last_major_update_at=None,
+    )
+
+
+def _record_cache_by_instance_path(
+    *,
+    root: Path | None,
+) -> dict[str, GenericOrchestrationExperienceRecord]:
+    cache: dict[str, GenericOrchestrationExperienceRecord] = {}
+    for path, record in _load_record_items(root=root):
+        cache[_instance_path(path, root=root)] = record
+    return cache
+
+
+def _representative_instance(
+    entry: ExperienceTableEntry,
+    record_cache: dict[str, GenericOrchestrationExperienceRecord],
+) -> tuple[str | None, GenericOrchestrationExperienceRecord | None]:
+    best_path: str | None = None
+    best_record: GenericOrchestrationExperienceRecord | None = None
+    best_score: tuple[float, float, str] | None = None
+    for instance_path in entry.instance_paths:
+        record = record_cache.get(instance_path)
+        if record is None:
+            continue
+        score = (
+            record.confidence,
+            record.trajectory_effect.case_score,
+            record.created_at,
+        )
+        if best_score is None or score > best_score:
+            best_path = instance_path
+            best_record = record
+            best_score = score
+    if best_record is not None:
+        return best_path, best_record
+    return (entry.instance_paths[-1] if entry.instance_paths else None), None
+
+
+def _classification_key(record: GenericOrchestrationExperienceRecord) -> str:
+    classification = record.problem_classification
+    return "__".join(
+        [
+            _slug_token(classification.intent),
+            _slug_token(classification.evidence_mode),
+            _slug_token(classification.scope),
+        ]
+    )
+
+
+def _entry_id(*, classification: str, abstraction: str) -> str:
+    digest = hashlib.sha1(f"{classification}\n{abstraction}".encode("utf-8")).hexdigest()[:8]
+    return f"{classification}__{digest}"
+
+
+def _slug_token(value: str) -> str:
+    compact = re.sub(r"[^A-Za-z0-9_]+", "_", value.strip().casefold()).strip("_")
+    return compact or "unknown"
+
+
+def _instance_path(path: Path, *, root: Path | None) -> str:
+    base = root or repo_root()
+    try:
+        return path.resolve().relative_to(base.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _now_iso() -> str:
+    return datetime.now(tz=UTC).isoformat(timespec="seconds")
+
+
+def _strategy_explain_for_records(records: list[GenericOrchestrationExperienceRecord]) -> str:
+    if not records:
+        return "Strategy: keep the graph bounded, collect enough evidence, then synthesize once."
+    representative = max(
+        records,
+        key=lambda record: (
+            record.confidence,
+            record.trajectory_effect.case_score,
+            record.created_at,
+        ),
+    )
+    classification = representative.problem_classification
+    trajectories = [record.trajectory for record in records]
+    effects = [record.trajectory_effect for record in records]
+    graph_shapes = sorted({item.graph_shape for item in trajectories if item.graph_shape})
+    node_counts = [item.node_count for item in trajectories if item.node_count > 0]
+    median_node_count = sorted(node_counts)[len(node_counts) // 2] if node_counts else 0
+    min_evidence = min((item.evidence_score for item in effects), default=0.0)
+
+    parts = [
+        _intent_strategy_sentence(classification),
+        _evidence_strategy_sentence(classification, representative.problem_abstraction),
+        _graph_strategy_sentence(graph_shapes=graph_shapes, median_node_count=median_node_count),
+        _answer_strategy_sentence(representative),
+    ]
+    risk = _risk_strategy_sentence(
+        classification=classification,
+        records=records,
+        min_evidence=min_evidence,
+    )
+    if risk:
+        parts.append(risk)
+    return " ".join(part for part in parts if part)
+
+
+def _intent_strategy_sentence(classification: ProblemClassification) -> str:
+    if classification.intent == "local_code_explanation":
+        return (
+            "Strategy: use one bounded repo-inspection lane to find the exact "
+            "code paths or run artifacts that answer the question, then do a "
+            "single synthesis pass."
+        )
+    if classification.intent == "evidence_judgment":
+        return (
+            "Strategy: frame the task as a bounded repo-local judgment: inspect "
+            "only the artifacts needed to support or reject the claim, then state "
+            "the decision and its limits."
+        )
+    if classification.intent == "computed_judgment":
+        return (
+            "Strategy: make the local computation lane explicit before synthesis "
+            "so the final judgment is tied to computed evidence, not hidden "
+            "reasoning."
+        )
+    if classification.intent == "repo_repair":
+        return (
+            "Strategy: inspect the failing local path, apply the smallest concrete "
+            "repair, verify it, then summarize the fix evidence."
+        )
+    return (
+        "Strategy: choose the smallest generic graph that still creates a visible "
+        "evidence step before the final answer."
+    )
+
+
+def _evidence_strategy_sentence(
+    classification: ProblemClassification,
+    abstraction: ProblemAbstraction,
+) -> str:
+    if classification.evidence_mode == "local_only":
+        return (
+            "Keep evidence local; stop once the necessary repository files, tests, "
+            "or orchestration artifacts have been read, and avoid web discovery or "
+            "report-style expansion unless the user asks for it."
+        )
+    if classification.evidence_mode == "computed_local":
+        return (
+            "Use local artifacts and operator outputs as the evidence source, and "
+            "separate computed values from the final interpretation."
+        )
+    if classification.evidence_mode == "trusted_web":
+        return (
+            "Use a small set of trusted sources, fetch concrete pages after search, "
+            "and separate source-backed facts from inference."
+        )
+    if "evidence_boundary" in abstraction.constraints:
+        return (
+            "Make the evidence boundary explicit so the answer distinguishes direct "
+            "evidence, inference, and remaining uncertainty."
+        )
+    return "Collect only the evidence needed for one bounded synthesis."
+
+
+def _graph_strategy_sentence(*, graph_shapes: list[str], median_node_count: int) -> str:
+    shape_text = ", ".join(graph_shapes) if graph_shapes else "unknown"
+    if median_node_count and median_node_count <= 4:
+        return (
+            f"Observed successful shape: {shape_text} with about "
+            f"{median_node_count} nodes; prefer init -> one evidence worker -> "
+            "summarize/final response instead of parallel lanes."
+        )
+    if median_node_count:
+        return (
+            f"Observed successful shape: {shape_text} with about "
+            f"{median_node_count} nodes; use multiple evidence lanes only when "
+            "the task truly has separable evidence needs."
+        )
+    return (
+        f"Observed successful shape: {shape_text}; keep the graph compact and "
+        "reserve extra lanes for clearly separable evidence needs."
+    )
+
+
+def _answer_strategy_sentence(record: GenericOrchestrationExperienceRecord) -> str:
+    constraints = set(record.problem_abstraction.constraints)
+    if "short_answer" in constraints or record.trajectory.answer_style == "short_direct_answer":
+        return (
+            "Because the prompt asks for a compact answer, put the conclusion "
+            "first and include only the minimum evidence boundary needed to make "
+            "the claim auditable."
+        )
+    if record.trajectory.answer_style == "oral_or_conversational":
+        return (
+            "Keep the final answer conversational, but still name the evidence "
+            "basis and separate what is directly supported from what is inferred."
+        )
+    return (
+        "The final answer should name the evidence basis and avoid unsupported "
+        "certainty."
+    )
+
+
+def _risk_strategy_sentence(
+    *,
+    classification: ProblemClassification,
+    records: list[GenericOrchestrationExperienceRecord],
+    min_evidence: float,
+) -> str:
+    risks: list[str] = []
+    if min_evidence and min_evidence < 70:
+        risks.append(
+            "observed evidence scores were sometimes weak, so explicitly cite the "
+            "specific artifacts used and avoid overclaiming"
+        )
+    if classification.evidence_mode == "local_only" and any(
+        record.trajectory_effect.source_url_count > 0
+        for record in records
+    ):
+        risks.append(
+            "local-only tasks should not invent or rely on external source URLs"
+        )
+    if any(record.trajectory.tool_rhythm in {"moderate", "heavy"} for record in records):
+        risks.append(
+            "watch for over-orchestration when the user only wants a short local answer"
+        )
+    if not risks:
+        return ""
+    return "Risk control: " + "; ".join(risks) + "."
 
 
 def build_experience_record(

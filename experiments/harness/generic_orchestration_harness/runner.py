@@ -17,26 +17,24 @@ if __package__ in {None, ""}:
 
 from code2workspace_cli.generic_experience_store import (
     build_experience_record,
+    experience_skill_root,
     rebuild_distilled_guidance,
     write_record,
 )
 from code2workspace_cli.supervisor_evaluation import write_evaluation_for_run
 
-from experiments.harness.generic_orchestration_harness.agent import propose_variant
 from experiments.harness.generic_orchestration_harness.core import (
     CandidateEvaluation,
     CaseScoreResult,
     Experiment,
     IterationRecord,
+    Proposal,
     RunLayout,
     RunReport,
     SplitScore,
+    Variant,
     load_experiment,
     repo_root,
-)
-from experiments.harness.generic_orchestration_harness.patching import (
-    build_baseline_variant,
-    workspace_override_context,
 )
 
 
@@ -48,6 +46,7 @@ SCORE_WEIGHTS = {
     "answer_score": 0.15,
     "efficiency_score": 0.15,
 }
+EXPERIENCE_EXPORT_MIN_SCORE = 70.0
 
 
 def evaluate_case(*, case, split_dir: Path) -> CaseScoreResult:
@@ -70,38 +69,78 @@ def evaluate_case(*, case, split_dir: Path) -> CaseScoreResult:
         if env.get("PYTHONPATH")
         else [str(repo_root())]
     )
-    completed = subprocess.run(
-        [
-            "uv",
-            "run",
-            "--project",
-            str(repo_root() / "libs" / "cli"),
-            "code2workspace",
-            "--session-workdir-mode",
-            "isolated",
-            "--no-mcp",
-            "-n",
-            case.prompt,
-            "-q",
-        ],
-        cwd=case_dir,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=case.max_runtime_minutes * 60,
-        check=False,
-    )
-    stdout_path.write_text(completed.stdout, encoding="utf-8")
-    stderr_path.write_text(completed.stderr, encoding="utf-8")
+    command = [
+        "uv",
+        "run",
+        "--project",
+        str(repo_root() / "libs" / "cli"),
+        "code2workspace",
+        "--session-workdir-mode",
+        "isolated",
+        "--no-mcp",
+        "-n",
+        case.prompt,
+        "-q",
+    ]
+    timed_out = False
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=case_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=case.max_runtime_minutes * 60,
+            check=False,
+        )
+        returncode = completed.returncode
+        stdout = completed.stdout
+        stderr = completed.stderr
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        returncode = -1
+        stdout = _timeout_output_to_text(exc.stdout)
+        stderr = _timeout_output_to_text(exc.stderr)
+        if stderr:
+            stderr += "\n"
+        stderr += f"Timed out after {case.max_runtime_minutes} minutes."
+    stdout_path.write_text(stdout, encoding="utf-8")
+    stderr_path.write_text(stderr, encoding="utf-8")
 
-    run_dir = locate_latest_run_dir(case_dir, known_run_dirs=known_run_dirs)
+    run_dir = locate_latest_run_dir(
+        case_dir,
+        known_run_dirs=known_run_dirs,
+        expected_task=case.prompt,
+    )
     if run_dir is None:
-        raise RuntimeError(f"no orchestration run directory found for case {case.case_id}")
+        return _failed_case_result(
+            case=case,
+            status="failed",
+            returncode=returncode,
+            completion_status="timeout" if timed_out else "missing_artifacts",
+            completion_level="D0.no_orchestration_run",
+            finding=f"no orchestration run directory found for case {case.case_id}",
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+        )
 
     if not (run_dir / "generic_trace_summary.json").exists():
         write_evaluation_for_run(run_dir)
     summary_path = run_dir / "generic_trace_summary.json"
     evaluation_path = run_dir / "evaluation.json"
+    if not summary_path.exists():
+        return _failed_case_result(
+            case=case,
+            status="failed",
+            returncode=returncode,
+            completion_status="timeout" if timed_out else "missing_artifacts",
+            completion_level="D0.missing_generic_trace_summary",
+            finding=f"generic_trace_summary.json missing for run {run_dir}",
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            run_dir=run_dir,
+            evaluation_path=evaluation_path,
+        )
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     scores = {
         str(name): float(value)
@@ -114,13 +153,18 @@ def evaluate_case(*, case, split_dir: Path) -> CaseScoreResult:
         case_id=case.case_id,
         split=case.split,
         weight=case.weight,
-        status="passed" if completed.returncode == 0 else "failed",
-        returncode=completed.returncode,
+        status="failed" if timed_out or returncode != 0 else "passed",
+        returncode=returncode,
         completion_status=str(summary.get("completion_status", "")),
         completion_level=str(summary.get("completion_level", "")),
         overall_score=overall_score,
         component_scores=scores,
-        findings=findings,
+        findings=(
+            (f"case timed out after {case.max_runtime_minutes} minutes.",)
+            if timed_out
+            else ()
+        )
+        + findings,
         run_dir=str(run_dir),
         generic_trace_summary_path=str(summary_path),
         evaluation_path=str(evaluation_path),
@@ -135,13 +179,83 @@ def discover_run_dirs(case_dir: Path) -> list[Path]:
     return sorted(path for path in candidates if path.is_dir())
 
 
-def locate_latest_run_dir(case_dir: Path, *, known_run_dirs: set[Path] | None = None) -> Path | None:
+def locate_latest_run_dir(
+    case_dir: Path,
+    *,
+    known_run_dirs: set[Path] | None = None,
+    expected_task: str | None = None,
+) -> Path | None:
     candidates = discover_run_dirs(case_dir)
     if known_run_dirs:
         fresh = [path for path in candidates if path not in known_run_dirs]
-        if fresh:
-            candidates = fresh
+        if not fresh:
+            return None
+        candidates = fresh
+    if expected_task:
+        matching = [
+            path
+            for path in candidates
+            if _run_dir_request_task(path) == expected_task
+        ]
+        if matching:
+            return matching[-1]
+        if any(_run_dir_request_task(path) is not None for path in candidates):
+            return None
     return candidates[-1] if candidates else None
+
+
+def _run_dir_request_task(run_dir: Path) -> str | None:
+    request_path = run_dir / "request.json"
+    if not request_path.exists():
+        return None
+    try:
+        payload = json.loads(request_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    task = payload.get("task")
+    return task if isinstance(task, str) else None
+
+
+def _timeout_output_to_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def _failed_case_result(
+    *,
+    case,
+    status: str,
+    returncode: int,
+    completion_status: str,
+    completion_level: str,
+    finding: str,
+    stdout_path: Path,
+    stderr_path: Path,
+    run_dir: Path | None = None,
+    evaluation_path: Path | None = None,
+) -> CaseScoreResult:
+    return CaseScoreResult(
+        case_id=case.case_id,
+        split=case.split,
+        weight=case.weight,
+        status=status,
+        returncode=returncode,
+        completion_status=completion_status,
+        completion_level=completion_level,
+        overall_score=0.0,
+        component_scores={},
+        findings=(finding,),
+        run_dir=str(run_dir or ""),
+        generic_trace_summary_path="",
+        evaluation_path=str(evaluation_path or ""),
+        stdout_path=str(stdout_path),
+        stderr_path=str(stderr_path),
+    )
 
 
 def aggregate_case_score(scores: dict[str, float]) -> float:
@@ -196,6 +310,29 @@ def should_accept_candidate(
     return candidate_combined > baseline_combined
 
 
+def build_experience_variant(label: str) -> Variant:
+    return Variant(label=label, changed_surfaces=(), values={})
+
+
+def snapshot_experience_skill(*, layout: RunLayout, iteration: int) -> Path | None:
+    source = experience_skill_root(repo_root())
+    target = layout.iteration_dir(iteration) / "generic_experience_snapshot"
+    if target.exists():
+        shutil.rmtree(target)
+    if not source.exists():
+        return None
+    shutil.copytree(source, target)
+    return target
+
+
+def restore_experience_skill_snapshot(snapshot: Path | None) -> None:
+    target = experience_skill_root(repo_root())
+    if target.exists():
+        shutil.rmtree(target)
+    if snapshot is not None and snapshot.exists():
+        shutil.copytree(snapshot, target)
+
+
 def run_split(*, experiment: Experiment, layout: RunLayout, split: str, variant) -> SplitScore:
     split_dir = layout.split_dir(split=split, variant=variant.key)
     split_dir.mkdir(parents=True, exist_ok=True)
@@ -203,20 +340,19 @@ def run_split(*, experiment: Experiment, layout: RunLayout, split: str, variant)
 
     cases = experiment.cases_for_split(split)
     outcomes: list[CaseScoreResult] = []
-    with workspace_override_context(experiment, variant):
-        if experiment.max_parallel_cases <= 1 or len(cases) <= 1:
-            for case in cases:
-                outcomes.append(evaluate_case(case=case, split_dir=split_dir))
-        else:
-            indexed: list[CaseScoreResult | None] = [None] * len(cases)
-            with ThreadPoolExecutor(max_workers=experiment.max_parallel_cases) as executor:
-                future_to_index = {
-                    executor.submit(evaluate_case, case=case, split_dir=split_dir): index
-                    for index, case in enumerate(cases)
-                }
-                for future in as_completed(future_to_index):
-                    indexed[future_to_index[future]] = future.result()
-            outcomes = [item for item in indexed if item is not None]
+    if experiment.max_parallel_cases <= 1 or len(cases) <= 1:
+        for case in cases:
+            outcomes.append(evaluate_case(case=case, split_dir=split_dir))
+    else:
+        indexed: list[CaseScoreResult | None] = [None] * len(cases)
+        with ThreadPoolExecutor(max_workers=experiment.max_parallel_cases) as executor:
+            future_to_index = {
+                executor.submit(evaluate_case, case=case, split_dir=split_dir): index
+                for index, case in enumerate(cases)
+            }
+            for future in as_completed(future_to_index):
+                indexed[future_to_index[future]] = future.result()
+        outcomes = [item for item in indexed if item is not None]
 
     result = aggregate_split_scores(split=split, variant=variant.key, outcomes=outcomes)
     result.save(split_dir / "result.json")
@@ -250,14 +386,12 @@ def _export_accepted_candidate_experience(
     case_lookup = {case.case_id: case for case in experiment.cases}
     split_baselines = {
         "train": previous_train.mean_score,
-        "holdout": previous_holdout.mean_score,
     }
     split_candidates = {
         "train": candidate.train.mean_score,
-        "holdout": candidate.holdout.mean_score,
     }
     written: list[Path] = []
-    for outcome in (*candidate.train.outcomes, *candidate.holdout.outcomes):
+    for outcome in candidate.train.outcomes:
         case = case_lookup.get(outcome.case_id)
         if case is None:
             continue
@@ -282,6 +416,92 @@ def _export_accepted_candidate_experience(
     return written
 
 
+def _export_training_experience_candidate(
+    *,
+    experiment: Experiment,
+    layout: RunLayout,
+    iteration: int,
+    current_train: SplitScore,
+    reference_train: SplitScore,
+) -> list[Path]:
+    case_lookup = {case.case_id: case for case in experiment.cases}
+    variant = f"iter-{iteration:03d}"
+    written: list[Path] = []
+    for outcome in current_train.outcomes:
+        if not _is_exportable_experience_outcome(outcome):
+            continue
+        case = case_lookup.get(outcome.case_id)
+        if case is None:
+            continue
+        summary_path = Path(outcome.generic_trace_summary_path)
+        run_dir = Path(outcome.run_dir)
+        generic_trace_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        record = build_experience_record(
+            case_id=case.case_id,
+            prompt=case.prompt,
+            split=case.split,
+            variant=variant,
+            harness_run_root=layout.run_root,
+            orchestration_run_dir=run_dir,
+            generic_trace_summary=generic_trace_summary,
+            baseline_split_mean_score=reference_train.mean_score,
+            candidate_split_mean_score=current_train.mean_score,
+        )
+        written.append(write_record(record))
+    if written:
+        rebuild_distilled_guidance()
+    _write_experience_candidate_artifact(
+        layout=layout,
+        iteration=iteration,
+        current_train=current_train,
+        reference_train=reference_train,
+        written=written,
+    )
+    return written
+
+
+def _is_exportable_experience_outcome(outcome: CaseScoreResult) -> bool:
+    if outcome.status != "passed" or outcome.returncode != 0:
+        return False
+    if outcome.completion_status != "completed":
+        return False
+    if outcome.overall_score < EXPERIENCE_EXPORT_MIN_SCORE:
+        return False
+    return Path(outcome.generic_trace_summary_path).exists() and Path(outcome.run_dir).exists()
+
+
+def _write_experience_candidate_artifact(
+    *,
+    layout: RunLayout,
+    iteration: int,
+    current_train: SplitScore,
+    reference_train: SplitScore,
+    written: list[Path],
+) -> None:
+    iteration_dir = layout.iteration_dir(iteration)
+    iteration_dir.mkdir(parents=True, exist_ok=True)
+    (iteration_dir / "experience_candidate.json").write_text(
+        json.dumps(
+            {
+                "iteration": iteration,
+                "variant": f"iter-{iteration:03d}",
+                "source_split": "train",
+                "source_variant": current_train.variant,
+                "source_train_mean_score": current_train.mean_score,
+                "reference_train_mean_score": reference_train.mean_score,
+                "record_count": len(written),
+                "record_paths": [str(path) for path in written],
+                "target": ".code2workspace/skills/orchestration/generic-experience",
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def sync_experience_skill_from_run_root(run_root: Path) -> list[Path]:
     manifest_path = run_root / "manifest.json"
     report_path = run_root / "report.json"
@@ -298,7 +518,6 @@ def sync_experience_skill_from_run_root(run_root: Path) -> list[Path]:
         if isinstance(item, dict) and item.get("case_id")
     }
     previous_train = float(report.get("baseline_train", {}).get("mean_score", 0.0))
-    previous_holdout = float(report.get("baseline_holdout", {}).get("mean_score", 0.0))
     written: list[Path] = []
     for iteration in report.get("iterations", []):
         if not isinstance(iteration, dict):
@@ -308,40 +527,33 @@ def sync_experience_skill_from_run_root(run_root: Path) -> list[Path]:
             continue
         variant = str(candidate.get("variant", "candidate"))
         train = dict(candidate.get("train") or {})
-        holdout = dict(candidate.get("holdout") or {})
         current_train = float(train.get("mean_score", previous_train))
-        current_holdout = float(holdout.get("mean_score", previous_holdout))
-        for split_name, split_payload, previous_mean, current_mean in (
-            ("train", train, previous_train, current_train),
-            ("holdout", holdout, previous_holdout, current_holdout),
-        ):
-            for outcome in split_payload.get("outcomes", []):
-                if not isinstance(outcome, dict):
-                    continue
-                case_id = str(outcome.get("case_id", ""))
-                case = case_lookup.get(case_id)
-                if not isinstance(case, dict):
-                    continue
-                summary_path = Path(str(outcome.get("generic_trace_summary_path", "")))
-                orchestration_run_dir = Path(str(outcome.get("run_dir", "")))
-                if not summary_path.exists() or not orchestration_run_dir.exists():
-                    continue
-                summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
-                record = build_experience_record(
-                    case_id=case_id,
-                    prompt=str(case.get("prompt", "")),
-                    split=split_name,
-                    variant=variant,
-                    harness_run_root=run_root,
-                    orchestration_run_dir=orchestration_run_dir,
-                    generic_trace_summary=summary_payload,
-                    baseline_split_mean_score=previous_mean,
-                    candidate_split_mean_score=current_mean,
-                    created_at=str(report.get("created_at", "")) or None,
-                )
-                written.append(write_record(record))
+        for outcome in train.get("outcomes", []):
+            if not isinstance(outcome, dict):
+                continue
+            case_id = str(outcome.get("case_id", ""))
+            case = case_lookup.get(case_id)
+            if not isinstance(case, dict):
+                continue
+            summary_path = Path(str(outcome.get("generic_trace_summary_path", "")))
+            orchestration_run_dir = Path(str(outcome.get("run_dir", "")))
+            if not summary_path.exists() or not orchestration_run_dir.exists():
+                continue
+            summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+            record = build_experience_record(
+                case_id=case_id,
+                prompt=str(case.get("prompt", "")),
+                split="train",
+                variant=variant,
+                harness_run_root=run_root,
+                orchestration_run_dir=orchestration_run_dir,
+                generic_trace_summary=summary_payload,
+                baseline_split_mean_score=previous_train,
+                candidate_split_mean_score=current_train,
+                created_at=str(report.get("created_at", "")) or None,
+            )
+            written.append(write_record(record))
         previous_train = current_train
-        previous_holdout = current_holdout
     rebuild_distilled_guidance()
     return written
 
@@ -352,9 +564,13 @@ def run_baseline(*, experiment: Experiment, split: str | None = None, output_roo
         experiment_name=experiment.name,
     )
     layout.write_manifest(experiment)
-    baseline = build_baseline_variant(experiment)
+    baseline = build_experience_variant("baseline")
     baseline.save(layout.variant_path(baseline.key))
-    splits = [split] if split is not None else [name for name in ("train", "holdout", "scorecard") if experiment.has_split(name)]
+    splits = (
+        [split]
+        if split is not None
+        else [name for name in ("train", "holdout", "scorecard") if experiment.has_split(name)]
+    )
     for current_split in splits:
         run_split(
             experiment=experiment,
@@ -373,8 +589,6 @@ def run_experiment(
 ) -> RunReport:
     if not experiment.has_split("train") or not experiment.has_split("holdout"):
         raise ValueError("optimize requires both train and holdout cases")
-    if not experiment.has_proposer():
-        raise ValueError("optimize requires [proposer].command")
 
     layout = RunLayout(
         output_root=output_root or experiment.output_root,
@@ -382,7 +596,7 @@ def run_experiment(
     )
     layout.write_manifest(experiment)
 
-    baseline = build_baseline_variant(experiment)
+    baseline = build_experience_variant("baseline")
     baseline.save(layout.variant_path(baseline.key))
     baseline_train = run_split(
         experiment=experiment,
@@ -403,14 +617,24 @@ def run_experiment(
 
     iterations: list[IterationRecord] = []
     for index in range(1, iteration_limit + 1):
-        proposal, candidate_variant = propose_variant(
+        snapshot = snapshot_experience_skill(layout=layout, iteration=index)
+        written_records = _export_training_experience_candidate(
             experiment=experiment,
-            current=current,
-            train_result=current_train,
             layout=layout,
             iteration=index,
+            current_train=current_train,
+            reference_train=baseline_train,
         )
-        if not proposal.changed_surfaces:
+        proposal = Proposal(
+            changed_surfaces=(),
+            workspace_dir=str(layout.iteration_dir(index)),
+            summary=(
+                f"Seeded generic-experience with {len(written_records)} train records "
+                "and rebuilt distilled guidance."
+            ),
+        )
+        if not written_records:
+            restore_experience_skill_snapshot(snapshot)
             iterations.append(
                 IterationRecord(
                     iteration=index,
@@ -419,6 +643,7 @@ def run_experiment(
                 )
             )
             break
+        candidate_variant = build_experience_variant(f"iter-{index:03d}")
 
         train = run_split(
             experiment=experiment,
@@ -439,9 +664,9 @@ def run_experiment(
             candidate_holdout=holdout,
         )
         reason = (
-            "improved combined generic harness score without degrading holdout traceability"
+            "generic-experience candidate improved combined score without degrading holdout traceability"
             if accepted
-            else "did not improve combined score enough under holdout guardrails"
+            else "generic-experience candidate did not improve combined score enough under holdout guardrails"
         )
         candidate = CandidateEvaluation(
             variant=candidate_variant.key,
@@ -464,16 +689,11 @@ def run_experiment(
             )
         )
         if accepted:
-            _export_accepted_candidate_experience(
-                experiment=experiment,
-                layout=layout,
-                candidate=candidate,
-                previous_train=current_train,
-                previous_holdout=current_holdout,
-            )
             current = candidate_variant
             current_train = train
             current_holdout = holdout
+        else:
+            restore_experience_skill_snapshot(snapshot)
 
     report = RunReport(
         created_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),

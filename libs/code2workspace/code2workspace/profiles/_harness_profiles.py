@@ -78,7 +78,7 @@ class _HarnessProfile:
     tool_description_overrides: dict[str, str] = field(default_factory=dict)
     """Per-tool description replacements, keyed by tool name.
 
-    Applied only where Code2Workspace has a stable description hook: built-in
+    Applied only where EpiMindAgent has a stable description hook: built-in
     filesystem tools, the `task` tool, and user-supplied `BaseTool` / dict
     tools. Plain callable tools are left unchanged.
 

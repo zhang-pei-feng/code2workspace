@@ -138,6 +138,11 @@ class TestRunTextualAppReturnType:
             f"run_textual_app should return AppResult, got {annotation}"
         )
 
+    def test_run_textual_app_defaults_to_auto_approve(self) -> None:
+        """The TUI app entrypoint defaults to auto-approve."""
+        sig = inspect.signature(run_textual_app)
+        assert sig.parameters["auto_approve"].default is True
+
 
 class TestRunTextualCliAsyncReturnType:
     """Test that run_textual_cli_async returns AppResult."""
@@ -149,6 +154,11 @@ class TestRunTextualCliAsyncReturnType:
             "run_textual_cli_async should return AppResult, "
             f"got {sig.return_annotation}"
         )
+
+    def test_run_textual_cli_async_defaults_to_auto_approve(self) -> None:
+        """The interactive CLI entrypoint defaults to auto-approve."""
+        sig = inspect.signature(run_textual_cli_async)
+        assert sig.parameters["auto_approve"].default is True
 
 
 class TestThreadMessage:
@@ -198,6 +208,10 @@ class TestRunTextualCliAsyncMcp:
 
         assert result == app_result
 
+        # Interactive CLI startup defaults to tool auto-approve; the TUI keeps
+        # this as client-side state so Shift+Tab can still toggle it.
+        assert captured_kwargs["auto_approve"] is True
+
         # Server kwargs forwarded for deferred startup inside the TUI
         assert captured_kwargs["server_kwargs"] is not None
         assert captured_kwargs["server_kwargs"]["assistant_id"] == "agent"
@@ -239,6 +253,26 @@ class TestRunTextualCliAsyncMcp:
             )
 
         assert captured_kwargs["mcp_preload_kwargs"] is None
+
+    async def test_manual_approval_mode_forwarded_to_textual_app(self) -> None:
+        """--no-auto-approve should start the TUI in manual approval mode."""
+        app_result = AppResult(return_code=0, thread_id="thread-123")
+        captured_kwargs: dict[str, Any] = {}
+
+        async def _run_textual_app_stub(**kwargs: Any) -> AppResult:
+            captured_kwargs.update(kwargs)
+            await asyncio.sleep(0)
+            return app_result
+
+        with patch("code2workspace_cli.app.run_textual_app", new=_run_textual_app_stub):
+            await run_textual_cli_async(
+                "agent",
+                auto_approve=False,
+                thread_id="thread-123",
+                model_name="openai:gpt-4o",
+            )
+
+        assert captured_kwargs["auto_approve"] is False
 
 
 class TestServerCleanupLifecycle:

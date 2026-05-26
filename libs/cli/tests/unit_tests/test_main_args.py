@@ -56,6 +56,75 @@ def test_shell_allow_list_not_specified(mock_argv: MockArgvType) -> None:
         assert parsed_args.shell_allow_list is None
 
 
+def test_auto_approve_enabled_by_default(mock_argv: MockArgvType) -> None:
+    """Interactive CLI sessions start with tool auto-approve enabled."""
+    with mock_argv():
+        parsed_args = parse_args()
+        assert parsed_args.auto_approve is True
+
+
+def test_no_auto_approve_disables_default(mock_argv: MockArgvType) -> None:
+    """--no-auto-approve starts interactive sessions in manual mode."""
+    with mock_argv("--no-auto-approve"):
+        parsed_args = parse_args()
+        assert parsed_args.auto_approve is False
+
+
+class TestInteractiveAutoApprovePolicy:
+    """Tests for resolved interactive auto-approve startup policy."""
+
+    def _run_interactive_cli(self, argv: list[str]) -> AsyncMock:
+        """Run cli_main with the TUI stubbed and return the stub."""
+        from code2workspace_cli.app import AppResult
+        from code2workspace_cli.main import cli_main
+
+        mock_run = AsyncMock(return_value=AppResult(return_code=0, thread_id=None))
+        with (
+            patch.object(sys, "argv", argv),
+            patch("code2workspace_cli.main.check_cli_dependencies"),
+            patch("code2workspace_cli.main.apply_stdin_pipe"),
+            patch(
+                "code2workspace_cli.main._check_mcp_project_trust",
+                return_value=False,
+            ),
+            patch("code2workspace_cli.sessions.generate_thread_id", return_value="tid"),
+            patch(
+                "code2workspace_cli.sessions.thread_exists",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "code2workspace_cli.config.build_langsmith_thread_url",
+                return_value=None,
+            ),
+            patch("code2workspace_cli.main.run_textual_cli_async", mock_run),
+        ):
+            cli_main()
+        return mock_run
+
+    def test_interactive_default_passes_auto_approve_true(self) -> None:
+        """Plain interactive startup enters auto-approve mode."""
+        mock_run = self._run_interactive_cli(["code2workspace", "--no-mcp"])
+
+        assert mock_run.await_args.kwargs["auto_approve"] is True  # type: ignore[union-attr]
+
+    def test_shell_allow_list_starts_manual_unless_auto_explicit(self) -> None:
+        """A restrictive interactive shell allow-list keeps its restriction."""
+        mock_run = self._run_interactive_cli(
+            ["code2workspace", "--no-mcp", "-S", "recommended"]
+        )
+
+        assert mock_run.await_args.kwargs["auto_approve"] is False  # type: ignore[union-attr]
+
+    def test_explicit_auto_approve_overrides_shell_allow_list_manual_mode(self) -> None:
+        """Explicit -y keeps full auto-approve even with a shell allow-list."""
+        mock_run = self._run_interactive_cli(
+            ["code2workspace", "--no-mcp", "-S", "recommended", "-y"]
+        )
+
+        assert mock_run.await_args.kwargs["auto_approve"] is True  # type: ignore[union-attr]
+
+
 def test_shell_allow_list_combined_with_other_args(mock_argv: MockArgvType) -> None:
     """Test that shell-allow-list works with other arguments."""
     with mock_argv(

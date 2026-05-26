@@ -14,7 +14,6 @@ from typing import Any
 
 VALID_SPLITS = ("train", "holdout", "scorecard")
 VISIBLE_SPLITS = {"train"}
-VALID_SURFACE_KINDS = {"workspace_file"}
 ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
 SLUG_PATTERN = re.compile(r"[^a-zA-Z0-9._-]+")
 
@@ -32,18 +31,6 @@ def resolve_repo_path(raw: str) -> Path:
     return path if path.is_absolute() else repo_root() / path
 
 
-def resolve_command_tokens(tokens: list[str]) -> tuple[str, ...]:
-    resolved: list[str] = []
-    for token in tokens:
-        expanded = expand_env(token)
-        candidate = resolve_repo_path(expanded)
-        if ("/" in expanded or expanded.endswith(".py")) and candidate.exists():
-            resolved.append(str(candidate))
-        else:
-            resolved.append(expanded)
-    return tuple(resolved)
-
-
 def utc_stamp() -> str:
     return datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
 
@@ -51,15 +38,6 @@ def utc_stamp() -> str:
 def safe_slug(value: str) -> str:
     slug = SLUG_PATTERN.sub("_", value).strip("_")
     return slug or "item"
-
-
-@dataclass(frozen=True)
-class Surface:
-    name: str
-    kind: str
-    target: str
-    filename: str
-    base_value: str
 
 
 @dataclass(frozen=True)
@@ -78,9 +56,6 @@ class Experiment:
     output_root: Path
     max_iterations: int
     max_parallel_cases: int
-    proposer_command: tuple[str, ...] | None
-    proposer_max_runtime_minutes: int
-    surfaces: dict[str, Surface]
     cases: tuple[GenericCase, ...]
 
     def cases_for_split(self, split: str) -> list[GenericCase]:
@@ -89,12 +64,9 @@ class Experiment:
     def has_split(self, split: str) -> bool:
         return bool(self.cases_for_split(split))
 
-    def has_proposer(self) -> bool:
-        return self.proposer_command is not None
-
     @property
     def proposer_mode(self) -> str | None:
-        return "command" if self.proposer_command is not None else None
+        return "experience_memory"
 
 
 @dataclass(frozen=True)
@@ -288,9 +260,6 @@ class RunLayout:
     def iteration_dir(self, iteration: int) -> Path:
         return self.visible_iterations_dir / f"{iteration:03d}"
 
-    def proposer_workspace_dir(self, iteration: int) -> Path:
-        return self.iteration_dir(iteration) / "proposer_workspace"
-
     def write_manifest(self, experiment: Experiment) -> None:
         self.run_root.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -299,10 +268,6 @@ class RunLayout:
             "max_iterations": experiment.max_iterations,
             "max_parallel_cases": experiment.max_parallel_cases,
             "proposer_mode": experiment.proposer_mode,
-            "proposer_command": None
-            if experiment.proposer_command is None
-            else list(experiment.proposer_command),
-            "surfaces": [asdict(surface) for surface in experiment.surfaces.values()],
             "cases": [asdict(case) for case in experiment.cases],
         }
         (self.run_root / "manifest.json").write_text(
@@ -345,22 +310,15 @@ def load_experiment(path: Path) -> Experiment:
     surface_cfg = payload.get("surfaces", {})
     cases_cfg = payload.get("cases", [])
 
-    surfaces: dict[str, Surface] = {}
-    for name, data in surface_cfg.items():
-        kind = str(data["kind"])
-        if kind not in VALID_SURFACE_KINDS:
-            raise ValueError(f"unsupported surface kind: {kind}")
-        filename = str(data.get("filename") or Path(str(data["target"])).name)
-        if "base_file" in data:
-            base_value = resolve_repo_path(str(data["base_file"])).read_text(encoding="utf-8")
-        else:
-            base_value = str(data["base_value"])
-        surfaces[name] = Surface(
-            name=name,
-            kind=kind,
-            target=str(data["target"]),
-            filename=filename,
-            base_value=base_value,
+    if surface_cfg:
+        raise ValueError(
+            "generic orchestration harness no longer supports editable surfaces; "
+            "evolve .code2workspace/skills/orchestration/generic-experience instead"
+        )
+    if proposer_cfg:
+        raise ValueError(
+            "generic orchestration harness no longer supports a surface proposer; "
+            "optimize now builds generic-experience candidates directly"
         )
 
     cases: list[GenericCase] = []
@@ -378,18 +336,11 @@ def load_experiment(path: Path) -> Experiment:
             )
         )
 
-    proposer_command = None
-    if "command" in proposer_cfg:
-        proposer_command = resolve_command_tokens(list(proposer_cfg["command"]))
-
     return Experiment(
         path=path,
         name=str(experiment_cfg["name"]),
         output_root=resolve_repo_path(str(experiment_cfg["output_root"])),
         max_iterations=int(experiment_cfg.get("max_iterations", 1)),
         max_parallel_cases=int(experiment_cfg.get("max_parallel_cases", 1)),
-        proposer_command=proposer_command,
-        proposer_max_runtime_minutes=int(proposer_cfg.get("max_runtime_minutes", 10)),
-        surfaces=surfaces,
         cases=tuple(cases),
     )

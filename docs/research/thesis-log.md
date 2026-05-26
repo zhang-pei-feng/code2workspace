@@ -24,6 +24,98 @@ and evidence-backed completion judgment.
 
 ## Chronology
 
+### 2026-05-25
+
+- Hardened report-family output quality after live Ebola-report probes:
+  - report guidance now requires numbered `##` major sections, valid Markdown
+    spacing for headings and list markers, and paragraph-led formal prose
+    rather than one-sentence bullet-note bodies
+  - the final user-facing report path now prefers the already composed
+    `composed_report/final_report.md` artifact directly for report tasks,
+    preventing a final editor pass from degrading spacing or report shape
+  - targeted prompt/finalization tests passed, and a fresh Ebola report run
+    completed with `All nodes completed`
+- Narrowed the generic harness optimization object to `generic-experience`
+  only:
+  - removed the live generic harness `[proposer]` and `[surfaces]` configuration
+    that previously let the loop patch `supervisor-guidance` family/node files
+  - deleted the generic-only surface proposer and patching helper modules so
+    the live generic harness has no remaining guidance-surface edit path
+  - `optimize` now snapshots `.code2workspace/skills/orchestration/generic-experience`,
+    exports high-scoring train trajectories into experience records, rebuilds
+    the distilled guidance, reruns train/holdout, and restores the snapshot
+    when a candidate fails guardrails
+  - this makes the experimental improvement chain explicitly
+    `train case -> experience record -> distilled skill -> next generic run`,
+    rather than `train case -> guidance surface patch`
+- Upgraded `generic-experience` from record-only memory to a table-first skill:
+  - added `experience_table.json` with rows shaped as classification, problem
+    abstraction, strategy explain, and instance paths
+  - `write_record()` now preserves each detailed `records/*.json` instance and
+    also appends it to the table, merging same-class/same-abstraction examples
+    without rewriting abstract fields during ordinary appends
+  - the first 5 historical records were reused as seed data, producing 2 table
+    rows: 4 repo-local explanation examples and 1 evidence-judgment example
+  - every 20 pending instances now triggers a deterministic major update hook
+    that dedupes paths, sorts rows, corrects counts, records update time, and
+    resets the pending counter without LLM abstraction rewriting
+  - distilled guidance and top-k generic experience retrieval now prefer table
+    entries, with legacy `records/*.json` fallback for older skill packages
+- Ran broader generic harness baselines after the table-first memory change:
+  - the first all-split attempt completed train but exposed that run discovery
+    could accidentally pick an unrelated newer orchestration run from the shared
+    workspace when evaluating a case
+  - hardened generic harness evaluation so run directory discovery prefers
+    `request.json.task == case.prompt`, preventing concurrent/background runs
+    from contaminating case scoring
+  - hardened timeout handling so a slow case is serialized as a failed outcome
+    with stdout/stderr instead of crashing the entire split
+  - fresh holdout rerun
+    `experiments/harness/runs/generic-orchestration-harness/20260525T030040Z`
+    completed `3/3` cases, all `D6.evidence_boundary_preserved`, mean score
+    `89.33`
+  - fresh scorecard rerun
+    `experiments/harness/runs/generic-orchestration-harness/20260525T030728Z`
+    completed `3/3` cases, mean score `93.17`; the COVID/flu peak case stayed
+    at `D5.final_answer_written` because the artifact judge judged the final
+    answer as not preserving evidence boundaries clearly enough
+- Extended the generic orchestration harness case set from local-code-only
+  examples toward real-world generic judgment tasks:
+  - added a local-code holdout case asking whether the generic harness truly
+    performs skill evolution and what the evidence chain is
+  - added three `scorecard` cases for public-health style generic judgments:
+    Spring Festival travel and COVID spread, next COVID/flu positivity peak,
+    and BA.3.2 vs XFG descendant severity risk
+- Practiced both new harness paths with live baseline runs:
+  - `scorecard` run:
+    `experiments/harness/runs/generic-orchestration-harness/20260525T002747Z`
+    completed `3/3` cases, all at `D6.evidence_boundary_preserved`, mean score
+    `97.0`
+  - `holdout` run:
+    `experiments/harness/runs/generic-orchestration-harness/20260525T003726Z`
+    completed `3/3` cases, all at `D6.evidence_boundary_preserved`, mean score
+    `92.0`
+  - the new skill-evolution holdout answer correctly framed the current system
+    as offline experience distillation and prompt reinjection rather than
+    automatic online self-modification
+- The live scorecard surfaced two thesis-useful evaluation gaps:
+  - deterministic artifact scores can be high even when source candidate sets
+    include low-weight URLs such as wiki/social pages, so source-quality checks
+    should be added before treating scorecard success as semantic quality
+  - audit-summary text helps traceability, but may make an answer feel more
+    formal than requested for "oral judgment" generic prompts
+- Replaced the local `epietl-api` capability-skill body with the upstream
+  `https://epietl.com/SKILL.md` contract while preserving project frontmatter
+  and a thin local-helper entry:
+  - the skill now follows the upstream query-only reports/events framing,
+    authenticated endpoint boundary, official parameter names, error handling,
+    and citation rules
+  - the helper now supports official params such as `organization`, `keyword`,
+    `period_from`, `period_to`, and `risk_category`
+  - the helper still supports public `health` / `channels`, sends both Bearer
+    and `X-API-Key` headers when a key is available, and trims oversized
+    collection responses when the API ignores `limit`
+
 ### 2026-05-21
 
 - Verified the external-dataset benchmark path on a fresh long-read virus
@@ -440,22 +532,14 @@ and evidence-backed completion judgment.
     `generic_trace_summary.json` / `evaluation.json` instead of using a mocked
     planner or static prompt check
   - the harness materializes `manifest.json`, variants, split summaries,
-    proposer workspace artifacts, per-case copied run evidence, iteration
-    decisions, and final `report.json`
-  - the first optimization surface intentionally stays on generic guidance
-    assets rather than Python runtime logic so prompt-policy changes can be
-    iterated safely and compared directly
-  - to make that possible, the previously implicit generic guidance was fully
-    assetized with new `generic_qa.md`, `init_generic.md`, and
-    `worker_solution.md`
-- Added the first rule-based generic proposer:
-  - `generic_orchestration_surface_proposer.py` reads the visible train summary
-    and modifies only `init_generic`, `worker_context`, `compose_generic`, and
-    `worker_solution`
-  - current heuristics aim to reduce over-orchestration on narrow local-code
-    questions, keep evidence collection bounded, preserve compact evidence
-    boundaries in short answers, and stop worker solution loops once compose
-    has enough material
+    per-case copied run evidence, iteration decisions, experience candidate
+    artifacts, and final `report.json`
+  - the optimization object has now been narrowed from editable
+    `supervisor-guidance` surfaces to `.code2workspace/skills/orchestration/generic-experience`
+    only: each iteration snapshots the current experience package, exports
+    high-scoring train trajectories into records, rebuilds distilled guidance,
+    reruns train/holdout, and restores the snapshot if the candidate fails
+    guardrails
 - Completed one live optimize run:
   - run root:
     `experiments/harness/runs/generic-orchestration-harness/20260519T010322Z`
@@ -2222,3 +2306,101 @@ and evidence-backed completion judgment.
 - Direct verification against the real `benchmark-Flye` and `benchmark-canu`
   operator manifests now rewrites both tools to the same shared input file:
   `workspace/dataset_store/files/long-read-canu-pacbio/pacbio.fastq`.
+
+## 2026-05-23 - final response natural-language fallback
+
+- Hardened the Supervisor Graph user-facing exit path after a failure case where
+  the chat UI could show raw `Supervisor Summary` diagnostics instead of a
+  normal answer.
+- The runtime now builds a deterministic natural-language fallback before
+  invoking the `final_response` worker, passes that draft into the finalizer
+  source material, and rejects finalizer output that still looks like raw
+  supervisor rounds/nodes.
+- For Chinese or unspecified-language tasks, the fallback prefers Chinese prose.
+  The missing-repository case now explains that no repository URL or local
+  source path was provided and asks for that input instead of showing internal
+  `inspect/build/wdl/summarize` statuses.
+- Validation:
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+  -> `120 passed`.
+
+## 2026-05-25 - surveillance data skill hardening
+
+- Converted the fixed-source respiratory disease helper from page reachability
+  probing into structured evidence extraction:
+  WHO OData case indicators, CDC respiratory module/chart JSON, and China CDC
+  monthly-report detail pages now produce machine-readable fields suitable for
+  report synthesis.
+- Removed embedded academic-search API keys and moved external credentials to
+  environment variables. This is a useful thesis traceability point: reproducible
+  agents should preserve secret hygiene while still documenting which live
+  services require credentials.
+- Added relevance ranking/filtering to academic search results after live tests
+  showed broad Springer/bioRxiv queries could return weakly related records.
+  The implementation keeps source-specific access but reduces downstream report
+  hallucination pressure by filtering before synthesis.
+- Tightened EpiETL authenticated helper behavior to prefer environment keys
+  (`EPIETL_API_KEY` / `EPIETL_X_API_KEY`) and avoid advertising command-line
+  secret passing.
+- Fixed a data-governance parsing defect where NCBI nucleotide `subtype` /
+  `subname` structured qualifiers were ignored and the host segment in
+  SARS-CoV-2 isolate names was misread as country. The helper now normalizes
+  `country` and `collection_date` from qualifiers at both refresh and historical
+  snapshot read time, preventing false quality warnings.
+- Validation evidence:
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/skills`
+  -> `119 passed`; live probes returned structured WHO/CDC/China CDC fields and
+  corrected NCBI `country` / `collection_date` fields.
+
+## 2026-05-26 - interactive auto-approve default
+
+- Aligned the interactive TUI entrypoint with the autonomous Supervisor Graph
+  long-task path by making tool auto-approve the default startup mode.
+- Added `--no-auto-approve` as the explicit manual-approval escape hatch, while
+  preserving the runtime `Shift+Tab` toggle because the interactive server still
+  compiles with full HITL interrupts.
+- Preserved the interactive shell allow-list restriction semantics: a
+  restrictive `--shell-allow-list` starts manual mode unless the user explicitly
+  passes `-y/--auto-approve`.
+- Validation:
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_args.py libs/cli/tests/unit_tests/test_main_args.py libs/cli/tests/unit_tests/test_main.py libs/cli/tests/unit_tests/test_non_interactive.py -q`
+  -> `206 passed`.
+
+## 2026-05-26 - interactive proposal gate before Supervisor execution
+
+- Reframed the interactive TUI default from "run every normal message through
+  Supervisor immediately" to a two-stage flow:
+  - ordinary interactive messages enter a no-tools proposal step that clarifies
+    or summarizes the execution plan and ends with
+    `如果你觉得可以，我就开始执行任务。`
+  - explicit user confirmation such as "开始执行" or "可以，开始执行" packages the
+    confirmed plan and recent user intent into a single Supervisor task
+  - the confirmed Supervisor task disables the generic ask-user selector so it
+    behaves like a non-interactive autonomous run until completion
+- This preserves the thesis distinction between interactive intent shaping and
+  autonomous graph execution while avoiding accidental long-task launches from
+  exploratory chat.
+- Validation:
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+  -> `126 passed`;
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_agent.py -k 'CreateCliAgentInteractiveForwarding or supervisor' -q`
+  -> `2 passed`;
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_main.py libs/cli/tests/unit_tests/test_non_interactive.py -q`
+  -> `108 passed`;
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_server_graph.py -q`
+  -> `1 passed`.
+
+## 2026-05-26 - public agent rename to EpiMindAgent
+
+- Renamed the public-facing agent/product name from Code2Workspace/code2workspace
+  to EpiMindAgent across CLI help/version/banner strings, Web Workbench chat
+  labels, default prompts, README command examples, and the committed
+  `.env.example` template.
+- Added `EpiMindAgent` as a CLI entrypoint while retaining the existing
+  `code2workspace` / `code2workspace-cli` scripts as compatibility aliases.
+- Introduced preferred `EPIMINDAGENT_*` and `EPIMINDAGENT_CLI_*` environment
+  variables with fallback to the older `CODE2WORKSPACE_*` names, preserving
+  older local `.env` files and historical experiment surfaces.
+- Kept Python import packages, `.code2workspace` directories, and archived
+  artifact path references stable because those are compatibility/storage
+  identifiers rather than the user-facing agent name.

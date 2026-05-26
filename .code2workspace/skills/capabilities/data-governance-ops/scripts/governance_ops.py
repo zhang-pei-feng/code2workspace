@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.parse
@@ -37,7 +38,7 @@ SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "ncbi_virus": {
         "purpose": "Public virus metadata source suitable for live refresh demos.",
-        "restrictions": "Field completeness is limited and title parsing is best-effort.",
+        "restrictions": "Field completeness is limited; NCBI structured qualifiers are preferred over title fallback.",
         "fetch_strategy": "NCBI eutils esearch + esummary",
         "supports_live_refresh": True,
         "sample_records": [{"accession": "PZ184894", "country": "Unknown", "lineage": ""}],
@@ -86,8 +87,63 @@ def _previous_snapshot_path(source: str) -> Path | None:
 def _extract_country_from_title(title: str) -> str:
     if "/" not in title:
         return "Unknown"
-    parts = title.split("/")
-    return parts[1] if len(parts) > 1 and parts[1] else "Unknown"
+    isolate_match = re.search(r"\bisolate\s+(\S+)", title)
+    candidate = isolate_match.group(1) if isolate_match else title
+    parts = [part.strip() for part in candidate.split("/") if part.strip()]
+    if len(parts) < 3:
+        return "Unknown"
+    for index, part in enumerate(parts):
+        if part.lower() in {"human", "homo sapiens", "bat", "avian", "swine", "mink", "environment"}:
+            if index + 1 < len(parts):
+                return parts[index + 1]
+    return parts[2]
+
+
+def _extract_ncbi_qualifiers(item: dict[str, Any]) -> dict[str, str]:
+    subtype = str(item.get("subtype") or "")
+    subname = str(item.get("subname") or "")
+    keys = subtype.split("|") if subtype else []
+    values = subname.split("|") if subname else []
+    return {
+        key.strip().lower(): value.strip()
+        for key, value in zip(keys, values, strict=False)
+        if key.strip() and value.strip()
+    }
+
+
+def _normalize_ncbi_record(record: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(record)
+    raw = normalized.get("raw")
+    if not isinstance(raw, dict):
+        return normalized
+
+    qualifiers = _extract_ncbi_qualifiers(raw)
+    title = str(normalized.get("title") or raw.get("title") or "")
+    country = qualifiers.get("country") or str(normalized.get("country") or "").strip()
+    if not country or country == "Unknown" or country.lower() in {"human", "homo sapiens"}:
+        country = _extract_country_from_title(title)
+    collection_date = qualifiers.get("collection_date") or str(normalized.get("collection_date") or "").strip()
+    lineage = (
+        qualifiers.get("lineage")
+        or qualifiers.get("pangolin_lineage")
+        or qualifiers.get("pango_lineage")
+        or str(normalized.get("lineage") or "").strip()
+    )
+
+    normalized.update(
+        {
+            "uid": str(normalized.get("uid") or raw.get("uid") or ""),
+            "accession": str(normalized.get("accession") or raw.get("caption") or raw.get("uid") or ""),
+            "title": title,
+            "organism": str(normalized.get("organism") or raw.get("organism") or raw.get("taxname") or ""),
+            "country": country or "Unknown",
+            "collection_date": collection_date,
+            "lineage": lineage,
+        }
+    )
+    if qualifiers:
+        normalized["ncbi_qualifiers"] = qualifiers
+    return normalized
 
 
 def _fetch_ncbi_records(limit: int, query: str | None) -> list[dict[str, Any]]:
@@ -118,18 +174,24 @@ def _fetch_ncbi_records(limit: int, query: str | None) -> list[dict[str, Any]]:
         title = str(item.get("title") or "")
         accession = str(item.get("caption") or uid)
         records.append(
-            {
-                "uid": uid,
-                "accession": accession,
-                "title": title,
-                "organism": str(item.get("organism") or item.get("taxname") or ""),
-                "country": _extract_country_from_title(title),
-                "collection_date": "",
-                "lineage": "",
-                "raw": item,
-            }
+            _normalize_ncbi_record(
+                {
+                    "uid": uid,
+                    "accession": accession,
+                    "title": title,
+                    "organism": str(item.get("organism") or item.get("taxname") or ""),
+                    "country": _extract_country_from_title(title),
+                    "collection_date": "",
+                    "lineage": "",
+                    "raw": item,
+                }
+            )
         )
     return records
+
+
+def _normalize_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_normalize_ncbi_record(record) for record in records]
 
 
 def _refresh_snapshot(source: str, limit: int, query: str | None) -> dict[str, Any]:
@@ -194,7 +256,7 @@ def cmd_query_latest(args: argparse.Namespace) -> int:
         print(json.dumps({"ok": False, "reason": "No snapshot exists yet."}, ensure_ascii=False, indent=2))
         return 1
     payload = read_json(latest)
-    matched = _query_records(payload.get("records", []), field=args.field, value=args.value, mode=args.mode)
+    matched = _query_records(_normalize_records(payload.get("records", [])), field=args.field, value=args.value, mode=args.mode)
     result = {
         "snapshot_path": str(latest),
         "matched_count": len(matched),
@@ -231,7 +293,7 @@ def cmd_quality(args: argparse.Namespace) -> int:
         print(json.dumps({"ok": False, "reason": "No snapshot exists yet."}, ensure_ascii=False, indent=2))
         return 1
     payload = read_json(latest)
-    issues = _quality_issues(payload.get("records", []))
+    issues = _quality_issues(_normalize_records(payload.get("records", [])))
     result = {"snapshot_path": str(latest), "issue_count": len(issues), "issues": issues[: args.limit]}
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

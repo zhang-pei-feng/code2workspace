@@ -1,4 +1,4 @@
-"""Message widgets for code2workspace-cli."""
+"""Message widgets for EpiMindAgent CLI."""
 
 from __future__ import annotations
 

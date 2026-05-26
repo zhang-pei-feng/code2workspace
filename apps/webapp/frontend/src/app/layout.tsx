@@ -5,8 +5,8 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { ThemeProvider } from "@/providers/theme";
 
 export const metadata: Metadata = {
-  title: "Code2Workspace Chat",
-  description: "Code2Workspace web chat workbench",
+  title: "EpiMindAgent Chat",
+  description: "EpiMindAgent web chat workbench",
 };
 
 export default function RootLayout({

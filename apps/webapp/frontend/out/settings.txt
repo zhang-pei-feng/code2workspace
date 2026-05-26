@@ -15,5 +15,5 @@ e:I[24431,[],"MetadataBoundary"]
 d:[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]
 9:null
 11:I[80622,[],"IconMark"]
-b:{"metadata":[["$","title","0",{"children":"Code2Workspace Chat"}],["$","meta","1",{"name":"description","content":"Code2Workspace web chat workbench"}],["$","link","2",{"rel":"icon","href":"/favicon.ico","type":"image/x-icon","sizes":"16x16"}],["$","$L11","3",{}]],"error":null,"digest":"$undefined"}
+b:{"metadata":[["$","title","0",{"children":"EpiMindAgent Chat"}],["$","meta","1",{"name":"description","content":"EpiMindAgent web chat workbench"}],["$","link","2",{"rel":"icon","href":"/favicon.ico","type":"image/x-icon","sizes":"16x16"}],["$","$L11","3",{}]],"error":null,"digest":"$undefined"}
 f:"$b:metadata"

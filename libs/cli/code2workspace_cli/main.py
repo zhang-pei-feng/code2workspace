@@ -1,4 +1,4 @@
-"""Main entry point and CLI loop for code2workspace."""
+"""Main entry point and CLI loop for EpiMindAgent."""
 
 # ruff: noqa: E402
 # Imports placed after warning filters to suppress deprecation warnings
@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 _DEFAULT_AGENT_NAME = "agent"
 
 
+def _auto_approve_flag_was_explicit(argv: Sequence[str]) -> bool:
+    """Return whether the user explicitly chose an auto-approve mode."""
+    return any(arg in {"-y", "--auto-approve", "--no-auto-approve"} for arg in argv)
+
+
 def check_cli_dependencies() -> None:
     """Check if CLI optional dependencies are installed."""
     missing = []
@@ -61,7 +66,7 @@ def check_cli_dependencies() -> None:
 
     if missing:
         print("\nMissing required CLI dependencies!")  # noqa: T201  # CLI output for missing dependencies
-        print("\nThe following packages are required to use the code2workspace CLI:")  # noqa: T201  # CLI output for missing dependencies
+        print("\nThe following packages are required to use the EpiMindAgent CLI:")  # noqa: T201  # CLI output for missing dependencies
         for pkg in missing:
             print(f"  - {pkg}")  # noqa: T201  # CLI output for missing dependencies
         print("\nPlease install them with:")  # noqa: T201  # CLI output for missing dependencies
@@ -334,7 +339,7 @@ def parse_args() -> argparse.Namespace:
         return [parent]
 
     parser = argparse.ArgumentParser(
-        description=("Code2Workspace - AI Coding Assistant"),
+        description=("EpiMindAgent - AI Coding Assistant"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         add_help=False,
     )
@@ -588,12 +593,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-y",
         "--auto-approve",
+        dest="auto_approve",
         action="store_true",
+        default=True,
         help=(
-            "Auto-approve all tool calls without prompting "
-            "(disables human-in-the-loop). Affected tools: shell "
-            "execution, file writes/edits, web search, and URL fetch. "
-            "Use with caution — the agent can execute arbitrary commands."
+            "Start interactive sessions with tool auto-approve enabled "
+            "(default). Affected tools: shell execution, file writes/edits, "
+            "web search, and URL fetch."
+        ),
+    )
+    parser.add_argument(
+        "--no-auto-approve",
+        dest="auto_approve",
+        action="store_false",
+        help=(
+            "Start interactive sessions in manual approval mode. "
+            "You can still toggle auto-approve with Shift+Tab."
         ),
     )
 
@@ -625,8 +640,9 @@ def parse_args() -> argparse.Namespace:
         "--shell-allow-list",
         metavar="LIST",
         help="Comma-separated list of shell commands to auto-approve, "
-        "'recommended' for safe defaults, or 'all' to allow any command. "
-        "Applies to both -n and interactive modes.",
+        "'recommended' for safe defaults, or 'all' to allow any command. In "
+        "interactive mode, a restrictive list starts manual mode unless "
+        "-y/--auto-approve is explicit.",
     )
     parser.add_argument(
         "--mcp-config",
@@ -653,7 +669,7 @@ def parse_args() -> argparse.Namespace:
 
         sdk_version = _pkg_version("code2workspace")
     except PackageNotFoundError:
-        logger.debug("code2workspace SDK package not found in environment")
+        logger.debug("EpiMindAgent SDK package not found in environment")
         sdk_version = "unknown"
     except Exception:
         logger.warning("Unexpected error looking up SDK version", exc_info=True)
@@ -667,7 +683,7 @@ def parse_args() -> argparse.Namespace:
         "-v",
         "--version",
         action="version",
-        version=f"code2workspace-cli {__version__}\ncode2workspace (SDK) {sdk_version}",
+        version=f"EpiMindAgent CLI {__version__}\nEpiMindAgent SDK {sdk_version}",
     )
     parser.add_argument(
         "-h",
@@ -681,7 +697,7 @@ def parse_args() -> argparse.Namespace:
 async def run_textual_cli_async(
     assistant_id: str,
     *,
-    auto_approve: bool = False,
+    auto_approve: bool = True,
     sandbox_type: str = "none",  # str (not None) to match argparse choices
     sandbox_id: str | None = None,
     sandbox_setup: str | None = None,
@@ -855,7 +871,7 @@ def apply_stdin_pipe(args: argparse.Namespace) -> None:
         piped text to it (the CLI still runs non-interactively):
 
         ```bash
-        cat context.txt | code2workspace -n "summarize this"
+        cat context.txt | EpiMindAgent -n "summarize this"
         # non_interactive_message = "{contents of context.txt}\n\nsummarize this"
         ```
 
@@ -863,7 +879,7 @@ def apply_stdin_pipe(args: argparse.Namespace) -> None:
         the piped text to it (the CLI still runs interactively):
 
         ```bash
-        cat error.log | code2workspace -m "explain this"
+        cat error.log | EpiMindAgent -m "explain this"
         # initial_prompt = "{contents of error.log}\n\nexplain this"
         ```
 
@@ -872,7 +888,7 @@ def apply_stdin_pipe(args: argparse.Namespace) -> None:
         startup request:
 
         ```bash
-        cat diff.txt | code2workspace --skill code-review
+        cat diff.txt | EpiMindAgent --skill code-review
         # initial_prompt = "{contents of diff.txt}"
         ```
 
@@ -880,7 +896,7 @@ def apply_stdin_pipe(args: argparse.Namespace) -> None:
         the CLI to run non-interactively with it as the prompt:
 
         ```bash
-        echo "fix the typo in README.md" | code2workspace
+        echo "fix the typo in README.md" | EpiMindAgent
         # non_interactive_message = "fix the typo in README.md"
         ```
 
@@ -916,7 +932,7 @@ def apply_stdin_pipe(args: argparse.Namespace) -> None:
             console.print(
                 "[bold red]Error:[/bold red] --stdin was passed but stdin "
                 "is a terminal. Pipe input or use -n instead.\n"
-                "  cat prompt.txt | code2workspace --stdin -q"
+                "  cat prompt.txt | EpiMindAgent --stdin -q"
             )
             sys.exit(1)
         return
@@ -1112,7 +1128,7 @@ def cli_main() -> None:
 
     # Note: LANGSMITH_PROJECT override is handled lazily by config.py's
     # _ensure_bootstrap() (triggered on first access of `settings`).
-    # This ensures agent traces use CODE2WORKSPACE_CLI_LANGSMITH_PROJECT while
+    # This ensures agent traces use EPIMINDAGENT_CLI_LANGSMITH_PROJECT while
     # shell commands use the user's original LANGSMITH_PROJECT.
 
     # Fast path: print version without loading heavy dependencies
@@ -1129,12 +1145,13 @@ def cli_main() -> None:
         except Exception:  # Best-effort SDK version lookup
             logger.debug("Unexpected error looking up SDK version", exc_info=True)
             sdk_version = "unknown"
-        print(f"code2workspace-cli {__version__}\ncode2workspace (SDK) {sdk_version}")  # noqa: T201  # CLI version output
+        print(f"EpiMindAgent CLI {__version__}\nEpiMindAgent SDK {sdk_version}")  # noqa: T201  # CLI version output
         sys.exit(0)
 
     check_cli_dependencies()
 
     try:
+        auto_approve_explicit = _auto_approve_flag_was_explicit(sys.argv[1:])
         args = parse_args()
 
         # Import console/settings AFTER arg parsing so --help (which exits
@@ -1183,14 +1200,21 @@ def cli_main() -> None:
 
         apply_stdin_pipe(args)
 
+        if (
+            args.shell_allow_list
+            and not args.non_interactive_message
+            and not auto_approve_explicit
+        ):
+            args.auto_approve = False
+
         if getattr(args, "no_mcp", False) and getattr(args, "mcp_config", None):
             from rich.console import Console as _Console
 
             _Console(stderr=True).print(
                 "[bold red]Error:[/bold red] --no-mcp and --mcp-config "
                 "are mutually exclusive. Use one or the other.\n"
-                "  code2workspace --mcp-config path/to/config.json\n"
-                "  code2workspace --no-mcp"
+                "  EpiMindAgent --mcp-config path/to/config.json\n"
+                "  EpiMindAgent --no-mcp"
             )
             sys.exit(2)
 
@@ -1205,8 +1229,8 @@ def cli_main() -> None:
                 "[bold red]Error:[/bold red] --skill requires "
                 "--non-interactive (-n) when combined with --quiet or "
                 "--no-stream.\n"
-                "  code2workspace --skill code-review -m 'review this patch'\n"
-                "  code2workspace --skill code-review -n 'review this patch'"
+                "  EpiMindAgent --skill code-review -m 'review this patch'\n"
+                "  EpiMindAgent --skill code-review -n 'review this patch'"
             )
             sys.exit(2)
 
@@ -1225,7 +1249,7 @@ def cli_main() -> None:
             _Console(stderr=True).print(
                 f"[bold red]Error:[/bold red] {flag} requires "
                 "--non-interactive (-n) or piped stdin\n"
-                "  code2workspace -n 'summarize README.md' --quiet"
+                "  EpiMindAgent -n 'summarize README.md' --quiet"
             )
             sys.exit(2)
 
@@ -1274,7 +1298,7 @@ def cli_main() -> None:
                 console.print(
                     "[bold red]Error:[/bold red] Update failed.\n"
                     "Run manually: [cyan]uv tool upgrade "
-                    "code2workspace-cli[/cyan]"
+                    "EpiMindAgent CLI[/cyan]"
                 )
                 sys.exit(1)
 
@@ -1553,7 +1577,7 @@ def cli_main() -> None:
             if thread_id and return_code == 0 and asyncio.run(thread_exists(thread_id)):
                 console.print()
                 console.print("[dim]Resume this thread with:[/dim]")
-                hint = Text("code2workspace -r ", style="cyan")
+                hint = Text("EpiMindAgent -r ", style="cyan")
                 hint.append(str(thread_id), style="cyan")
                 console.print(hint)
 

@@ -14,14 +14,16 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
+from code2workspace_cli._env_vars import get_env
+
 MANIFEST_NAME = "operator_product.json"
 OPERATOR_RECORD_NAME = "operator.json"
 OPERATOR_EMBEDDING_NAME = "embedding.json"
 SCHEMA_VERSION = "0.2"
-_EMBEDDING_MODEL_ENV = "CODE2WORKSPACE_OPERATOR_STORE_EMBEDDING_MODEL"
-_EMBEDDING_ENABLED_ENV = "CODE2WORKSPACE_OPERATOR_STORE_EMBEDDINGS_ENABLED"
-_EMBEDDING_BASE_URL_ENV = "CODE2WORKSPACE_OPERATOR_STORE_EMBEDDING_BASE_URL"
-_EMBEDDING_API_KEY_ENV = "CODE2WORKSPACE_OPERATOR_STORE_EMBEDDING_API_KEY"
+_EMBEDDING_MODEL_ENV = "EPIMINDAGENT_OPERATOR_STORE_EMBEDDING_MODEL"
+_EMBEDDING_ENABLED_ENV = "EPIMINDAGENT_OPERATOR_STORE_EMBEDDINGS_ENABLED"
+_EMBEDDING_BASE_URL_ENV = "EPIMINDAGENT_OPERATOR_STORE_EMBEDDING_BASE_URL"
+_EMBEDDING_API_KEY_ENV = "EPIMINDAGENT_OPERATOR_STORE_EMBEDDING_API_KEY"
 _DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 
 
@@ -1795,14 +1797,14 @@ def _cosine_similarity(lhs: list[float], rhs: list[float]) -> float:
 
 
 def _embedding_enabled() -> bool:
-    raw = os.environ.get(_EMBEDDING_ENABLED_ENV, "1").strip().casefold()
+    raw = (get_env(_EMBEDDING_ENABLED_ENV, "1") or "1").strip().casefold()
     if raw in {"0", "false", "no", "off"}:
         return False
     return True
 
 
 def _embedding_model_name() -> str:
-    return os.environ.get(_EMBEDDING_MODEL_ENV, _DEFAULT_EMBEDDING_MODEL).strip() or _DEFAULT_EMBEDDING_MODEL
+    return (get_env(_EMBEDDING_MODEL_ENV, _DEFAULT_EMBEDDING_MODEL) or _DEFAULT_EMBEDDING_MODEL).strip() or _DEFAULT_EMBEDDING_MODEL
 
 
 def _embed_documents(texts: list[str]) -> tuple[list[list[float]], str | None]:
@@ -1833,14 +1835,14 @@ def _embedding_backend():
         from code2workspace_cli.model_config import resolve_env_var
     except ImportError:
         return None
-    api_key = os.environ.get(_EMBEDDING_API_KEY_ENV) or resolve_env_var("OPENAI_API_KEY")
+    api_key = get_env(_EMBEDDING_API_KEY_ENV) or resolve_env_var("OPENAI_API_KEY")
     if not api_key:
         return None
     kwargs: dict[str, object] = {
         "model": _embedding_model_name(),
         "api_key": api_key,
     }
-    base_url = os.environ.get(_EMBEDDING_BASE_URL_ENV) or resolve_env_var("OPENAI_BASE_URL")
+    base_url = get_env(_EMBEDDING_BASE_URL_ENV) or resolve_env_var("OPENAI_BASE_URL")
     if base_url:
         kwargs["base_url"] = base_url
     return OpenAIEmbeddings(**kwargs)

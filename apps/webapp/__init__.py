@@ -1,1 +1,1 @@
-"""Code2Workspace web workbench backend."""
+"""EpiMindAgent web workbench backend."""

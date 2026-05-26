@@ -12,7 +12,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langgraph.errors import GraphInterrupt
 
 import code2workspace.orchestration_runtime as orchestration_runtime
@@ -90,16 +96,25 @@ def test_shared_store_roots_are_discoverable_from_workspace_siblings(
     workspace_root.mkdir(parents=True)
     (repo_root / "workspace" / "benchmark_comparison_history_store").mkdir(parents=True)
     (repo_root / "workspace" / "dataset_store").mkdir(parents=True)
-    shared_operator_store = repo_root / "workspace" / "live_register_longread_multi_default_v5" / "operator_store"
+    shared_operator_store = (
+        repo_root
+        / "workspace"
+        / "live_register_longread_multi_default_v5"
+        / "operator_store"
+    )
     shared_operator_store.mkdir(parents=True)
     monkeypatch.setattr(supervisor_runtime, "_PROJECT_ROOT", repo_root)
     monkeypatch.delenv("CODE2WORKSPACE_SHARED_OPERATOR_STORE_ROOT", raising=False)
     monkeypatch.delenv("CODE2WORKSPACE_SHARED_DATASET_STORE_ROOT", raising=False)
-    monkeypatch.delenv("CODE2WORKSPACE_SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT", raising=False)
+    monkeypatch.delenv(
+        "CODE2WORKSPACE_SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT", raising=False
+    )
 
     operator_roots = supervisor_runtime._candidate_operator_store_roots(workspace_root)
     dataset_roots = supervisor_runtime._candidate_dataset_store_roots(workspace_root)
-    history_roots = supervisor_runtime._candidate_benchmark_result_store_roots(workspace_root)
+    history_roots = supervisor_runtime._candidate_benchmark_result_store_roots(
+        workspace_root
+    )
 
     assert shared_operator_store.resolve() in operator_roots
     assert (repo_root / "workspace" / "dataset_store").resolve() in dataset_roots
@@ -115,9 +130,20 @@ def test_operator_store_search_uses_shared_workspace_store_without_embeddings(
     repo_root = tmp_path / "repo"
     workspace_root = repo_root / "workspace" / "20260520_session"
     workspace_root.mkdir(parents=True)
-    shared_operator_store = repo_root / "workspace" / "live_register_longread_multi_default_v5" / "operator_store"
+    shared_operator_store = (
+        repo_root
+        / "workspace"
+        / "live_register_longread_multi_default_v5"
+        / "operator_store"
+    )
     store = OperatorStore(shared_operator_store)
-    run_dir = repo_root / "workspace" / "live_register_longread_multi_default_v5" / "orchestration_runs" / "longread-multi-default"
+    run_dir = (
+        repo_root
+        / "workspace"
+        / "live_register_longread_multi_default_v5"
+        / "orchestration_runs"
+        / "longread-multi-default"
+    )
     case_dir = run_dir / "cases" / "Flye"
     case_dir.mkdir(parents=True, exist_ok=True)
     store.write_manifest(
@@ -199,8 +225,20 @@ def test_collect_benchmark_candidates_keeps_explicitly_named_github2workspace_to
                 "dockerfile_path": str(spades_docker),
             },
             "inputs": [
-                {"name": "read1", "media_type": "fastq-gzip", "path": str(spades_read1), "schema_path": "", "required": True},
-                {"name": "read2", "media_type": "fastq-gzip", "path": str(spades_read2), "schema_path": "", "required": True},
+                {
+                    "name": "read1",
+                    "media_type": "fastq-gzip",
+                    "path": str(spades_read1),
+                    "schema_path": "",
+                    "required": True,
+                },
+                {
+                    "name": "read2",
+                    "media_type": "fastq-gzip",
+                    "path": str(spades_read2),
+                    "schema_path": "",
+                    "required": True,
+                },
             ],
             "outputs": [],
             "metrics": [],
@@ -212,7 +250,12 @@ def test_collect_benchmark_candidates_keeps_explicitly_named_github2workspace_to
                 "summary": "completed",
                 "created_at": "2026-05-20T00:00:00Z",
             },
-            "tags": ["github2workspace", "completed", "wdl-completed", "domain:covid-assembly"],
+            "tags": [
+                "github2workspace",
+                "completed",
+                "wdl-completed",
+                "domain:covid-assembly",
+            ],
         }
     )
 
@@ -344,8 +387,16 @@ def test_benchmark_selection_resolves_shared_dataset_before_choosing_tools(
                 "runtime_image": "benchmark/flye",
                 "entry_workflow": "FlyeWorkflow",
                 "inputs": [
-                    {"name": "reads", "path": str(tmp_path / "old-flye.fastq.gz"), "media_type": "fastq"},
-                    {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+                    {
+                        "name": "reads",
+                        "path": str(tmp_path / "old-flye.fastq.gz"),
+                        "media_type": "fastq",
+                    },
+                    {
+                        "name": "inputs.json",
+                        "path": str(tmp_path / "flye.inputs.json"),
+                        "media_type": "json",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -368,8 +419,16 @@ def test_benchmark_selection_resolves_shared_dataset_before_choosing_tools(
                 "runtime_image": "benchmark/canu",
                 "entry_workflow": "CanuWorkflow",
                 "inputs": [
-                    {"name": "reads_fastq", "path": str(tmp_path / "old-canu.fastq"), "media_type": "fastq"},
-                    {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+                    {
+                        "name": "reads_fastq",
+                        "path": str(tmp_path / "old-canu.fastq"),
+                        "media_type": "fastq",
+                    },
+                    {
+                        "name": "inputs.json",
+                        "path": str(tmp_path / "canu.inputs.json"),
+                        "media_type": "json",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -445,8 +504,16 @@ def test_benchmark_selection_override_backfills_empty_dataset_key(
                 "runtime_image": "benchmark/flye",
                 "entry_workflow": "FlyeWorkflow",
                 "inputs": [
-                    {"name": "reads", "path": str(tmp_path / "old-flye.fastq.gz"), "media_type": "fastq"},
-                    {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+                    {
+                        "name": "reads",
+                        "path": str(tmp_path / "old-flye.fastq.gz"),
+                        "media_type": "fastq",
+                    },
+                    {
+                        "name": "inputs.json",
+                        "path": str(tmp_path / "flye.inputs.json"),
+                        "media_type": "json",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -469,8 +536,16 @@ def test_benchmark_selection_override_backfills_empty_dataset_key(
                 "runtime_image": "benchmark/canu",
                 "entry_workflow": "CanuWorkflow",
                 "inputs": [
-                    {"name": "reads_fastq", "path": str(tmp_path / "old-canu.fastq"), "media_type": "fastq"},
-                    {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+                    {
+                        "name": "reads_fastq",
+                        "path": str(tmp_path / "old-canu.fastq"),
+                        "media_type": "fastq",
+                    },
+                    {
+                        "name": "inputs.json",
+                        "path": str(tmp_path / "canu.inputs.json"),
+                        "media_type": "json",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -524,14 +599,29 @@ def test_benchmark_register_prefers_user_provided_external_dataset_folder(
             "name": "Old E. coli short reads",
             "domain": "genome_assembly",
             "files": [
-                {"name": old_r1.name, "role": "read1", "media_type": "fastq", "uri": str(old_r1)},
-                {"name": old_r2.name, "role": "read2", "media_type": "fastq", "uri": str(old_r2)},
+                {
+                    "name": old_r1.name,
+                    "role": "read1",
+                    "media_type": "fastq",
+                    "uri": str(old_r1),
+                },
+                {
+                    "name": old_r2.name,
+                    "role": "read2",
+                    "media_type": "fastq",
+                    "uri": str(old_r2),
+                },
             ],
         }
     )
 
-    for name, workflow in (("spades", "SpadesWorkflow"), ("megahit", "MegahitAssembly")):
-        (tmp_path / f"{name}.wdl").write_text(f"workflow {workflow} {{}}", encoding="utf-8")
+    for name, workflow in (
+        ("spades", "SpadesWorkflow"),
+        ("megahit", "MegahitAssembly"),
+    ):
+        (tmp_path / f"{name}.wdl").write_text(
+            f"workflow {workflow} {{}}", encoding="utf-8"
+        )
         (tmp_path / f"{name}.inputs.json").write_text(
             json.dumps(
                 {
@@ -621,21 +711,41 @@ def test_benchmark_register_prefers_user_provided_external_dataset_folder(
     )
 
     assert result.status == "completed"
-    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
-    assert selection_report["dataset_key"].startswith("external-sarscov2-err6617197-short-reads-")
+    selection_report = json.loads(
+        (run_dir / "operator_selection.json").read_text(encoding="utf-8")
+    )
+    assert selection_report["dataset_key"].startswith(
+        "external-sarscov2-err6617197-short-reads-"
+    )
     assert selection_report["selected_dataset_id"] == selection_report["dataset_key"]
-    assert selection_report["selected_dataset"]["source_kind"] == "user_provided_external_path"
-    assert selection_report["selected_dataset"]["dataset_root"] == str(external_dir.resolve())
+    assert (
+        selection_report["selected_dataset"]["source_kind"]
+        == "user_provided_external_path"
+    )
+    assert selection_report["selected_dataset"]["dataset_root"] == str(
+        external_dir.resolve()
+    )
     assert selection_report["selected_tools"] == ["spades", "megahit"]
 
-    dataset_resolution = json.loads((run_dir / "dataset_resolution.json").read_text(encoding="utf-8"))
+    dataset_resolution = json.loads(
+        (run_dir / "dataset_resolution.json").read_text(encoding="utf-8")
+    )
     assert set(dataset_resolution["repo_to_dataset"].values()) == {
         selection_report["dataset_key"]
     }
 
-    for tool, workflow in (("spades", "SpadesWorkflow"), ("megahit", "MegahitAssembly")):
-        manifest = json.loads((run_dir / "cases" / tool / "manifest.json").read_text(encoding="utf-8"))
-        staged_inputs = json.loads((run_dir / "cases" / tool / "wdl" / "inputs.json").read_text(encoding="utf-8"))
+    for tool, workflow in (
+        ("spades", "SpadesWorkflow"),
+        ("megahit", "MegahitAssembly"),
+    ):
+        manifest = json.loads(
+            (run_dir / "cases" / tool / "manifest.json").read_text(encoding="utf-8")
+        )
+        staged_inputs = json.loads(
+            (run_dir / "cases" / tool / "wdl" / "inputs.json").read_text(
+                encoding="utf-8"
+            )
+        )
         assert manifest["selected_input_source"] == "user_provided_external_path"
         assert manifest["dataset_key"] == selection_report["dataset_key"]
         assert staged_inputs[f"{workflow}.read1"] == str(read1)
@@ -648,7 +758,9 @@ def test_build_benchmark_dataset_selection_prompt_requires_dataset_first() -> No
             "dataset_id": "long-read-canu-pacbio",
             "name": "long read canu pacbio",
             "domain": "genome_assembly",
-            "files": [{"name": "pacbio", "media_type": "fastq", "uri": "/tmp/pacbio.fastq"}],
+            "files": [
+                {"name": "pacbio", "media_type": "fastq", "uri": "/tmp/pacbio.fastq"}
+            ],
         }
     ]
     prompt = supervisor_runtime._build_benchmark_dataset_selection_prompt(
@@ -669,7 +781,9 @@ def test_build_benchmark_register_selection_prompt_uses_chosen_dataset() -> None
         "dataset_id": "long-read-canu-pacbio",
         "name": "long read canu pacbio",
         "domain": "genome_assembly",
-        "files": [{"name": "pacbio", "media_type": "fastq", "uri": "/tmp/pacbio.fastq"}],
+        "files": [
+            {"name": "pacbio", "media_type": "fastq", "uri": "/tmp/pacbio.fastq"}
+        ],
     }
     candidates = [
         {
@@ -756,8 +870,16 @@ async def test_benchmark_agent_selection_returns_selected_dataset_id(
             "runtime_image": "benchmark/flye",
             "entry_workflow": "FlyeWorkflow",
             "inputs": [
-                {"name": "reads", "path": str(tmp_path / "old-flye.fastq.gz"), "media_type": "fastq"},
-                {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+                {
+                    "name": "reads",
+                    "path": str(tmp_path / "old-flye.fastq.gz"),
+                    "media_type": "fastq",
+                },
+                {
+                    "name": "inputs.json",
+                    "path": str(tmp_path / "flye.inputs.json"),
+                    "media_type": "json",
+                },
             ],
             "outputs": [],
             "expected_outputs": [],
@@ -780,8 +902,16 @@ async def test_benchmark_agent_selection_returns_selected_dataset_id(
             "runtime_image": "benchmark/canu",
             "entry_workflow": "CanuWorkflow",
             "inputs": [
-                {"name": "reads_fastq", "path": str(tmp_path / "old-canu.fastq"), "media_type": "fastq"},
-                {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+                {
+                    "name": "reads_fastq",
+                    "path": str(tmp_path / "old-canu.fastq"),
+                    "media_type": "fastq",
+                },
+                {
+                    "name": "inputs.json",
+                    "path": str(tmp_path / "canu.inputs.json"),
+                    "media_type": "json",
+                },
             ],
             "outputs": [],
             "expected_outputs": [],
@@ -804,7 +934,10 @@ async def test_benchmark_agent_selection_returns_selected_dataset_id(
         "_collect_benchmark_operator_candidates",
         return_value=candidates,
     ):
-        selection, debug_payload = await supervisor_runtime._select_benchmark_tools_with_agent(
+        (
+            selection,
+            debug_payload,
+        ) = await supervisor_runtime._select_benchmark_tools_with_agent(
             agent=agent,
             task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
             workspace_root=workspace_root,
@@ -821,7 +954,9 @@ async def test_benchmark_agent_selection_returns_selected_dataset_id(
 
 
 @pytest.mark.asyncio
-async def test_benchmark_agent_selection_recovers_from_non_json_text(tmp_path: Path) -> None:
+async def test_benchmark_agent_selection_recovers_from_non_json_text(
+    tmp_path: Path,
+) -> None:
     workspace_root = tmp_path
     dataset_store_root = workspace_root / "dataset_store"
     dataset_store_root.mkdir(parents=True, exist_ok=True)
@@ -874,8 +1009,16 @@ async def test_benchmark_agent_selection_recovers_from_non_json_text(tmp_path: P
             "runtime_image": "benchmark/flye",
             "entry_workflow": "FlyeWorkflow",
             "inputs": [
-                {"name": "reads_fastq", "path": str(legacy_reads), "media_type": "fastq"},
-                {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+                {
+                    "name": "reads_fastq",
+                    "path": str(legacy_reads),
+                    "media_type": "fastq",
+                },
+                {
+                    "name": "inputs.json",
+                    "path": str(tmp_path / "flye.inputs.json"),
+                    "media_type": "json",
+                },
             ],
             "outputs": [],
             "expected_outputs": [],
@@ -898,8 +1041,16 @@ async def test_benchmark_agent_selection_recovers_from_non_json_text(tmp_path: P
             "runtime_image": "benchmark/canu",
             "entry_workflow": "CanuWorkflow",
             "inputs": [
-                {"name": "reads_fastq", "path": str(legacy_reads), "media_type": "fastq"},
-                {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+                {
+                    "name": "reads_fastq",
+                    "path": str(legacy_reads),
+                    "media_type": "fastq",
+                },
+                {
+                    "name": "inputs.json",
+                    "path": str(tmp_path / "canu.inputs.json"),
+                    "media_type": "json",
+                },
             ],
             "outputs": [],
             "expected_outputs": [],
@@ -910,7 +1061,11 @@ async def test_benchmark_agent_selection_recovers_from_non_json_text(tmp_path: P
 
     agent = AsyncMock()
     agent.ainvoke.side_effect = [
-        {"messages": [AIMessage(content="我选择 long-read-canu-pacbio 作为共享数据集。")]},
+        {
+            "messages": [
+                AIMessage(content="我选择 long-read-canu-pacbio 作为共享数据集。")
+            ]
+        },
         {"messages": [AIMessage(content="Use Flye and canu on that shared dataset.")]},
     ]
 
@@ -919,7 +1074,10 @@ async def test_benchmark_agent_selection_recovers_from_non_json_text(tmp_path: P
         "_collect_benchmark_operator_candidates",
         return_value=candidates,
     ):
-        selection, debug_payload = await supervisor_runtime._select_benchmark_tools_with_agent(
+        (
+            selection,
+            debug_payload,
+        ) = await supervisor_runtime._select_benchmark_tools_with_agent(
             agent=agent,
             task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
             workspace_root=workspace_root,
@@ -946,7 +1104,10 @@ async def test_benchmark_dataset_selection_times_out_fast(
         "CODE2WORKSPACE_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS",
         "0.01",
     )
-    dataset_candidate, debug_payload = await supervisor_runtime._select_benchmark_dataset_with_agent(
+    (
+        dataset_candidate,
+        debug_payload,
+    ) = await supervisor_runtime._select_benchmark_dataset_with_agent(
         agent=HangingAgent(),
         task="请使用共享长读长数据集运行并比较 Flye 和 canu。",
         dataset_options=[
@@ -954,7 +1115,13 @@ async def test_benchmark_dataset_selection_times_out_fast(
                 "dataset_id": "long-read-canu-pacbio",
                 "name": "long read canu pacbio",
                 "domain": "genome_assembly",
-                "files": [{"name": "pacbio", "media_type": "fastq", "uri": "/tmp/pacbio.fastq"}],
+                "files": [
+                    {
+                        "name": "pacbio",
+                        "media_type": "fastq",
+                        "uri": "/tmp/pacbio.fastq",
+                    }
+                ],
             }
         ],
         benchmark_root="/tmp/benchmark-root",
@@ -965,11 +1132,18 @@ async def test_benchmark_dataset_selection_times_out_fast(
 
 
 @pytest.mark.asyncio
-async def test_invoke_benchmark_register_selector_uses_internal_no_stream_config() -> None:
+async def test_invoke_benchmark_register_selector_uses_internal_no_stream_config() -> (
+    None
+):
     selector = AsyncMock()
-    selector.ainvoke.return_value = {"messages": [AIMessage(content='{"selected_tools":["Flye"]}')]}
+    selector.ainvoke.return_value = {
+        "messages": [AIMessage(content='{"selected_tools":["Flye"]}')]
+    }
 
-    result, debug_payload = await supervisor_runtime._invoke_benchmark_register_selector(
+    (
+        result,
+        debug_payload,
+    ) = await supervisor_runtime._invoke_benchmark_register_selector(
         selector=selector,
         prompt="pick tools",
         timeout_seconds=1,
@@ -992,7 +1166,15 @@ def test_benchmark_selected_input_files_from_dataset_store_uses_project_relative
     workspace_root = repo_root / "workspace" / "20260520_session"
     workspace_root.mkdir(parents=True)
     dataset_store = DatasetStore(repo_root / "workspace" / "dataset_store")
-    pacbio = repo_root / "experiments" / "benchmark" / "datasets" / "downloads" / "long-read-canu-pacbio" / "pacbio.fastq"
+    pacbio = (
+        repo_root
+        / "experiments"
+        / "benchmark"
+        / "datasets"
+        / "downloads"
+        / "long-read-canu-pacbio"
+        / "pacbio.fastq"
+    )
     pacbio.parent.mkdir(parents=True, exist_ok=True)
     pacbio.write_text("@r1\nACGT\n+\n!!!!\n", encoding="utf-8")
     dataset_store.write_dataset(
@@ -1081,7 +1263,9 @@ async def test_classify_task_for_supervisor_uses_llm_when_confident() -> None:
 
 
 @pytest.mark.asyncio
-async def test_classify_task_for_supervisor_falls_back_to_rules_on_invalid_output() -> None:
+async def test_classify_task_for_supervisor_falls_back_to_rules_on_invalid_output() -> (
+    None
+):
     model = Mock()
     model.ainvoke = AsyncMock(return_value=AIMessage(content="not json"))
 
@@ -1125,6 +1309,98 @@ async def test_build_supervisor_enabled_agent_returns_refusal_message_from_class
     result = await agent.ainvoke({"messages": [HumanMessage(content="test task")]})
 
     assert result["messages"][-1].content == "The model refused to answer this request."
+
+
+@pytest.mark.asyncio
+async def test_interactive_supervisor_agent_proposes_before_execution(
+    tmp_path: Path,
+) -> None:
+    base_agent = AsyncMock()
+    fallback_agent = AsyncMock()
+    proposal_model = Mock()
+    proposal_model.ainvoke = AsyncMock(
+        return_value=AIMessage(content="方案：先确认目标。")
+    )
+
+    agent = build_supervisor_enabled_agent(
+        base_agent=base_agent,
+        fallback_agent=fallback_agent,
+        workspace_root=tmp_path,
+        classifier_model=proposal_model,
+        enable_generic_ask_user=False,
+        interactive_confirmation_mode=True,
+    )
+
+    with patch.object(
+        supervisor_runtime,
+        "run_supervisor_orchestration",
+        new=AsyncMock(),
+    ) as run_mock:
+        result = await agent.ainvoke(
+            {"messages": [HumanMessage(content="帮我写一份报告")]}
+        )
+
+    assert result["messages"][-1].content.endswith("如果你觉得可以，我就开始执行任务。")
+    assert "方案：先确认目标。" in result["messages"][-1].content
+    run_mock.assert_not_awaited()
+    base_agent.assert_not_called()
+    fallback_agent.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_interactive_supervisor_agent_executes_confirmed_plan(
+    tmp_path: Path,
+) -> None:
+    proposal_model = Mock()
+    classification = supervisor_runtime.TaskClassification(
+        primary_type="report",
+        guidance_ids=["report"],
+    )
+    run_result = supervisor_runtime.SupervisorRunResult(
+        run_dir=tmp_path / "orchestration_runs" / "run-1",
+        final_summary="done",
+        user_response="执行完成",
+        final_decision=SupervisorDecision(decision="stop", reason="done"),
+        round_count=1,
+    )
+
+    agent = build_supervisor_enabled_agent(
+        base_agent=AsyncMock(),
+        fallback_agent=AsyncMock(),
+        workspace_root=tmp_path,
+        classifier_model=proposal_model,
+        enable_generic_ask_user=False,
+        interactive_confirmation_mode=True,
+    )
+
+    messages = [
+        HumanMessage(content="请写一份病毒风险评估报告"),
+        AIMessage(
+            content="方案：收集证据并撰写报告。\n\n如果你觉得可以，我就开始执行任务。"
+        ),
+        HumanMessage(content="可以，开始执行"),
+    ]
+    with (
+        patch.object(
+            supervisor_runtime,
+            "classify_task_with_model",
+            new=AsyncMock(return_value=(classification, {"source": "test"})),
+        ),
+        patch.object(
+            supervisor_runtime,
+            "run_supervisor_orchestration",
+            new=AsyncMock(return_value=run_result),
+        ) as run_mock,
+    ):
+        result = await agent.ainvoke({"messages": messages})
+
+    assert result["messages"][-1].content == "执行完成"
+    run_mock.assert_awaited_once()
+    task = run_mock.await_args.kwargs["task"]
+    assert "请写一份病毒风险评估报告" in task
+    assert "方案：收集证据并撰写报告。" in task
+    assert "可以，开始执行" in task
+    assert run_mock.await_args.kwargs["generic_approach_selector"] is None
 
 
 @pytest.mark.asyncio
@@ -1188,7 +1464,10 @@ async def test_run_supervisor_orchestration_writes_artifacts_and_stops_on_node_d
     assert evaluation_payload["completion_status"] == "partial"
     assert evaluation_payload["false_positive"] is False
     assert operator_manifest["validation"]["false_positive"] is False
-    assert operator_manifest["validation"]["completion_level"] == evaluation_payload["completion_level"]
+    assert (
+        operator_manifest["validation"]["completion_level"]
+        == evaluation_payload["completion_level"]
+    )
     assert "false-positive:false" in operator_manifest["tags"]
     assert result.round_count == 1
 
@@ -1212,25 +1491,44 @@ async def test_run_supervisor_orchestration_supports_report_tasks(
                             "node_id": "monitoring_lane",
                             "title": "Monitoring lane",
                             "objective": "Collect surveillance evidence.",
-                            "capability_bundles": ["web_search", "web_fetch", "validate"],
+                            "capability_bundles": [
+                                "web_search",
+                                "web_fetch",
+                                "validate",
+                            ],
                         },
                         {
                             "node_id": "existing_data_lane",
                             "title": "Existing local data lane",
                             "objective": "Query local data stores for existing evidence.",
-                            "capability_bundles": ["db_access", "api_call", "data_filter", "validate"],
+                            "capability_bundles": [
+                                "db_access",
+                                "api_call",
+                                "data_filter",
+                                "validate",
+                            ],
                         },
                         {
                             "node_id": "computed_data_lane",
                             "title": "Computed local data lane",
                             "objective": "Run local computation only if needed.",
-                            "capability_bundles": ["operator_filter", "data_filter", "metric_compute", "validate"],
+                            "capability_bundles": [
+                                "operator_filter",
+                                "data_filter",
+                                "metric_compute",
+                                "validate",
+                            ],
                         },
                         {
                             "node_id": "literature_lane",
                             "title": "Literature lane",
                             "objective": "Collect literature evidence.",
-                            "capability_bundles": ["web_search", "web_fetch", "api_call", "validate"],
+                            "capability_bundles": [
+                                "web_search",
+                                "web_fetch",
+                                "api_call",
+                                "validate",
+                            ],
                         },
                     ],
                     "edges": [],
@@ -1374,12 +1672,123 @@ async def test_run_supervisor_orchestration_writes_partial_finalizer_summary(
     )
 
     assert result.user_response == (
-        "可用结果：canu 成功，Flye 失败。主要产物："
-        "`cases/canu/out/contigs.fasta`。"
+        "可用结果：canu 成功，Flye 失败。主要产物：`cases/canu/out/contigs.fasta`。"
     )
     assert (result.run_dir / "final_response.md").read_text(encoding="utf-8") == (
         result.user_response
     )
+
+
+@pytest.mark.asyncio
+async def test_render_user_response_report_prefers_composed_report_artifact(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    report_dir = run_dir / "composed_report"
+    report_dir.mkdir(parents=True)
+    report_text = (
+        "# 专题报告\n\n"
+        "## 一、当前判断\n\n"
+        "这是一段已经成稿的报告正文，应当按原样作为用户可见结果。"
+    )
+    (report_dir / "final_report.md").write_text(report_text, encoding="utf-8")
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        raise AssertionError("report finalizer should not rewrite composed report")
+
+    response = await supervisor_runtime._render_user_response(
+        task="请写一份中文专题报告",
+        task_type="report",
+        rounds=[],
+        decision=SupervisorDecision(decision="stop", reason="All nodes completed."),
+        final_summary="Supervisor Summary: internal diagnostics",
+        run_dir=run_dir,
+        worker_runner=worker_runner,
+    )
+
+    assert response == report_text
+
+
+@pytest.mark.asyncio
+async def test_run_supervisor_orchestration_fallbacks_to_chinese_natural_response(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace" / "20260523103000"
+    workspace.mkdir(parents=True)
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "inspect":
+            return WorkerResult(
+                status="blocked",
+                summary=(
+                    "No materialized software repository under the workspace root, "
+                    "only orchestration metadata. Because the original task does not "
+                    "include a repository URL or source path, there is nothing to "
+                    "inspect for build/test assets yet."
+                ),
+                failure_reason="missing_repository_input",
+            )
+        if node.node_id == "final_response":
+            raise RuntimeError("finalizer unavailable")
+        return WorkerResult(status="completed", summary=f"{node.node_id} ok")
+
+    result = await run_supervisor_orchestration(
+        task="请你部署一个软件仓库看看",
+        workspace_root=workspace,
+        worker_runner=worker_runner,
+        classification=orchestration_runtime.TaskClassification(
+            primary_type="github2workspace",
+            guidance_ids=["github2workspace_pipeline"],
+        ),
+    )
+
+    assert "没有拿到要部署的仓库 URL 或本地源码路径" in result.user_response
+    assert "请补充 GitHub 仓库地址或本地仓库路径" in result.user_response
+    assert "Supervisor Summary" not in result.user_response
+    assert "Round 1" not in result.user_response
+    assert "Node decision" not in result.user_response
+    assert (result.run_dir / "final_response.md").read_text(encoding="utf-8") == (
+        result.user_response
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_supervisor_orchestration_rejects_raw_supervisor_summary_response(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace" / "20260523104500"
+    workspace.mkdir(parents=True)
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:
+        if node.node_id == "inspect":
+            return WorkerResult(
+                status="blocked",
+                summary=(
+                    "No materialized software repository under the workspace root. "
+                    "The original task does not include a repository URL or source path."
+                ),
+                failure_reason="missing_repository_input",
+            )
+        if node.node_id == "final_response":
+            return WorkerResult(
+                status="completed",
+                summary=str(node.metadata["final_summary"]),
+            )
+        return WorkerResult(status="completed", summary=f"{node.node_id} ok")
+
+    result = await run_supervisor_orchestration(
+        task="请你部署一个软件仓库看看",
+        workspace_root=workspace,
+        worker_runner=worker_runner,
+        classification=orchestration_runtime.TaskClassification(
+            primary_type="github2workspace",
+            guidance_ids=["github2workspace_pipeline"],
+        ),
+    )
+
+    assert "没有拿到要部署的仓库 URL 或本地源码路径" in result.user_response
+    assert "Supervisor Summary" not in result.user_response
+    assert "Round 1" not in result.user_response
 
 
 @pytest.mark.asyncio
@@ -1560,6 +1969,19 @@ def test_latest_human_route_mode_reads_fallback_override() -> None:
             HumanMessage(content="hello"),
             HumanMessage(
                 content="plain chat",
+                additional_kwargs={"epimindagent_route": "fallback"},
+            ),
+        ]
+    }
+
+    assert _latest_human_route_mode(state) == "fallback"
+
+
+def test_latest_human_route_mode_keeps_legacy_override() -> None:
+    state = {
+        "messages": [
+            HumanMessage(
+                content="plain chat",
                 additional_kwargs={"code2workspace_route": "fallback"},
             ),
         ]
@@ -1628,7 +2050,9 @@ async def test_run_worker_and_capture_times_out_report_nodes(
     assert result.failure_reason == "worker_timeout"
     activity = (run_dir / "tool_activity.jsonl").read_text(encoding="utf-8")
     assert '"event": "node_timeout"' in activity
-    payload = json.loads((run_dir / "worker_outputs" / "monitoring_lane.json").read_text())
+    payload = json.loads(
+        (run_dir / "worker_outputs" / "monitoring_lane.json").read_text()
+    )
     assert payload["result"]["failure_reason"] == "worker_timeout"
 
 
@@ -1683,9 +2107,9 @@ async def test_report_lane_agent_recovers_from_tool_exception_inside_lane(
 
     assert result.status == "completed"
     assert "recovered" in result.summary
-    raw_trace = (run_dir / "raw_worker_traces" / "monitoring_lane_influenza.jsonl").read_text(
-        encoding="utf-8"
-    )
+    raw_trace = (
+        run_dir / "raw_worker_traces" / "monitoring_lane_influenza.jsonl"
+    ).read_text(encoding="utf-8")
     assert "worker_invocation_failed" in raw_trace
     assert "worker_lane_recovery_started" in raw_trace
     assert "worker_lane_recovery_finished" in raw_trace
@@ -1744,13 +2168,18 @@ def test_create_cli_agent_wraps_default_agent_with_supervisor_runtime(
     with (
         patch.dict("os.environ", {}, clear=True),
         patch("code2workspace_cli.agent.settings", _make_settings(tmp_path)),
-        patch("code2workspace_cli.agent.create_workspace_agent", side_effect=_fake_workspace_agent),
+        patch(
+            "code2workspace_cli.agent.create_workspace_agent",
+            side_effect=_fake_workspace_agent,
+        ),
         patch(
             "code2workspace_cli.agent._resolve_report_worker_model",
             return_value=resolved_report_model,
         ),
         patch("code2workspace._models.init_chat_model", return_value=fake_model),
-        patch("code2workspace.middleware.summarization.create_summarization_tool_middleware"),
+        patch(
+            "code2workspace.middleware.summarization.create_summarization_tool_middleware"
+        ),
         patch(
             "code2workspace_cli.agent.build_supervisor_enabled_agent",
             return_value=mock_wrapped_agent,
@@ -1770,6 +2199,7 @@ def test_create_cli_agent_wraps_default_agent_with_supervisor_runtime(
     assert mock_build.call_args.kwargs["base_agent"] is built_agents[0]
     assert mock_build.call_args.kwargs["worker_agent"] is built_agents[1]
     assert mock_build.call_args.kwargs["fallback_agent"] is built_agents[3]
+    assert mock_build.call_args.kwargs["interactive_confirmation_mode"] is True
     worker_subagents = mock_build.call_args.kwargs["worker_subagents"]
     assert len(worker_subagents) == 9
     assert {item.runnable for item in worker_subagents} == {built_agents[2]}
@@ -1815,13 +2245,18 @@ def test_create_cli_agent_allows_report_worker_model_env_overrides(
             clear=True,
         ),
         patch("code2workspace_cli.agent.settings", _make_settings(tmp_path)),
-        patch("code2workspace_cli.agent.create_workspace_agent", side_effect=_fake_workspace_agent),
+        patch(
+            "code2workspace_cli.agent.create_workspace_agent",
+            side_effect=_fake_workspace_agent,
+        ),
         patch(
             "code2workspace_cli.agent._resolve_report_worker_model",
             side_effect=lambda spec: resolved_models[spec],
         ) as mock_resolve_report_model,
         patch("code2workspace._models.init_chat_model", return_value=fake_model),
-        patch("code2workspace.middleware.summarization.create_summarization_tool_middleware"),
+        patch(
+            "code2workspace.middleware.summarization.create_summarization_tool_middleware"
+        ),
         patch(
             "code2workspace_cli.agent.build_supervisor_enabled_agent",
             return_value=mock_wrapped_agent,
@@ -1856,13 +2291,15 @@ def test_resolve_report_worker_model_falls_back_from_openai_paid_alias() -> None
 
     with patch("code2workspace_cli.config.create_model") as mock_create_model:
         mock_create_model.side_effect = [
-            __import__("code2workspace_cli.model_config", fromlist=["ModelConfigError"]).ModelConfigError(primary_error),
+            __import__(
+                "code2workspace_cli.model_config", fromlist=["ModelConfigError"]
+            ).ModelConfigError(primary_error),
             Mock(model=resolved_fallback),
         ]
 
-        model = __import__("code2workspace_cli.agent", fromlist=["_resolve_report_worker_model"])._resolve_report_worker_model(
-            "openai_paid:gpt-5.4"
-        )
+        model = __import__(
+            "code2workspace_cli.agent", fromlist=["_resolve_report_worker_model"]
+        )._resolve_report_worker_model("openai_paid:gpt-5.4")
 
     assert model is resolved_fallback
     assert [call.args[0] for call in mock_create_model.call_args_list] == [
@@ -1882,8 +2319,12 @@ def test_build_worker_prompt_uses_capability_registry_and_guidance() -> None:
             "task": "把这个 GitHub 仓库变成有工作流的可运行 workspace：https://github.com/ablab/spades",
             "task_paths": ["/tmp/supervisor-workspace"],
             "run_dir": "/tmp/supervisor-workspace/orchestration_runs/run-1",
-            "prior_worker_outputs": ["/tmp/supervisor-workspace/orchestration_runs/run-1/worker_outputs/register.json"],
-            "prior_node_traces": ["/tmp/supervisor-workspace/orchestration_runs/run-1/node_traces/register.json"],
+            "prior_worker_outputs": [
+                "/tmp/supervisor-workspace/orchestration_runs/run-1/worker_outputs/register.json"
+            ],
+            "prior_node_traces": [
+                "/tmp/supervisor-workspace/orchestration_runs/run-1/node_traces/register.json"
+            ],
         },
     )
 
@@ -1901,7 +2342,10 @@ def test_build_worker_prompt_uses_capability_registry_and_guidance() -> None:
     assert "materialize the repository into the current workspace" in prompt
     assert "inspect that local copy directly instead of re-cloning it" in prompt
     assert "bundled datasets" in prompt
-    assert "Earlier nodes may spend time discovering the safest real validation path" in prompt
+    assert (
+        "Earlier nodes may spend time discovering the safest real validation path"
+        in prompt
+    )
     assert "Original task:" in prompt
     assert "Task paths:" in prompt
     assert "Run directory:" in prompt
@@ -1919,7 +2363,9 @@ def test_build_worker_prompt_compacts_large_prior_worker_payloads() -> None:
             "task": "下一波新冠/流感阳性率的高峰会在什么时间？",
             "task_type": "generic",
             "graph_round": 2,
-            "prior_worker_outputs": [f"/tmp/run/worker_outputs/{i}.json" for i in range(12)],
+            "prior_worker_outputs": [
+                f"/tmp/run/worker_outputs/{i}.json" for i in range(12)
+            ],
             "prior_node_traces": [f"/tmp/run/node_traces/{i}.json" for i in range(12)],
             "run_dir_artifacts": [f"/tmp/run/artifacts/{i}.json" for i in range(12)],
             "prior_worker_output_payloads": {
@@ -1954,7 +2400,9 @@ def test_build_worker_prompt_compacts_large_prior_worker_payloads() -> None:
     assert "bbbb" not in prompt
 
 
-def test_build_worker_prompt_github2workspace_build_requires_early_observable_action() -> None:
+def test_build_worker_prompt_github2workspace_build_requires_early_observable_action() -> (
+    None
+):
     node = TaskNode(
         node_id="build",
         title="Build Docker image",
@@ -2028,6 +2476,8 @@ def test_build_worker_prompt_final_response_preserves_evidence_sources() -> None
     assert "auditable reasoning path" in prompt
     assert "not private chain-of-thought" in prompt
     assert "false positives" in prompt
+    assert "Prefer Chinese for user-facing prose" in prompt
+    assert "Never return the raw Supervisor Summary" in prompt
     assert "do not expose absolute filesystem paths" in prompt
     assert "run-relative paths" in prompt
 
@@ -2058,6 +2508,9 @@ def test_build_worker_prompt_report_final_response_preserves_report_shape() -> N
     assert "Keep the report shape chosen by composition" in prompt
     assert "do not force a default heading checklist" in prompt
     assert "same language as the user's report request" in prompt
+    assert "Keep formal reports paragraph-led" in prompt
+    assert "not one-sentence bullet notes" in prompt
+    assert "do not convert the report body into a note-style outline" in prompt
     assert "evidence appendix" in prompt
     assert "preserve the numbering and include the source list" in prompt
     assert "traceable to a finding" in prompt
@@ -2070,7 +2523,9 @@ def test_final_response_paths_are_relativized_for_user_facing_text(
     repo_root = tmp_path / "repo"
     run_dir = repo_root / "workspace" / "20260521" / "orchestration_runs" / "run-1"
     run_dir.mkdir(parents=True)
-    dataset_path = repo_root / "workspace" / "dataset_store" / "files" / "reads.fastq.gz"
+    dataset_path = (
+        repo_root / "workspace" / "dataset_store" / "files" / "reads.fastq.gz"
+    )
     output_path = run_dir / "cases" / "Flye" / "out" / "assembly.fasta"
     monkeypatch.setattr(supervisor_runtime, "_PROJECT_ROOT", repo_root)
 
@@ -2159,11 +2614,81 @@ def test_build_worker_prompt_compose_report_includes_template_guidance() -> None
     assert "choose one as the primary shape" in prompt
     assert "Open with the bottom-line answer or current state" in prompt
     assert "rather than mechanically filling a fixed checklist" in prompt
-    assert "Do not default to headings such as `Executive Summary`, `执行摘要`" in prompt
+    assert (
+        "Do not default to headings such as `Executive Summary`, `执行摘要`" in prompt
+    )
     assert "Historical full reports may be used to locate evidence" in prompt
     assert "Prefer a clear total-subtotal-total flow" in prompt
+    assert "number every `##` major section" in prompt
+    assert "## 一、报告范围与当前判断" in prompt
+    assert "Markdown syntax must be valid" in prompt
+    assert "never write `###1.1传播与临床意义`" in prompt
+    assert "never write `1.结论`, `-证据`, or `-以及`" in prompt
+    assert "one space after ordered and unordered list markers" in prompt
+    assert "Paragraphs should be the default unit of the report" in prompt
+    assert "not make the body read like notes" in prompt
+    assert "Use bullets or numbered lists only where they improve scanability" in prompt
+    assert "must create the final report artifact" in prompt
+    assert "/tmp/supervisor-run/composed_report/final_report.md" in prompt
+    assert "Do not finish with an empty response" in prompt
     assert "do not expose absolute filesystem paths" in prompt
     assert "Chinese-titled source section" in prompt
+
+
+def test_normalize_report_markdown_syntax_repairs_common_spacing() -> None:
+    text = (
+        "#2025-2026年报告\n\n"
+        "###1.1传播与临床意义\n"
+        "### 1 . 已被旧规则拆开的标题\n"
+        "1.结论\n"
+        "-证据\n\n"
+        "```md\n"
+        "###1.1不要改代码块\n"
+        "```\n"
+    )
+
+    normalized = supervisor_runtime._normalize_report_markdown_syntax(text)
+
+    assert "# 2025-2026年报告" in normalized
+    assert "### 1.1 传播与临床意义" in normalized
+    assert "### 1. 已被旧规则拆开的标题" in normalized
+    assert "1. 结论" in normalized
+    assert "- 证据" in normalized
+    assert "###1.1不要改代码块" in normalized
+    assert (
+        supervisor_runtime._normalize_report_markdown_syntax(normalized) == normalized
+    )
+
+
+def test_report_candidate_accepts_legacy_compose_final_report_path(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    legacy_dir = run_dir / "compose"
+    legacy_dir.mkdir(parents=True)
+    legacy_report = "#标题\n\n##一、当前判断\n\n这是一段正式报告正文。"
+    (legacy_dir / "final_report.md").write_text(legacy_report, encoding="utf-8")
+
+    candidate = supervisor_runtime._report_composed_final_report_candidate(run_dir)
+
+    assert candidate == "# 标题\n\n## 一、当前判断\n\n这是一段正式报告正文。"
+    canonical = run_dir / "composed_report" / "final_report.md"
+    assert canonical.read_text(encoding="utf-8") == candidate
+
+
+def test_postprocess_compose_report_marks_missing_artifact_partial(
+    tmp_path: Path,
+) -> None:
+    result = WorkerResult(status="completed", summary="Worker completed.")
+
+    postprocessed = supervisor_runtime._postprocess_compose_report_result(
+        result=result,
+        run_dir=tmp_path / "run",
+    )
+
+    assert postprocessed.status == "partial"
+    assert postprocessed.failure_reason == "missing_final_report_artifact"
+    assert "final report artifact" in postprocessed.summary
 
 
 def test_build_worker_prompt_init_report_includes_shape_library_guidance() -> None:
@@ -2187,13 +2712,21 @@ def test_build_worker_prompt_init_report_includes_shape_library_guidance() -> No
 
     assert "This node plans the dynamic report evidence graph" in prompt
     assert "Decide each possible lane independently" in prompt
-    assert "Allowed report lane base types are monitoring_lane, existing_data_lane, computed_data_lane, and literature_lane." in prompt
-    assert "0-3 nodes for each lane base type and at most 6 evidence-lane nodes total" in prompt
+    assert (
+        "Allowed report lane base types are monitoring_lane, existing_data_lane, computed_data_lane, and literature_lane."
+        in prompt
+    )
+    assert (
+        "0-3 nodes for each lane base type and at most 6 evidence-lane nodes total"
+        in prompt
+    )
     assert "Put the selected next-round graph in spawned_subgraph" in prompt
     assert "shape_archetype" in prompt or "WHO-style risk assessment" in prompt
 
 
-def test_parse_worker_result_recovers_report_spawned_subgraph_from_malformed_json() -> None:
+def test_parse_worker_result_recovers_report_spawned_subgraph_from_malformed_json() -> (
+    None
+):
     text = (
         '{"status":"completed","summary":"planned",'
         '"evidence":[{"supports":"broken string}],'
@@ -2207,10 +2740,14 @@ def test_parse_worker_result_recovers_report_spawned_subgraph_from_malformed_jso
 
     assert result.status == "completed"
     assert result.spawned_subgraph is not None
-    assert result.spawned_subgraph["nodes"][0]["node_id"] == "existing_data_lane_history"
+    assert (
+        result.spawned_subgraph["nodes"][0]["node_id"] == "existing_data_lane_history"
+    )
 
 
-def test_build_worker_prompt_monitoring_lane_includes_source_priority_and_depth_policy() -> None:
+def test_build_worker_prompt_monitoring_lane_includes_source_priority_and_depth_policy() -> (
+    None
+):
     node = TaskNode(
         node_id="monitoring_lane",
         title="Monitoring lane",
@@ -2238,7 +2775,9 @@ def test_build_worker_prompt_monitoring_lane_includes_source_priority_and_depth_
     assert "full-web search only for source discovery" in prompt
 
 
-def test_build_worker_prompt_generic_context_defaults_to_d2_for_evidence_tasks() -> None:
+def test_build_worker_prompt_generic_context_defaults_to_d2_for_evidence_tasks() -> (
+    None
+):
     node = TaskNode(
         node_id="worker_context",
         title="Collect generic context",
@@ -2284,7 +2823,10 @@ def test_build_worker_prompt_init_generic_plans_operator_store_computation() -> 
     )
 
     assert "searches operator_store for candidate operators" in prompt
-    assert "first plan for a judgment about whether existing local evidence is already sufficient" in prompt
+    assert (
+        "first plan for a judgment about whether existing local evidence is already sufficient"
+        in prompt
+    )
     assert "selects a compatible local dataset/input bundle" in prompt
     assert "runs the concrete WDL/Docker/entrypoint path" in prompt
     assert "metric_compute" in prompt
@@ -2370,7 +2912,9 @@ def test_build_worker_prompt_local_data_report_includes_benchmark_history(
                     "required": False,
                 }
             ],
-            "metrics": [{"name": "n50", "type": "numeric", "description": "Assembly N50."}],
+            "metrics": [
+                {"name": "n50", "type": "numeric", "description": "Assembly N50."}
+            ],
             "validation": {
                 "validation_id": "benchmark:Flye:test",
                 "status": "registered_ready",
@@ -2419,11 +2963,20 @@ def test_build_worker_prompt_local_data_report_includes_benchmark_history(
     assert "existing_data" in prompt
     assert "computed_data" in prompt
     assert "Decision order:" in prompt
-    assert "First judge whether existing_data already answers the local-data need well enough." in prompt
-    assert "Do not run an operator by default just because operator_store candidates exist." in prompt
+    assert (
+        "First judge whether existing_data already answers the local-data need well enough."
+        in prompt
+    )
+    assert (
+        "Do not run an operator by default just because operator_store candidates exist."
+        in prompt
+    )
     assert "first explain why existing_data is insufficient" in prompt
     assert "operator_store records as the local operator library" in prompt
-    assert "dataset_store records as the preferred local dataset/input-bundle library" in prompt
+    assert (
+        "dataset_store records as the preferred local dataset/input-bundle library"
+        in prompt
+    )
     assert "dataset_store_roots:" in prompt
     assert "Candidate local operators for computed_data:" in prompt
     assert "operator_id=benchmark:Flye" in prompt
@@ -2453,7 +3006,9 @@ def test_build_worker_prompt_local_data_report_backfills_workspace_history(
     workflow_path = tmp_path / "flye.wdl"
     workflow_path.write_text("workflow FlyeWorkflow {}", encoding="utf-8")
     inputs_path = tmp_path / "inputs.json"
-    inputs_path.write_text(json.dumps({"FlyeWorkflow.reads": "pacbio.fastq.gz"}), encoding="utf-8")
+    inputs_path.write_text(
+        json.dumps({"FlyeWorkflow.reads": "pacbio.fastq.gz"}), encoding="utf-8"
+    )
     (run_dir / "manifest.json").write_text(
         json.dumps({"case_order": ["Flye"]}),
         encoding="utf-8",
@@ -2589,7 +3144,12 @@ def test_build_worker_prompt_generic_context_includes_local_computation_context(
         node_id="worker_context",
         title="Collect context",
         objective="Collect local evidence and compute a forecast if needed.",
-        capability_bundles=["db_access", "operator_filter", "metric_compute", "validate"],
+        capability_bundles=[
+            "db_access",
+            "operator_filter",
+            "metric_compute",
+            "validate",
+        ],
         metadata={
             "task": "下一波新冠/流感阳性率的高峰会在什么时间？需要时用本地算子预测。",
             "task_type": "generic",
@@ -2714,13 +3274,20 @@ async def test_report_local_data_lane_can_run_operator_from_prompt_context(
             assert "operator_id=analysis:respiratory-peak-forecast" in prompt
             assert f"entrypoint={entrypoint_path}" in prompt
             run_dir_line = next(
-                line for line in prompt.splitlines() if line.startswith("Run directory: ")
+                line
+                for line in prompt.splitlines()
+                if line.startswith("Run directory: ")
             )
             run_dir = Path(run_dir_line.removeprefix("Run directory: ").strip())
             output_path = run_dir / "computed_data_lane" / "forecast_result.json"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             completed = subprocess.run(
-                [sys.executable, str(entrypoint_path), str(dataset_path), str(output_path)],
+                [
+                    sys.executable,
+                    str(entrypoint_path),
+                    str(dataset_path),
+                    str(output_path),
+                ],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -2793,7 +3360,9 @@ async def test_report_local_data_lane_can_run_operator_from_prompt_context(
 
     assert local_data_agent.prompts
     local_data_output = json.loads(
-        (result.run_dir / "worker_outputs" / "computed_data_lane.json").read_text(encoding="utf-8")
+        (result.run_dir / "worker_outputs" / "computed_data_lane.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert local_data_output["result"]["status"] == "completed"
     assert "peak_week=2026-W19" in local_data_output["result"]["summary"]
@@ -2881,7 +3450,10 @@ def test_build_worker_prompt_benchmark_final_response_mentions_dataset_requireme
     assert "explicitly state which dataset or input bundle was actually used" in prompt
     assert "Benchmark dataset context:" in prompt
     assert "esm: dataset `unknown`, selected_inputs `few_proteins.fasta`" in prompt
-    assert "AutoDock-Vina: dataset `unknown`, selected_inputs `1iep_receptor.pdbqt, 1iep_ligand.pdbqt`" in prompt
+    assert (
+        "AutoDock-Vina: dataset `unknown`, selected_inputs `1iep_receptor.pdbqt, 1iep_ligand.pdbqt`"
+        in prompt
+    )
 
 
 def test_benchmark_result_store_search_records_supports_semantic_query(
@@ -2914,12 +3486,15 @@ def test_benchmark_result_store_search_records_supports_semantic_query(
         "analysis_payload": {"metrics": {"n50": 1234}},
         "canonical_text": "assembler genome reconstruction",
     }
-    with patch(
-        "code2workspace_cli.benchmark_result_store._embed_documents",
-        return_value=([[1.0, 0.0]], "test-embedding-model"),
-    ), patch(
-        "code2workspace_cli.benchmark_result_store._embed_query",
-        return_value=([1.0, 0.0], "test-embedding-model"),
+    with (
+        patch(
+            "code2workspace_cli.benchmark_result_store._embed_documents",
+            return_value=([[1.0, 0.0]], "test-embedding-model"),
+        ),
+        patch(
+            "code2workspace_cli.benchmark_result_store._embed_query",
+            return_value=([1.0, 0.0], "test-embedding-model"),
+        ),
     ):
         store.write_record(record)
         rows = store.search_records(
@@ -3055,7 +3630,9 @@ def test_deterministic_benchmark_case_reuses_historical_record_before_execution(
         ),
         encoding="utf-8",
     )
-    history_store = BenchmarkResultStore(workspace_root / "benchmark_comparison_history_store")
+    history_store = BenchmarkResultStore(
+        workspace_root / "benchmark_comparison_history_store"
+    )
     historical_run_dir = tmp_path / "historical-run"
     historical_case_dir = historical_run_dir / "cases" / "Flye"
     historical_case_dir.mkdir(parents=True, exist_ok=True)
@@ -3066,8 +3643,12 @@ def test_deterministic_benchmark_case_reuses_historical_record_before_execution(
             "repo": "Flye",
             "operator_id": "github2workspace:Flye",
             "dataset_key": "long-read-pacbio",
-            "workflow_signature": supervisor_runtime._benchmark_workflow_signature_from_manifest(manifest_payload),
-            "input_signature": supervisor_runtime._benchmark_input_signature_from_manifest(manifest_payload),
+            "workflow_signature": supervisor_runtime._benchmark_workflow_signature_from_manifest(
+                manifest_payload
+            ),
+            "input_signature": supervisor_runtime._benchmark_input_signature_from_manifest(
+                manifest_payload
+            ),
             "success": True,
             "returncode": 0,
             "run_id": "historical-run-1",
@@ -3077,7 +3658,9 @@ def test_deterministic_benchmark_case_reuses_historical_record_before_execution(
             "inputs_json_path": str(staged_inputs),
             "status_path": str(historical_case_dir / "run" / "status.json"),
             "wdl_status_path": str(historical_case_dir / "wdl" / "status.json"),
-            "result_manifest_path": str(historical_case_dir / "run" / "result_manifest.json"),
+            "result_manifest_path": str(
+                historical_case_dir / "run" / "result_manifest.json"
+            ),
             "analysis_path": str(historical_case_dir / "analysis.json"),
             "result_files": [str(historical_result)],
             "status_payload": {
@@ -3155,7 +3738,9 @@ def test_build_worker_prompt_includes_wdl_node_guidance() -> None:
     assert "smoke success alone does not mean the WDL task is complete" in prompt
     assert "Do not stop at `miniwdl check`" in prompt
     assert "workflow.log and outputs.json" in prompt
-    assert "prefer a WDL runtime based on a repository-documented official image" in prompt
+    assert (
+        "prefer a WDL runtime based on a repository-documented official image" in prompt
+    )
     assert "thin wrapper image" in prompt
     assert "private references" in prompt
     assert "never run `spades.py --test -o ...`" in prompt
@@ -3163,7 +3748,9 @@ def test_build_worker_prompt_includes_wdl_node_guidance() -> None:
     assert "Do not fabricate or synthesize reads" in prompt
 
 
-def test_github2workspace_product_status_rejects_synthetic_inputs(tmp_path: Path) -> None:
+def test_github2workspace_product_status_rejects_synthetic_inputs(
+    tmp_path: Path,
+) -> None:
     workspace = tmp_path / "workspace"
     (workspace / "results" / "wdl_result").mkdir(parents=True)
     (workspace / "results" / "wdl_result" / "outputs.json").write_text(
@@ -3237,8 +3824,12 @@ async def test_supervisor_worker_runner_github_repo_uses_code_repository_preflig
 
     assert result.status == "completed"
     assert (workspace / "CircAST" / ".git").exists()
-    assert (workspace / "CircAST" / "README.md").read_text(encoding="utf-8") == "cached circast"
-    payload = json.loads((run_dir / "github_repo_materialization.json").read_text(encoding="utf-8"))
+    assert (workspace / "CircAST" / "README.md").read_text(
+        encoding="utf-8"
+    ) == "cached circast"
+    payload = json.loads(
+        (run_dir / "github_repo_materialization.json").read_text(encoding="utf-8")
+    )
     assert payload["selected_strategy"] == "code_repository_copy"
 
 
@@ -3273,7 +3864,9 @@ async def test_invoke_worker_agent_github_repo_prefers_code_repository_copy(
         return WorkerResult(status="completed", summary="inspect ok")
 
     def fail_if_called(*args, **kwargs):
-        raise AssertionError("subprocess.run should not be used when code_repository cache is available")
+        raise AssertionError(
+            "subprocess.run should not be used when code_repository cache is available"
+        )
 
     monkeypatch.setattr(supervisor_runtime, "_CODE_REPOSITORY_ROOT", cached_root)
     monkeypatch.setattr(supervisor_runtime.subprocess, "run", fail_if_called)
@@ -3291,8 +3884,12 @@ async def test_invoke_worker_agent_github_repo_prefers_code_repository_copy(
 
     assert result.status == "completed"
     assert (workspace / "Graphinity" / ".git").exists()
-    assert (workspace / "Graphinity" / "README.md").read_text(encoding="utf-8") == "cached repo"
-    payload = json.loads((run_dir / "github_repo_materialization.json").read_text(encoding="utf-8"))
+    assert (workspace / "Graphinity" / "README.md").read_text(
+        encoding="utf-8"
+    ) == "cached repo"
+    payload = json.loads(
+        (run_dir / "github_repo_materialization.json").read_text(encoding="utf-8")
+    )
     assert payload["selected_strategy"] == "code_repository_copy"
     assert payload["cached_repo"] == str(cached_repo)
 
@@ -3326,7 +3923,9 @@ async def test_invoke_worker_agent_github_repo_falls_back_to_depth_clone(
         attempted.append(command)
         destination = Path(command[-1])
         if command[:2] == ["git", "clone"] and "--depth" not in command:
-            return subprocess.CompletedProcess(command, 1, stdout="", stderr="normal clone failed")
+            return subprocess.CompletedProcess(
+                command, 1, stdout="", stderr="normal clone failed"
+            )
         destination.mkdir(parents=True, exist_ok=True)
         (destination / ".git").mkdir(exist_ok=True)
         return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
@@ -3334,7 +3933,11 @@ async def test_invoke_worker_agent_github_repo_falls_back_to_depth_clone(
     async def fake_invoke_worker_runnable(*, agent, node, workspace_root):
         return WorkerResult(status="completed", summary="inspect ok")
 
-    monkeypatch.setattr(supervisor_runtime, "_CODE_REPOSITORY_ROOT", tmp_path / "missing-code-repository")
+    monkeypatch.setattr(
+        supervisor_runtime,
+        "_CODE_REPOSITORY_ROOT",
+        tmp_path / "missing-code-repository",
+    )
     monkeypatch.setattr(supervisor_runtime.subprocess, "run", fake_run)
     monkeypatch.setattr(
         supervisor_runtime,
@@ -3363,7 +3966,9 @@ async def test_invoke_worker_agent_github_repo_falls_back_to_depth_clone(
         "https://github.com/oxpig/Graphinity.git",
         str(workspace / "Graphinity"),
     ]
-    payload = json.loads((run_dir / "github_repo_materialization.json").read_text(encoding="utf-8"))
+    payload = json.loads(
+        (run_dir / "github_repo_materialization.json").read_text(encoding="utf-8")
+    )
     assert payload["selected_strategy"] == "shallow_clone"
 
 
@@ -3402,12 +4007,18 @@ async def test_invoke_worker_agent_github_repo_falls_back_to_local_clone(
             destination.mkdir(parents=True, exist_ok=True)
             (destination / ".git").mkdir(exist_ok=True)
             return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
-        return subprocess.CompletedProcess(command, 1, stdout="", stderr="remote clone failed")
+        return subprocess.CompletedProcess(
+            command, 1, stdout="", stderr="remote clone failed"
+        )
 
     async def fake_invoke_worker_runnable(*, agent, node, workspace_root):
         return WorkerResult(status="completed", summary="inspect ok")
 
-    monkeypatch.setattr(supervisor_runtime, "_CODE_REPOSITORY_ROOT", tmp_path / "missing-code-repository")
+    monkeypatch.setattr(
+        supervisor_runtime,
+        "_CODE_REPOSITORY_ROOT",
+        tmp_path / "missing-code-repository",
+    )
     monkeypatch.setattr(supervisor_runtime.subprocess, "run", fake_run)
     monkeypatch.setattr(
         supervisor_runtime,
@@ -3430,7 +4041,9 @@ async def test_invoke_worker_agent_github_repo_falls_back_to_local_clone(
         str(local_repo),
         str(workspace / "Graphinity"),
     ]
-    payload = json.loads((run_dir / "github_repo_materialization.json").read_text(encoding="utf-8"))
+    payload = json.loads(
+        (run_dir / "github_repo_materialization.json").read_text(encoding="utf-8")
+    )
     assert payload["selected_strategy"] == "local_clone"
     assert payload["local_repo"] == str(local_repo)
 
@@ -3462,9 +4075,15 @@ async def test_invoke_worker_agent_github_repo_returns_failure_when_all_fallback
         return subprocess.CompletedProcess(command, 1, stdout="", stderr="clone failed")
 
     async def fake_invoke_worker_runnable(*, agent, node, workspace_root):
-        raise AssertionError("worker runnable should not be invoked when repo materialization fails")
+        raise AssertionError(
+            "worker runnable should not be invoked when repo materialization fails"
+        )
 
-    monkeypatch.setattr(supervisor_runtime, "_CODE_REPOSITORY_ROOT", tmp_path / "missing-code-repository")
+    monkeypatch.setattr(
+        supervisor_runtime,
+        "_CODE_REPOSITORY_ROOT",
+        tmp_path / "missing-code-repository",
+    )
     monkeypatch.setattr(supervisor_runtime.subprocess, "run", fake_run)
     monkeypatch.setattr(
         supervisor_runtime,
@@ -3483,7 +4102,9 @@ async def test_invoke_worker_agent_github_repo_returns_failure_when_all_fallback
     assert any("clone: failed" in line for line in result.evidence)
     assert any("shallow_clone: failed" in line for line in result.evidence)
     assert any("local_clone: failed" in line for line in result.evidence)
-    payload = json.loads((run_dir / "github_repo_materialization.json").read_text(encoding="utf-8"))
+    payload = json.loads(
+        (run_dir / "github_repo_materialization.json").read_text(encoding="utf-8")
+    )
     assert payload["selected_strategy"] is None
 
 
@@ -3493,8 +4114,12 @@ def test_maybe_prepare_worker_inputs_reuses_successful_github2workspace_wdl_smok
     workspace = tmp_path / "workspace" / "20260518"
     repo_dir = workspace / "AutoCirc"
     repo_dir.mkdir(parents=True)
-    (repo_dir / "autocirc_smoke.wdl").write_text("workflow AutoCircSmokeValidation {}", encoding="utf-8")
-    (repo_dir / "autocirc_run.wdl").write_text("workflow AutoCircRun {}", encoding="utf-8")
+    (repo_dir / "autocirc_smoke.wdl").write_text(
+        "workflow AutoCircSmokeValidation {}", encoding="utf-8"
+    )
+    (repo_dir / "autocirc_run.wdl").write_text(
+        "workflow AutoCircRun {}", encoding="utf-8"
+    )
     (repo_dir / "autocirc_smoke.inputs.json").write_text("{}", encoding="utf-8")
 
     run_dir = workspace / "orchestration_runs" / "run-1"
@@ -3543,7 +4168,9 @@ def test_node_decision_rejects_github2workspace_wdl_without_real_run_evidence(
     workspace = tmp_path / "workspace" / "20260518"
     repo_dir = workspace / "AQUARIUM-HB"
     repo_dir.mkdir(parents=True)
-    (repo_dir / "AQUARIUM_HB.wdl").write_text("workflow AquariumHB {}", encoding="utf-8")
+    (repo_dir / "AQUARIUM_HB.wdl").write_text(
+        "workflow AquariumHB {}", encoding="utf-8"
+    )
 
     run_dir = workspace / "orchestration_runs" / "run-1"
     run_dir.mkdir(parents=True)
@@ -3561,7 +4188,9 @@ def test_node_decision_rejects_github2workspace_wdl_without_real_run_evidence(
     )
 
     result = WorkerResult(status="completed", summary="wdl ok")
-    action, reason = orchestration_runtime._node_decision_action(node=node, result=result)
+    action, reason = orchestration_runtime._node_decision_action(
+        node=node, result=result
+    )
 
     assert action == "finalize"
     assert "no successful main-function miniwdl run evidence was found" in reason
@@ -3596,7 +4225,9 @@ def test_node_decision_accepts_github2workspace_wdl_with_real_run_evidence(
     )
 
     result = WorkerResult(status="completed", summary="wdl ok")
-    action, reason = orchestration_runtime._node_decision_action(node=node, result=result)
+    action, reason = orchestration_runtime._node_decision_action(
+        node=node, result=result
+    )
 
     assert action == "continue"
     assert reason == "Node outcome is sufficient to continue."
@@ -3641,7 +4272,9 @@ def test_last_ai_text_skips_empty_streaming_tool_call_messages() -> None:
     messages = [
         HumanMessage(content="task"),
         AIMessage(content='{"status":"completed","summary":"useful answer"}'),
-        AIMessage(content="", tool_calls=[{"name": "read_file", "args": {}, "id": "call-1"}]),
+        AIMessage(
+            content="", tool_calls=[{"name": "read_file", "args": {}, "id": "call-1"}]
+        ),
         ToolMessage(content="tool result", tool_call_id="call-1"),
     ]
 
@@ -3715,7 +4348,9 @@ def test_build_worker_invoke_request_uses_messages_mode_by_default(monkeypatch) 
     assert kwargs == {}
 
 
-def test_build_worker_invoke_request_uses_context_mode_when_requested(monkeypatch) -> None:
+def test_build_worker_invoke_request_uses_context_mode_when_requested(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("CODE2WORKSPACE_SUPERVISOR_WORKER_PROMPT_MODE", "context")
 
     payload, kwargs = _build_worker_invoke_request("Worker prompt")
@@ -3778,6 +4413,7 @@ async def test_invoke_worker_agent_records_internal_tool_calls(
             "run_dir": str(run_dir),
         },
     )
+
     class _Agent:
         async def ainvoke(self, _payload, **_kwargs):
             return {
@@ -3883,8 +4519,7 @@ async def test_invoke_worker_agent_records_raw_worker_trace(
     assert result.status == "completed"
     trace_path = run_dir / "raw_worker_traces" / "worker_solution.jsonl"
     records = [
-        json.loads(line)
-        for line in trace_path.read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()
     ]
     assert [record["event"] for record in records].count("worker_message") == 3
     finished = records[-1]
@@ -4119,9 +4754,13 @@ async def test_invoke_worker_agent_merges_streamed_tool_call_argument_chunks(
     assert result.status == "completed"
     events = [
         json.loads(line)
-        for line in (run_dir / "tool_activity.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (run_dir / "tool_activity.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ]
-    call_events = [event for event in events if event.get("event") == "worker_tool_call"]
+    call_events = [
+        event for event in events if event.get("event") == "worker_tool_call"
+    ]
     assert call_events == [
         {
             "event": "worker_tool_call",
@@ -4184,7 +4823,9 @@ async def test_supervisor_worker_runner_uses_register_selector_for_benchmark_reg
     selector = AsyncMock()
     register_result = WorkerResult(status="completed", summary="selected")
     with (
-        patch.object(supervisor_runtime, "_maybe_prepare_worker_inputs", return_value=None),
+        patch.object(
+            supervisor_runtime, "_maybe_prepare_worker_inputs", return_value=None
+        ),
         patch.object(
             supervisor_runtime,
             "_maybe_run_agentic_benchmark_register",
@@ -4281,7 +4922,9 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
         },
     )
     agent = AsyncMock()
-    agent.ainvoke.side_effect = AssertionError("register helper path should bypass the model")
+    agent.ainvoke.side_effect = AssertionError(
+        "register helper path should bypass the model"
+    )
 
     candidate_rows = [
         {
@@ -4326,12 +4969,29 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
             "_materialize_benchmark_selection_cases",
             side_effect=lambda **_kwargs: (
                 (run_dir / "benchmark_plan.json").write_text("{}", encoding="utf-8"),
-                (run_dir / "benchmark_plan.md").write_text("# plan\n", encoding="utf-8"),
-                (run_dir / "dataset_resolution.json").write_text("{}", encoding="utf-8"),
-                (run_dir / "dataset_resolution.md").write_text("# datasets\n", encoding="utf-8"),
+                (run_dir / "benchmark_plan.md").write_text(
+                    "# plan\n", encoding="utf-8"
+                ),
+                (run_dir / "dataset_resolution.json").write_text(
+                    "{}", encoding="utf-8"
+                ),
+                (run_dir / "dataset_resolution.md").write_text(
+                    "# datasets\n", encoding="utf-8"
+                ),
                 [
-                    {"phase": "materialize-selection", "stdout": {"case_order": ["spades", "megahit"]}},
-                    {"phase": "resolve-datasets", "stdout": {"repo_to_dataset": {"spades": "short-read-ecoli-srr001666", "megahit": "short-read-ecoli-srr001666"}}},
+                    {
+                        "phase": "materialize-selection",
+                        "stdout": {"case_order": ["spades", "megahit"]},
+                    },
+                    {
+                        "phase": "resolve-datasets",
+                        "stdout": {
+                            "repo_to_dataset": {
+                                "spades": "short-read-ecoli-srr001666",
+                                "megahit": "short-read-ecoli-srr001666",
+                            }
+                        },
+                    },
                 ],
             )[-1],
         ),
@@ -4349,7 +5009,10 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_register_helper(
                     {
                         "dataset_key": "short-read-ecoli-srr001666",
                         "metric_keys": ["contig_count", "assembly_size", "n50"],
-                        "selected_input_files": {"reads_1": "/tmp/r1", "reads_2": "/tmp/r2"},
+                        "selected_input_files": {
+                            "reads_1": "/tmp/r1",
+                            "reads_2": "/tmp/r2",
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -4434,8 +5097,19 @@ async def test_benchmark_register_partial_returns_only_ready_tools_for_fanout(
             supervisor_runtime,
             "_materialize_benchmark_selection_cases",
             return_value=[
-                {"phase": "materialize-selection", "stdout": {"case_order": ["ACValidator", "AQUARIUM-HB"]}},
-                {"phase": "resolve-datasets", "stdout": {"repo_to_dataset": {"ACValidator": "circrna-test", "AQUARIUM-HB": "circrna-test"}}},
+                {
+                    "phase": "materialize-selection",
+                    "stdout": {"case_order": ["ACValidator", "AQUARIUM-HB"]},
+                },
+                {
+                    "phase": "resolve-datasets",
+                    "stdout": {
+                        "repo_to_dataset": {
+                            "ACValidator": "circrna-test",
+                            "AQUARIUM-HB": "circrna-test",
+                        }
+                    },
+                },
             ],
         ),
         patch.object(
@@ -4551,12 +5225,29 @@ async def test_benchmark_register_backfills_shared_dataset_when_selection_report
             "_materialize_benchmark_selection_cases",
             side_effect=lambda **_kwargs: (
                 (run_dir / "benchmark_plan.json").write_text("{}", encoding="utf-8"),
-                (run_dir / "benchmark_plan.md").write_text("# plan\n", encoding="utf-8"),
-                (run_dir / "dataset_resolution.json").write_text("{}", encoding="utf-8"),
-                (run_dir / "dataset_resolution.md").write_text("# datasets\n", encoding="utf-8"),
+                (run_dir / "benchmark_plan.md").write_text(
+                    "# plan\n", encoding="utf-8"
+                ),
+                (run_dir / "dataset_resolution.json").write_text(
+                    "{}", encoding="utf-8"
+                ),
+                (run_dir / "dataset_resolution.md").write_text(
+                    "# datasets\n", encoding="utf-8"
+                ),
                 [
-                    {"phase": "materialize-selection", "stdout": {"case_order": ["Flye", "canu"]}},
-                    {"phase": "resolve-datasets", "stdout": {"repo_to_dataset": {"Flye": "long-read-canu-pacbio", "canu": "long-read-canu-pacbio"}}},
+                    {
+                        "phase": "materialize-selection",
+                        "stdout": {"case_order": ["Flye", "canu"]},
+                    },
+                    {
+                        "phase": "resolve-datasets",
+                        "stdout": {
+                            "repo_to_dataset": {
+                                "Flye": "long-read-canu-pacbio",
+                                "canu": "long-read-canu-pacbio",
+                            }
+                        },
+                    },
                 ],
             )[-1],
         ),
@@ -4599,8 +5290,12 @@ async def test_benchmark_register_backfills_shared_dataset_when_selection_report
             workspace_root=workspace_root,
         )
 
-    report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
-    register_report = json.loads((run_dir / "register_report.json").read_text(encoding="utf-8"))
+    report = json.loads(
+        (run_dir / "operator_selection.json").read_text(encoding="utf-8")
+    )
+    register_report = json.loads(
+        (run_dir / "register_report.json").read_text(encoding="utf-8")
+    )
     assert result.status == "completed"
     assert report["dataset_key"] == "long-read-canu-pacbio"
     assert report["selected_dataset"]["dataset_id"] == "long-read-canu-pacbio"
@@ -4635,7 +5330,9 @@ async def test_benchmark_register_rejects_tools_that_violate_exclusions(
         },
     )
     agent = AsyncMock()
-    agent.ainvoke.side_effect = AssertionError("register helper path should bypass the model")
+    agent.ainvoke.side_effect = AssertionError(
+        "register helper path should bypass the model"
+    )
 
     result = await _invoke_worker_agent(
         agent=agent,
@@ -4670,7 +5367,9 @@ async def test_benchmark_register_fails_fast_when_no_tools_remain_after_exclusio
         },
     )
     agent = AsyncMock()
-    agent.ainvoke.side_effect = AssertionError("empty register case should still bypass the model")
+    agent.ainvoke.side_effect = AssertionError(
+        "empty register case should still bypass the model"
+    )
 
     result = await _invoke_worker_agent(
         agent=agent,
@@ -4704,7 +5403,9 @@ async def test_benchmark_register_reports_url_only_assets_missing(
         },
     )
     agent = AsyncMock()
-    agent.ainvoke.side_effect = AssertionError("URL-only register should still bypass the model")
+    agent.ainvoke.side_effect = AssertionError(
+        "URL-only register should still bypass the model"
+    )
 
     result = await _invoke_worker_agent(
         agent=agent,
@@ -4764,11 +5465,29 @@ async def test_benchmark_register_selects_tools_from_operator_store_by_query_and
                 "dockerfile_path": str(autodock_docker),
             },
             "inputs": [
-                {"name": "receptor_file", "media_type": "pdbqt", "path": str(receptor), "schema_path": "", "required": True},
-                {"name": "ligand_file", "media_type": "pdbqt", "path": str(ligand), "schema_path": "", "required": True},
+                {
+                    "name": "receptor_file",
+                    "media_type": "pdbqt",
+                    "path": str(receptor),
+                    "schema_path": "",
+                    "required": True,
+                },
+                {
+                    "name": "ligand_file",
+                    "media_type": "pdbqt",
+                    "path": str(ligand),
+                    "schema_path": "",
+                    "required": True,
+                },
             ],
             "outputs": [
-                {"name": "docked_output", "media_type": "pdbqt", "path": "/tmp/out.pdbqt", "schema_path": "", "required": False}
+                {
+                    "name": "docked_output",
+                    "media_type": "pdbqt",
+                    "path": "/tmp/out.pdbqt",
+                    "schema_path": "",
+                    "required": False,
+                }
             ],
             "metrics": [],
             "validation": {
@@ -4779,7 +5498,12 @@ async def test_benchmark_register_selects_tools_from_operator_store_by_query_and
                 "summary": "completed",
                 "created_at": "2026-05-15T00:00:00Z",
             },
-            "tags": ["github2workspace", "completed", "domain:immune-escape", "wdl-completed"],
+            "tags": [
+                "github2workspace",
+                "completed",
+                "domain:immune-escape",
+                "wdl-completed",
+            ],
         }
     )
     store.write_manifest(
@@ -4805,10 +5529,22 @@ async def test_benchmark_register_selects_tools_from_operator_store_by_query_and
                 "dockerfile_path": str(tmp_path / "esm.Dockerfile"),
             },
             "inputs": [
-                {"name": "input_fasta", "media_type": "fasta", "path": str(tmp_path / "proteins.fasta"), "schema_path": "", "required": True}
+                {
+                    "name": "input_fasta",
+                    "media_type": "fasta",
+                    "path": str(tmp_path / "proteins.fasta"),
+                    "schema_path": "",
+                    "required": True,
+                }
             ],
             "outputs": [
-                {"name": "scores", "media_type": "json", "path": "/tmp/scores.json", "schema_path": "", "required": False}
+                {
+                    "name": "scores",
+                    "media_type": "json",
+                    "path": "/tmp/scores.json",
+                    "schema_path": "",
+                    "required": False,
+                }
             ],
             "metrics": [],
             "validation": {
@@ -4819,7 +5555,12 @@ async def test_benchmark_register_selects_tools_from_operator_store_by_query_and
                 "summary": "completed",
                 "created_at": "2026-05-15T00:00:00Z",
             },
-            "tags": ["github2workspace", "completed", "domain:immune-escape", "wdl-completed"],
+            "tags": [
+                "github2workspace",
+                "completed",
+                "domain:immune-escape",
+                "wdl-completed",
+            ],
         }
     )
 
@@ -4856,11 +5597,15 @@ async def test_benchmark_register_selects_tools_from_operator_store_by_query_and
         "dataset_keys": ["immune-escape-covabdab-structural-bundle"],
         "register_report": str(run_dir / "register_report.json"),
     }
-    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
+    selection_report = json.loads(
+        (run_dir / "operator_selection.json").read_text(encoding="utf-8")
+    )
     assert selection_report["selection_strategy"] == "operator_store_search"
     assert selection_report["selected_tools"] == ["AutoDock-Vina"]
     assert selection_report["dataset_key"] == "immune-escape-covabdab-structural-bundle"
-    assert selection_report["selected_operators"][0]["workflow_path"] == str(autodock_wdl)
+    assert selection_report["selected_operators"][0]["workflow_path"] == str(
+        autodock_wdl
+    )
     assert (run_dir / "cases" / "AutoDock-Vina" / "wdl" / "inputs.json").exists()
 
 
@@ -4882,7 +5627,9 @@ async def test_benchmark_register_defaults_to_max_shared_dataset_tool_group(
     short_r1.write_text("R1", encoding="utf-8")
     short_r2.write_text("R2", encoding="utf-8")
     for name in ("flye", "canu", "spades"):
-        (tmp_path / f"{name}.wdl").write_text(f"workflow {name.title()}Workflow {{}}", encoding="utf-8")
+        (tmp_path / f"{name}.wdl").write_text(
+            f"workflow {name.title()}Workflow {{}}", encoding="utf-8"
+        )
         (tmp_path / f"{name}.inputs.json").write_text("{}", encoding="utf-8")
         (tmp_path / f"{name}.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
     node = TaskNode(
@@ -4918,8 +5665,16 @@ async def test_benchmark_register_defaults_to_max_shared_dataset_tool_group(
                 "runtime_image": "Flye",
                 "entry_workflow": "FlyeWorkflow",
                 "inputs": [
-                    {"name": "reads_fastq", "path": str(pacbio_reads), "media_type": "fastq"},
-                    {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+                    {
+                        "name": "reads_fastq",
+                        "path": str(pacbio_reads),
+                        "media_type": "fastq",
+                    },
+                    {
+                        "name": "inputs.json",
+                        "path": str(tmp_path / "flye.inputs.json"),
+                        "media_type": "json",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -4941,8 +5696,16 @@ async def test_benchmark_register_defaults_to_max_shared_dataset_tool_group(
                 "runtime_image": "canu",
                 "entry_workflow": "CanuWorkflow",
                 "inputs": [
-                    {"name": "reads_fastq", "path": str(pacbio_reads), "media_type": "fastq"},
-                    {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+                    {
+                        "name": "reads_fastq",
+                        "path": str(pacbio_reads),
+                        "media_type": "fastq",
+                    },
+                    {
+                        "name": "inputs.json",
+                        "path": str(tmp_path / "canu.inputs.json"),
+                        "media_type": "json",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -4964,9 +5727,21 @@ async def test_benchmark_register_defaults_to_max_shared_dataset_tool_group(
                 "runtime_image": "spades",
                 "entry_workflow": "SpadesWorkflow",
                 "inputs": [
-                    {"name": "read1", "path": str(short_r1), "media_type": "fastq-gzip"},
-                    {"name": "read2", "path": str(short_r2), "media_type": "fastq-gzip"},
-                    {"name": "inputs.json", "path": str(tmp_path / "spades.inputs.json"), "media_type": "json"},
+                    {
+                        "name": "read1",
+                        "path": str(short_r1),
+                        "media_type": "fastq-gzip",
+                    },
+                    {
+                        "name": "read2",
+                        "path": str(short_r2),
+                        "media_type": "fastq-gzip",
+                    },
+                    {
+                        "name": "inputs.json",
+                        "path": str(tmp_path / "spades.inputs.json"),
+                        "media_type": "json",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -4990,7 +5765,9 @@ async def test_benchmark_register_defaults_to_max_shared_dataset_tool_group(
         "dataset_keys": [],
         "register_report": str(run_dir / "register_report.json"),
     }
-    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
+    selection_report = json.loads(
+        (run_dir / "operator_selection.json").read_text(encoding="utf-8")
+    )
     assert selection_report["selection_strategy"] == "operator_store_search"
     assert selection_report["selected_tools"] == ["Flye", "canu"]
 
@@ -5069,9 +5846,13 @@ async def test_benchmark_register_can_use_agent_to_choose_from_operator_candidat
             },
         ],
     )
-    (tmp_path / "autodock.wdl").write_text("workflow AutoDockVinaWorkflow {}", encoding="utf-8")
+    (tmp_path / "autodock.wdl").write_text(
+        "workflow AutoDockVinaWorkflow {}", encoding="utf-8"
+    )
     (tmp_path / "autodock.inputs.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "AutoDock-Vina.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    (tmp_path / "AutoDock-Vina.Dockerfile").write_text(
+        "FROM scratch\n", encoding="utf-8"
+    )
     (tmp_path / "receptor.pdbqt").write_text("R", encoding="utf-8")
     (tmp_path / "ligand.pdbqt").write_text("L", encoding="utf-8")
     (tmp_path / "esm.wdl").write_text("workflow ESMWorkflow {}", encoding="utf-8")
@@ -5085,8 +5866,16 @@ async def test_benchmark_register_can_use_agent_to_choose_from_operator_candidat
             "domain": "immune_escape",
             "compatible_operator_ids": [],
             "files": [
-                {"name": "receptor", "uri": str(tmp_path / "receptor.pdbqt"), "media_type": "pdbqt"},
-                {"name": "ligand", "uri": str(tmp_path / "ligand.pdbqt"), "media_type": "pdbqt"},
+                {
+                    "name": "receptor",
+                    "uri": str(tmp_path / "receptor.pdbqt"),
+                    "media_type": "pdbqt",
+                },
+                {
+                    "name": "ligand",
+                    "uri": str(tmp_path / "ligand.pdbqt"),
+                    "media_type": "pdbqt",
+                },
             ],
         }
     )
@@ -5107,7 +5896,9 @@ async def test_benchmark_register_can_use_agent_to_choose_from_operator_candidat
 
     assert result.status == "completed"
     assert agent.ainvoke.await_count >= 1
-    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
+    selection_report = json.loads(
+        (run_dir / "operator_selection.json").read_text(encoding="utf-8")
+    )
     assert selection_report["selection_strategy"] == "agent_operator_store_search"
     assert selection_report["dataset_strategy"] == "shared_dataset"
     assert selection_report["selected_tools"] == ["AutoDock-Vina"]
@@ -5141,7 +5932,9 @@ async def test_benchmark_register_agent_expands_to_shared_dataset_group_by_defau
         }
     )
     for name in ("flye", "canu"):
-        (tmp_path / f"{name}.wdl").write_text(f"workflow {name.title()}Workflow {{}}", encoding="utf-8")
+        (tmp_path / f"{name}.wdl").write_text(
+            f"workflow {name.title()}Workflow {{}}", encoding="utf-8"
+        )
         (tmp_path / f"{name}.inputs.json").write_text("{}", encoding="utf-8")
         (tmp_path / f"{name}.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
     node = TaskNode(
@@ -5177,8 +5970,16 @@ async def test_benchmark_register_agent_expands_to_shared_dataset_group_by_defau
                 "runtime_image": "Flye",
                 "entry_workflow": "FlyeWorkflow",
                 "inputs": [
-                    {"name": "reads_fastq", "path": str(pacbio_reads), "media_type": "fastq"},
-                    {"name": "inputs.json", "path": str(tmp_path / "flye.inputs.json"), "media_type": "json"},
+                    {
+                        "name": "reads_fastq",
+                        "path": str(pacbio_reads),
+                        "media_type": "fastq",
+                    },
+                    {
+                        "name": "inputs.json",
+                        "path": str(tmp_path / "flye.inputs.json"),
+                        "media_type": "json",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -5200,8 +6001,16 @@ async def test_benchmark_register_agent_expands_to_shared_dataset_group_by_defau
                 "runtime_image": "canu",
                 "entry_workflow": "CanuWorkflow",
                 "inputs": [
-                    {"name": "reads_fastq", "path": str(pacbio_reads), "media_type": "fastq"},
-                    {"name": "inputs.json", "path": str(tmp_path / "canu.inputs.json"), "media_type": "json"},
+                    {
+                        "name": "reads_fastq",
+                        "path": str(pacbio_reads),
+                        "media_type": "fastq",
+                    },
+                    {
+                        "name": "inputs.json",
+                        "path": str(tmp_path / "canu.inputs.json"),
+                        "media_type": "json",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -5228,8 +6037,13 @@ async def test_benchmark_register_agent_expands_to_shared_dataset_group_by_defau
 
     assert result.status == "completed"
     assert agent.ainvoke.await_count >= 1
-    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
-    assert selection_report["selection_strategy"] == "agent_operator_store_exploratory_search"
+    selection_report = json.loads(
+        (run_dir / "operator_selection.json").read_text(encoding="utf-8")
+    )
+    assert (
+        selection_report["selection_strategy"]
+        == "agent_operator_store_exploratory_search"
+    )
     assert selection_report["dataset_strategy"] == "per_operator_dataset"
     assert selection_report["default_preferred_tools"] == ["Flye", "canu"]
     assert selection_report["selected_tools"] == ["Flye", "canu"]
@@ -5270,7 +6084,9 @@ async def test_benchmark_register_exploratory_assigns_per_operator_datasets(
         }
     )
     for name in ("faasm", "fqasm"):
-        (tmp_path / f"{name}.wdl").write_text(f"workflow {name.title()}Workflow {{}}", encoding="utf-8")
+        (tmp_path / f"{name}.wdl").write_text(
+            f"workflow {name.title()}Workflow {{}}", encoding="utf-8"
+        )
         (tmp_path / f"{name}.inputs.json").write_text(
             json.dumps({f"{name.title()}Workflow.reads": "/path/to/reads.fa"}),
             encoding="utf-8",
@@ -5294,7 +6110,13 @@ async def test_benchmark_register_exploratory_assigns_per_operator_datasets(
                 "dockerfile_path": str(tmp_path / "faasm.Dockerfile"),
                 "runtime_image": "faasm",
                 "entry_workflow": "FaasmWorkflow",
-                "inputs": [{"name": "reads_fasta", "path": str(fasta_reads), "media_type": "fasta"}],
+                "inputs": [
+                    {
+                        "name": "reads_fasta",
+                        "path": str(fasta_reads),
+                        "media_type": "fasta",
+                    }
+                ],
                 "outputs": [],
                 "expected_outputs": [],
                 "score": 90,
@@ -5314,7 +6136,13 @@ async def test_benchmark_register_exploratory_assigns_per_operator_datasets(
                 "dockerfile_path": str(tmp_path / "fqasm.Dockerfile"),
                 "runtime_image": "fqasm",
                 "entry_workflow": "FqasmWorkflow",
-                "inputs": [{"name": "reads_fastq", "path": str(fastq_reads), "media_type": "fastq"}],
+                "inputs": [
+                    {
+                        "name": "reads_fastq",
+                        "path": str(fastq_reads),
+                        "media_type": "fastq",
+                    }
+                ],
                 "outputs": [],
                 "expected_outputs": [],
                 "score": 89,
@@ -5352,20 +6180,28 @@ async def test_benchmark_register_exploratory_assigns_per_operator_datasets(
     result = await runner.run(node)
 
     assert result.status == "completed"
-    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
+    selection_report = json.loads(
+        (run_dir / "operator_selection.json").read_text(encoding="utf-8")
+    )
     assert selection_report["dataset_strategy"] == "per_operator_dataset"
     assert selection_report["tool_dataset_keys"] == {
         "faasm": "toy-fasta",
         "fqasm": "toy-fastq",
     }
-    dataset_resolution = json.loads((run_dir / "dataset_resolution.json").read_text(encoding="utf-8"))
+    dataset_resolution = json.loads(
+        (run_dir / "dataset_resolution.json").read_text(encoding="utf-8")
+    )
     assert dataset_resolution["dataset_strategy"] == "per_operator_dataset"
     assert dataset_resolution["repo_to_dataset"] == {
         "faasm": "toy-fasta",
         "fqasm": "toy-fastq",
     }
-    fa_manifest = json.loads((run_dir / "cases" / "faasm" / "manifest.json").read_text(encoding="utf-8"))
-    fq_manifest = json.loads((run_dir / "cases" / "fqasm" / "manifest.json").read_text(encoding="utf-8"))
+    fa_manifest = json.loads(
+        (run_dir / "cases" / "faasm" / "manifest.json").read_text(encoding="utf-8")
+    )
+    fq_manifest = json.loads(
+        (run_dir / "cases" / "fqasm" / "manifest.json").read_text(encoding="utf-8")
+    )
     assert fa_manifest["dataset_key"] == "toy-fasta"
     assert fq_manifest["dataset_key"] == "toy-fastq"
 
@@ -5411,7 +6247,11 @@ def test_benchmark_candidate_infers_registered_ready_status_from_tags(
             "dockerfile_path": str(tmp_path / "flye.Dockerfile"),
         },
         "inputs": [
-            {"name": "reads", "path": str(tmp_path / "reads.fastq"), "media_type": "fastq"}
+            {
+                "name": "reads",
+                "path": str(tmp_path / "reads.fastq"),
+                "media_type": "fastq",
+            }
         ],
         "outputs": [],
         "expected_outputs": [],
@@ -5427,15 +6267,25 @@ def test_benchmark_candidate_infers_registered_ready_status_from_tags(
     assert candidate["validation_status"] == "registered_ready"
 
 
-def test_benchmark_dataset_compatibility_does_not_count_read_aliases_as_distinct_inputs() -> None:
+def test_benchmark_dataset_compatibility_does_not_count_read_aliases_as_distinct_inputs() -> (
+    None
+):
     operator = {
         "name": "Flye",
         "operator_id": "benchmark:Flye",
         "input_media_types": ["fastq", "json"],
         "inputs": [
             {"name": "pacbio", "media_type": "fastq", "path": "/data/pacbio.fastq"},
-            {"name": "pacbio.fastq", "media_type": "fastq", "path": "/data/pacbio.fastq.gz"},
-            {"name": "pacbio.fastq.gz", "media_type": "fastq", "path": "/data/pacbio.fastq.gz"},
+            {
+                "name": "pacbio.fastq",
+                "media_type": "fastq",
+                "path": "/data/pacbio.fastq.gz",
+            },
+            {
+                "name": "pacbio.fastq.gz",
+                "media_type": "fastq",
+                "path": "/data/pacbio.fastq.gz",
+            },
             {"name": "input_json", "media_type": "json", "path": "/case/inputs.json"},
         ],
     }
@@ -5443,7 +6293,11 @@ def test_benchmark_dataset_compatibility_does_not_count_read_aliases_as_distinct
         "dataset_id": "long-read-canu-pacbio-real-tests",
         "compatible_operator_ids": [],
         "files": [
-            {"name": "pacbio.fastq", "media_type": "fastq", "uri": "/datasets/pacbio.fastq"},
+            {
+                "name": "pacbio.fastq",
+                "media_type": "fastq",
+                "uri": "/datasets/pacbio.fastq",
+            },
         ],
     }
 
@@ -5482,8 +6336,16 @@ def test_benchmark_dataset_compatibility_accepts_megahit_style_fastq_dataset_fro
         "dataset_id": "short-read-ecoli-srr001666",
         "compatible_operator_ids": [],
         "files": [
-            {"name": "SRR001666_1.fastq", "media_type": "fastq", "uri": "/datasets/SRR001666_1.fastq.gz"},
-            {"name": "SRR001666_2.fastq", "media_type": "fastq", "uri": "/datasets/SRR001666_2.fastq.gz"},
+            {
+                "name": "SRR001666_1.fastq",
+                "media_type": "fastq",
+                "uri": "/datasets/SRR001666_1.fastq.gz",
+            },
+            {
+                "name": "SRR001666_2.fastq",
+                "media_type": "fastq",
+                "uri": "/datasets/SRR001666_2.fastq.gz",
+            },
         ],
     }
 
@@ -5559,9 +6421,13 @@ async def test_benchmark_register_defaults_to_shared_group_with_partial_wdl_read
     shared_fastq1.write_text("R1", encoding="utf-8")
     shared_fastq2.write_text("R2", encoding="utf-8")
     shared_fasta.write_text(">chr1\nACGT\n", encoding="utf-8")
-    shared_gtf.write_text("chr1\tsrc\texon\t1\t4\t.\t+\t.\tgene_id \"g1\";\n", encoding="utf-8")
+    shared_gtf.write_text(
+        'chr1\tsrc\texon\t1\t4\t.\t+\t.\tgene_id "g1";\n', encoding="utf-8"
+    )
     for name in ("circompara2", "aquarium"):
-        (tmp_path / f"{name}.wdl").write_text(f"workflow {name.title()}Workflow {{}}", encoding="utf-8")
+        (tmp_path / f"{name}.wdl").write_text(
+            f"workflow {name.title()}Workflow {{}}", encoding="utf-8"
+        )
         (tmp_path / f"{name}.inputs.json").write_text("{}", encoding="utf-8")
         (tmp_path / f"{name}.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
     node = TaskNode(
@@ -5597,10 +6463,26 @@ async def test_benchmark_register_defaults_to_shared_group_with_partial_wdl_read
                 "runtime_image": "circompara2",
                 "entry_workflow": "Circompara2Workflow",
                 "inputs": [
-                    {"name": "fastq1", "path": str(shared_fastq1), "media_type": "fastq-gzip"},
-                    {"name": "fastq2", "path": str(shared_fastq2), "media_type": "fastq-gzip"},
-                    {"name": "reference_fasta", "path": str(shared_fasta), "media_type": "fasta"},
-                    {"name": "reference_gtf", "path": str(shared_gtf), "media_type": "gtf"},
+                    {
+                        "name": "fastq1",
+                        "path": str(shared_fastq1),
+                        "media_type": "fastq-gzip",
+                    },
+                    {
+                        "name": "fastq2",
+                        "path": str(shared_fastq2),
+                        "media_type": "fastq-gzip",
+                    },
+                    {
+                        "name": "reference_fasta",
+                        "path": str(shared_fasta),
+                        "media_type": "fasta",
+                    },
+                    {
+                        "name": "reference_gtf",
+                        "path": str(shared_gtf),
+                        "media_type": "gtf",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -5613,7 +6495,17 @@ async def test_benchmark_register_defaults_to_shared_group_with_partial_wdl_read
                 "validation_status": "partial",
                 "summary": "circRNA detection workflow on paired-end reads with reference FASTA and GTF.",
                 "canonical_text": "circRNA detect paired-end fastq fasta gtf benchmark",
-                "input_media_types": ["fastq-gzip", "fasta", "gtf", "json", "bwt", "pac", "ann", "amb", "sa"],
+                "input_media_types": [
+                    "fastq-gzip",
+                    "fasta",
+                    "gtf",
+                    "json",
+                    "bwt",
+                    "pac",
+                    "ann",
+                    "amb",
+                    "sa",
+                ],
                 "output_media_types": ["report", "sam"],
                 "tags": ["wdl-completed", "domain:circrna", "partial"],
                 "workflow_path": str(tmp_path / "aquarium.wdl"),
@@ -5622,10 +6514,26 @@ async def test_benchmark_register_defaults_to_shared_group_with_partial_wdl_read
                 "runtime_image": "AQUARIUM-HB",
                 "entry_workflow": "AquariumWorkflow",
                 "inputs": [
-                    {"name": "fastq1", "path": str(shared_fastq1), "media_type": "fastq-gzip"},
-                    {"name": "fastq2", "path": str(shared_fastq2), "media_type": "fastq-gzip"},
-                    {"name": "reference_fasta", "path": str(shared_fasta), "media_type": "fasta"},
-                    {"name": "reference_gtf", "path": str(shared_gtf), "media_type": "gtf"},
+                    {
+                        "name": "fastq1",
+                        "path": str(shared_fastq1),
+                        "media_type": "fastq-gzip",
+                    },
+                    {
+                        "name": "fastq2",
+                        "path": str(shared_fastq2),
+                        "media_type": "fastq-gzip",
+                    },
+                    {
+                        "name": "reference_fasta",
+                        "path": str(shared_fasta),
+                        "media_type": "fasta",
+                    },
+                    {
+                        "name": "reference_gtf",
+                        "path": str(shared_gtf),
+                        "media_type": "gtf",
+                    },
                 ],
                 "outputs": [],
                 "expected_outputs": [],
@@ -5642,7 +6550,9 @@ async def test_benchmark_register_defaults_to_shared_group_with_partial_wdl_read
     )
 
     assert result.status == "completed"
-    selection_report = json.loads((run_dir / "operator_selection.json").read_text(encoding="utf-8"))
+    selection_report = json.loads(
+        (run_dir / "operator_selection.json").read_text(encoding="utf-8")
+    )
     assert selection_report["selected_tools"] == ["circompara2", "AQUARIUM-HB"]
     selected_operator_names = {
         str(item.get("name", ""))
@@ -5664,7 +6574,9 @@ async def test_benchmark_register_prefers_local_benchmark_case_workflow_when_pre
     benchmark_root = tmp_path / "benchmark" / "circrna"
     case_dir = benchmark_root / "AQUARIUM-HB"
     case_dir.mkdir(parents=True)
-    (case_dir / "workflow.wdl").write_text("workflow LocalAquariumWorkflow {}\n", encoding="utf-8")
+    (case_dir / "workflow.wdl").write_text(
+        "workflow LocalAquariumWorkflow {}\n", encoding="utf-8"
+    )
     (case_dir / "Dockerfile").write_text("FROM localcase\n", encoding="utf-8")
     imported_wdl = tmp_path / "imported_aquarium.wdl"
     imported_inputs = tmp_path / "imported_aquarium.inputs.json"
@@ -5724,7 +6636,11 @@ async def test_benchmark_register_prefers_local_benchmark_case_workflow_when_pre
     staged_wdl = run_dir / "cases" / "AQUARIUM-HB" / "wdl" / "workflow.wdl"
     assert staged_wdl.exists()
     assert "LocalAquariumWorkflow" in staged_wdl.read_text(encoding="utf-8")
-    manifest = json.loads((run_dir / "cases" / "AQUARIUM-HB" / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (run_dir / "cases" / "AQUARIUM-HB" / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert manifest["selected_input_source"] == "missing_inputs"
     assert manifest["source_case_dir"] == str(case_dir)
 
@@ -5808,7 +6724,9 @@ async def test_benchmark_register_sanitizes_comment_keys_from_staged_inputs(
 
     assert result.status == "completed"
     staged_inputs = json.loads(
-        (run_dir / "cases" / "AQUARIUM-HB" / "wdl" / "inputs.json").read_text(encoding="utf-8")
+        (run_dir / "cases" / "AQUARIUM-HB" / "wdl" / "inputs.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert "_comment1" not in staged_inputs
     assert "_comment2" not in staged_inputs["nested"]
@@ -5838,7 +6756,7 @@ async def test_benchmark_register_hydrates_placeholder_paths_from_selected_input
         (fastq1, "R1"),
         (fastq2, "R2"),
         (fasta, ">chr1\nACGT\n"),
-        (gtf, "chr1\tsrc\texon\t1\t4\t.\t+\t.\tgene_id \"g1\";\n"),
+        (gtf, 'chr1\tsrc\texon\t1\t4\t.\t+\t.\tgene_id "g1";\n'),
         (sa, "sa"),
     ):
         path.write_text(text, encoding="utf-8")
@@ -5893,8 +6811,16 @@ async def test_benchmark_register_hydrates_placeholder_paths_from_selected_input
                 "runtime_image": "AQUARIUM-HB",
                 "entry_workflow": "AquariumWorkflow",
                 "inputs": [
-                    {"name": fastq1.name, "path": str(fastq1), "media_type": "fastq-gzip"},
-                    {"name": fastq2.name, "path": str(fastq2), "media_type": "fastq-gzip"},
+                    {
+                        "name": fastq1.name,
+                        "path": str(fastq1),
+                        "media_type": "fastq-gzip",
+                    },
+                    {
+                        "name": fastq2.name,
+                        "path": str(fastq2),
+                        "media_type": "fastq-gzip",
+                    },
                     {"name": fasta.name, "path": str(fasta), "media_type": "fasta"},
                     {"name": gtf.name, "path": str(gtf), "media_type": "gtf"},
                     {"name": sa.name, "path": str(sa), "media_type": "sa"},
@@ -5915,7 +6841,9 @@ async def test_benchmark_register_hydrates_placeholder_paths_from_selected_input
 
     assert result.status == "completed"
     staged_inputs = json.loads(
-        (run_dir / "cases" / "AQUARIUM-HB" / "wdl" / "inputs.json").read_text(encoding="utf-8")
+        (run_dir / "cases" / "AQUARIUM-HB" / "wdl" / "inputs.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert staged_inputs["AQUARIUM_HB_Workflow.fastq1"] == str(fastq1)
     assert staged_inputs["AQUARIUM_HB_Workflow.fastq2"] == str(fastq2)
@@ -5995,9 +6923,13 @@ async def test_benchmark_register_blocks_when_agentic_selection_output_is_invali
             },
         ],
     )
-    (tmp_path / "autodock.wdl").write_text("workflow AutoDockVinaWorkflow {}", encoding="utf-8")
+    (tmp_path / "autodock.wdl").write_text(
+        "workflow AutoDockVinaWorkflow {}", encoding="utf-8"
+    )
     (tmp_path / "autodock.inputs.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "AutoDock-Vina.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    (tmp_path / "AutoDock-Vina.Dockerfile").write_text(
+        "FROM scratch\n", encoding="utf-8"
+    )
     (tmp_path / "esm.wdl").write_text("workflow ESMWorkflow {}", encoding="utf-8")
     (tmp_path / "esm.inputs.json").write_text("{}", encoding="utf-8")
     (tmp_path / "esm.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
@@ -6110,10 +7042,19 @@ async def test_invoke_worker_agent_falls_back_to_wdl_when_repo_native_command_is
     case_dir = run_dir / "cases" / "circompara2"
     (case_dir / "run").mkdir(parents=True, exist_ok=True)
     (case_dir / "wdl").mkdir(parents=True, exist_ok=True)
-    (case_dir / "wdl" / "workflow.wdl").write_text("workflow CirComPara2Workflow {}", encoding="utf-8")
+    (case_dir / "wdl" / "workflow.wdl").write_text(
+        "workflow CirComPara2Workflow {}", encoding="utf-8"
+    )
     (case_dir / "wdl" / "inputs.json").write_text("{}", encoding="utf-8")
     (case_dir / "analysis.json").write_text(
-        json.dumps({"family": "unknown", "artifact_paths": [], "artifact_checksums": {}, "metrics": {}}),
+        json.dumps(
+            {
+                "family": "unknown",
+                "artifact_paths": [],
+                "artifact_checksums": {},
+                "metrics": {},
+            }
+        ),
         encoding="utf-8",
     )
     (case_dir / "analysis.md").write_text("# analysis\n", encoding="utf-8")
@@ -6131,7 +7072,9 @@ async def test_invoke_worker_agent_falls_back_to_wdl_when_repo_native_command_is
         ),
         encoding="utf-8",
     )
-    run_dir.joinpath("manifest.json").write_text(json.dumps({"case_order": ["circompara2"]}), encoding="utf-8")
+    run_dir.joinpath("manifest.json").write_text(
+        json.dumps({"case_order": ["circompara2"]}), encoding="utf-8"
+    )
 
     node = TaskNode(
         node_id="circompara2",
@@ -6144,6 +7087,7 @@ async def test_invoke_worker_agent_falls_back_to_wdl_when_repo_native_command_is
             "run_dir": str(run_dir),
         },
     )
+
     async def fake_agent_run(*args, **kwargs):
         output_file = case_dir / "wdl" / "circompara2.out"
         output_file.write_text("ok\n", encoding="utf-8")
@@ -6195,12 +7139,16 @@ async def test_invoke_worker_agent_falls_back_to_wdl_when_repo_native_command_is
     agent = AsyncMock()
     agent.ainvoke.side_effect = fake_agent_run
 
-    result = await _invoke_worker_agent(agent=agent, node=node, workspace_root=workspace_root)
+    result = await _invoke_worker_agent(
+        agent=agent, node=node, workspace_root=workspace_root
+    )
 
     assert result.status == "completed"
     assert agent.ainvoke.await_count == 1
     assert (case_dir / "run" / "status.json").exists()
-    run_status = json.loads((case_dir / "run" / "status.json").read_text(encoding="utf-8"))
+    run_status = json.loads(
+        (case_dir / "run" / "status.json").read_text(encoding="utf-8")
+    )
     assert run_status["execution_mode"] == "wdl_only"
     assert run_status["success"] is True
 
@@ -6247,8 +7195,19 @@ async def test_invoke_worker_agent_uses_agent_owned_benchmark_case(
             supervisor_runtime,
             "_materialize_benchmark_selection_cases",
             return_value=[
-                {"phase": "materialize-selection", "stdout": {"case_order": ["spades", "megahit"]}},
-                {"phase": "resolve-datasets", "stdout": {"repo_to_dataset": {"spades": "short-read-ecoli-srr001666", "megahit": "short-read-ecoli-srr001666"}}},
+                {
+                    "phase": "materialize-selection",
+                    "stdout": {"case_order": ["spades", "megahit"]},
+                },
+                {
+                    "phase": "resolve-datasets",
+                    "stdout": {
+                        "repo_to_dataset": {
+                            "spades": "short-read-ecoli-srr001666",
+                            "megahit": "short-read-ecoli-srr001666",
+                        }
+                    },
+                },
             ],
         ),
         patch.object(
@@ -6266,7 +7225,10 @@ async def test_invoke_worker_agent_uses_agent_owned_benchmark_case(
                         "dataset_key": "short-read-ecoli-srr001666",
                         "metric_keys": ["contig_count", "assembly_size", "n50"],
                         "expected_outputs": ["final.contigs.fa", "log"],
-                        "selected_input_files": {"reads_1": "/tmp/r1", "reads_2": "/tmp/r2"},
+                        "selected_input_files": {
+                            "reads_1": "/tmp/r1",
+                            "reads_2": "/tmp/r2",
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -6302,11 +7264,14 @@ async def test_invoke_worker_agent_uses_agent_owned_benchmark_case(
             "run_dir": str(run_dir),
         },
     )
+
     async def fake_agent_run(*args, **kwargs):
         case_dir = run_dir / "cases" / "megahit"
         output_dir = case_dir / "run" / "repo_native_output"
         output_dir.mkdir(parents=True, exist_ok=True)
-        (case_dir / "run" / "repo_native.log").write_text("ALL DONE\n", encoding="utf-8")
+        (case_dir / "run" / "repo_native.log").write_text(
+            "ALL DONE\n", encoding="utf-8"
+        )
         (output_dir / "final.contigs.fa").write_text(">c1\nAAAA\n", encoding="utf-8")
         (output_dir / "log").write_text("done\n", encoding="utf-8")
         (case_dir / "run" / "status.json").write_text(
@@ -6349,7 +7314,12 @@ async def test_invoke_worker_agent_uses_agent_owned_benchmark_case(
                 {
                     "expected_outputs": {
                         "final.contigs.fa": {
-                            "path": str(case_dir / "run" / "repo_native_output" / "final.contigs.fa"),
+                            "path": str(
+                                case_dir
+                                / "run"
+                                / "repo_native_output"
+                                / "final.contigs.fa"
+                            ),
                             "exists": True,
                         }
                     }
@@ -6414,7 +7384,9 @@ async def test_agent_owned_benchmark_case_marks_missing_expected_outputs_partial
     )
     (case_dir / "execution_ready.json").write_text("{}", encoding="utf-8")
     (case_dir / "dataset_manifest.json").write_text("{}", encoding="utf-8")
-    (case_dir / "run" / "repo_native.log").write_text("stopped after intermediate stage\n", encoding="utf-8")
+    (case_dir / "run" / "repo_native.log").write_text(
+        "stopped after intermediate stage\n", encoding="utf-8"
+    )
 
     node = TaskNode(
         node_id="canu",
@@ -6427,6 +7399,7 @@ async def test_agent_owned_benchmark_case_marks_missing_expected_outputs_partial
             "run_dir": str(run_dir),
         },
     )
+
     async def fake_agent_run(*args, **kwargs):
         (case_dir / "run" / "status.json").write_text(
             json.dumps(
@@ -6523,7 +7496,9 @@ async def test_retry_benchmark_case_is_owned_by_worker_agent(
         encoding="utf-8",
     )
     (case_dir / "wdl" / "status.json").write_text(
-        json.dumps({"success": False, "returncode": 1, "failure_reason": "miniwdl_failed"}),
+        json.dumps(
+            {"success": False, "returncode": 1, "failure_reason": "miniwdl_failed"}
+        ),
         encoding="utf-8",
     )
     node = TaskNode(
@@ -6537,11 +7512,18 @@ async def test_retry_benchmark_case_is_owned_by_worker_agent(
             "run_dir": str(run_dir),
         },
     )
+
     async def fake_agent_run(*args, **kwargs):
         output_file = case_dir / "wdl" / "assembly.fasta"
         output_file.write_text(">contig\nACGT\n", encoding="utf-8")
         (case_dir / "wdl" / "status.json").write_text(
-            json.dumps({"success": True, "returncode": 0, "output_artifacts": [str(output_file)]}),
+            json.dumps(
+                {
+                    "success": True,
+                    "returncode": 0,
+                    "output_artifacts": [str(output_file)],
+                }
+            ),
             encoding="utf-8",
         )
         (case_dir / "analysis.json").write_text(
@@ -6644,7 +7626,13 @@ async def test_retry_benchmark_case_ignores_invalid_repair_output(
     (case_dir / "wdl" / "final.contigs.fa").write_text(">c1\nAAAA\n", encoding="utf-8")
     (case_dir / "wdl" / "outputs.json").write_text(
         json.dumps(
-            {"outputs": {"MegahitWorkflow.contigs": str(case_dir / "wdl" / "final.contigs.fa")}}
+            {
+                "outputs": {
+                    "MegahitWorkflow.contigs": str(
+                        case_dir / "wdl" / "final.contigs.fa"
+                    )
+                }
+            }
         ),
         encoding="utf-8",
     )
@@ -6692,11 +7680,29 @@ async def test_supervisor_worker_runner_sends_benchmark_case_to_worker_agent(
     agent_result = WorkerResult(status="completed", summary="agent-owned retry ok")
     agent = AsyncMock()
     with (
-        patch.object(supervisor_runtime, "_maybe_prepare_worker_inputs", return_value=None),
-        patch.object(supervisor_runtime, "_maybe_run_agentic_benchmark_register", AsyncMock(return_value=None)),
-        patch.object(supervisor_runtime, "_maybe_run_agentic_benchmark_case_repair", AsyncMock(return_value={"repaired": True})) as repair_mock,
-        patch.object(supervisor_runtime, "_maybe_run_deterministic_worker", return_value=WorkerResult(status="completed", summary="deterministic")),
-        patch.object(supervisor_runtime, "_invoke_worker_runnable", AsyncMock(return_value=agent_result)) as invoke_mock,
+        patch.object(
+            supervisor_runtime, "_maybe_prepare_worker_inputs", return_value=None
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_maybe_run_agentic_benchmark_register",
+            AsyncMock(return_value=None),
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_maybe_run_agentic_benchmark_case_repair",
+            AsyncMock(return_value={"repaired": True}),
+        ) as repair_mock,
+        patch.object(
+            supervisor_runtime,
+            "_maybe_run_deterministic_worker",
+            return_value=WorkerResult(status="completed", summary="deterministic"),
+        ),
+        patch.object(
+            supervisor_runtime,
+            "_invoke_worker_runnable",
+            AsyncMock(return_value=agent_result),
+        ) as invoke_mock,
     ):
         runner = SupervisorWorkerRunner(
             base_agent=agent,
@@ -6830,7 +7836,9 @@ async def test_invoke_worker_agent_uses_deterministic_benchmark_summary_helper(
         },
     )
     agent = AsyncMock()
-    agent.ainvoke.side_effect = AssertionError("benchmark summarize helper path should bypass the model")
+    agent.ainvoke.side_effect = AssertionError(
+        "benchmark summarize helper path should bypass the model"
+    )
 
     result = await _invoke_worker_agent(
         agent=agent,

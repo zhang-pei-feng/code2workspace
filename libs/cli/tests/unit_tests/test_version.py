@@ -40,9 +40,9 @@ def test_cli_version_flag() -> None:
     )
     # argparse exits with 0 for --version
     assert result.returncode == 0
-    assert f"code2workspace-cli {__version__}" in result.stdout
+    assert f"EpiMindAgent CLI {__version__}" in result.stdout
     sdk_version = pkg_version("code2workspace")
-    assert f"code2workspace (SDK) {sdk_version}" in result.stdout
+    assert f"EpiMindAgent SDK {sdk_version}" in result.stdout
 
 
 async def test_version_slash_command_message_format() -> None:
@@ -60,8 +60,8 @@ async def test_version_slash_command_message_format() -> None:
 
         app_msgs = app.query(AppMessage)
         content = str(app_msgs[-1]._content)
-        assert f"code2workspace-cli version: {__version__}" in content
-        assert f"code2workspace (SDK) version: {sdk_version}" in content
+        assert f"EpiMindAgent CLI version: {__version__}" in content
+        assert f"EpiMindAgent SDK version: {sdk_version}" in content
 
 
 async def test_version_slash_command_sdk_unavailable() -> None:
@@ -85,8 +85,8 @@ async def test_version_slash_command_sdk_unavailable() -> None:
 
         app_msgs = app.query(AppMessage)
         content = str(app_msgs[-1]._content)
-        assert f"code2workspace-cli version: {__version__}" in content
-        assert "code2workspace (SDK) version: unknown" in content
+        assert f"EpiMindAgent CLI version: {__version__}" in content
+        assert "EpiMindAgent SDK version: unknown" in content
 
 
 async def test_version_slash_command_cli_version_unavailable() -> None:
@@ -104,7 +104,7 @@ async def test_version_slash_command_cli_version_unavailable() -> None:
 
         app_msgs = app.query(AppMessage)
         content = str(app_msgs[-1]._content)
-        assert "code2workspace-cli version: unknown" in content
+        assert "EpiMindAgent CLI version: unknown" in content
 
 
 def test_help_mentions_version_flag() -> None:

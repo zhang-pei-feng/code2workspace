@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # Lazy bootstrap: LANGSMITH_PROJECT override and start-path detection are
 # deferred until first access of `settings` (via module
 # `__getattr__`).  This avoids disk I/O and path traversal during import for
-# callers that never touch `settings` (e.g. `code2workspace --help`).
+# callers that never touch `settings` (e.g. `EpiMindAgent --help`).
 # ---------------------------------------------------------------------------
 
 _bootstrap_done = False
@@ -138,18 +138,18 @@ def _ensure_bootstrap() -> None:
             # separate project. LangSmith reads LANGSMITH_PROJECT at invocation
             # time, so we override it here and preserve the user's original
             # value for shell commands.
-            from code2workspace_cli._env_vars import LANGSMITH_PROJECT
+            from code2workspace_cli._env_vars import LANGSMITH_PROJECT, get_env
 
-            code2workspace_project = os.environ.get(LANGSMITH_PROJECT)
-            if code2workspace_project:
-                os.environ["LANGSMITH_PROJECT"] = code2workspace_project
+            epimindagent_project = get_env(LANGSMITH_PROJECT)
+            if epimindagent_project:
+                os.environ["LANGSMITH_PROJECT"] = epimindagent_project
 
             # Propagate prefixed LangSmith env vars to canonical names.
             # The CLI resolves prefixed vars via resolve_env_var(), but the
             # LangSmith SDK reads os.environ directly and has no knowledge
-            # of the CODE2WORKSPACE_CLI_ prefix. Setting canonical vars here
+            # of the EPIMINDAGENT_CLI_ prefix. Setting canonical vars here
             # bridges that gap.
-            from code2workspace_cli.model_config import _ENV_PREFIX
+            from code2workspace_cli.model_config import _ENV_PREFIX, _LEGACY_ENV_PREFIX
 
             for canonical in (
                 "LANGSMITH_API_KEY",
@@ -157,8 +157,18 @@ def _ensure_bootstrap() -> None:
                 "LANGSMITH_TRACING",
                 "LANGCHAIN_TRACING_V2",
             ):
-                prefixed = f"{_ENV_PREFIX}{canonical}"
-                if prefixed not in os.environ:
+                prefixed = next(
+                    (
+                        candidate
+                        for candidate in (
+                            f"{_ENV_PREFIX}{canonical}",
+                            f"{_LEGACY_ENV_PREFIX}{canonical}",
+                        )
+                        if candidate in os.environ
+                    ),
+                    None,
+                )
+                if prefixed is None:
                     continue
                 prefixed_val = os.environ[prefixed]
                 if canonical not in os.environ:
@@ -372,7 +382,7 @@ def _resolve_editable_info() -> tuple[bool, str | None]:
 
 
 def _is_editable_install() -> bool:
-    """Check if code2workspace-cli is installed in editable mode.
+    """Check if EpiMindAgent CLI is installed in editable mode.
 
     Uses PEP 610 `direct_url.json` metadata to detect editable installs.
 
@@ -580,7 +590,7 @@ def build_stream_config(
 
     Why the CLI sets *both* versions:
 
-    * `create_workspace_agent` bakes `versions: {"code2workspace": "X.Y.Z"}` into the
+    * `create_workspace_agent` bakes SDK version metadata into the
         compiled graph via `with_config`. At stream time, LangGraph merges
         the graph config with the runtime config passed here. Because the
         metadata merge is shallow (effectively `{**graph_meta, **runtime_meta}`
@@ -607,24 +617,26 @@ def build_stream_config(
 
     try:
         resolved_cwd = (
-            str(Path(cwd).expanduser().resolve()) if cwd is not None else str(Path.cwd())
+            str(Path(cwd).expanduser().resolve())
+            if cwd is not None
+            else str(Path.cwd())
         )
     except OSError:
         logger.warning("Could not determine working directory", exc_info=True)
         resolved_cwd = ""
 
     # Include SDK version alongside CLI version — see docstring for why.
-    versions: dict[str, str] = {"code2workspace-cli": __version__}
+    versions: dict[str, str] = {"EpiMindAgent-cli": __version__}
     with contextlib.suppress(importlib_metadata.PackageNotFoundError):
-        versions["code2workspace"] = importlib_metadata.version("code2workspace")
+        versions["EpiMindAgent-sdk"] = importlib_metadata.version("code2workspace")
 
     metadata: dict[str, Any] = {
         "versions": versions,
-        "ls_integration": "code2workspace-cli",
+        "ls_integration": "EpiMindAgent-cli",
     }
-    from code2workspace_cli._env_vars import USER_ID
+    from code2workspace_cli._env_vars import USER_ID, get_env
 
-    user_id = os.environ.get(USER_ID)
+    user_id = get_env(USER_ID)
     if user_id:
         metadata["user_id"] = user_id
     if resolved_cwd:
@@ -766,11 +778,11 @@ def _parse_extra_skills_dirs(
     in user-specified locations without being rejected by the path
     containment check.
 
-    The env var (`CODE2WORKSPACE_CLI_EXTRA_SKILLS_DIRS`, colon-separated) takes
+    The env var (`EPIMINDAGENT_CLI_EXTRA_SKILLS_DIRS`, colon-separated) takes
     precedence: when set, `config.toml` values are ignored.
 
     Args:
-        env_raw: Value of `CODE2WORKSPACE_CLI_EXTRA_SKILLS_DIRS` (colon-separated), or
+        env_raw: Value of `EPIMINDAGENT_CLI_EXTRA_SKILLS_DIRS` (colon-separated), or
             `None` if unset.
         config_toml_dirs: List of path strings from
             `[skills].extra_allowed_dirs` in `~/.code2workspace/config.toml`.
@@ -800,7 +812,7 @@ def _parse_extra_skills_dirs(
 
 @dataclass
 class Settings:
-    """Global settings and environment detection for code2workspace-cli.
+    """Global settings and environment detection for EpiMindAgent CLI.
 
     This class is initialized once at startup and provides access to:
     - Available models and API keys
@@ -860,7 +872,7 @@ class Settings:
     locations without being rejected by the containment check
     in `load_skill_content`.
 
-    Set via `CODE2WORKSPACE_CLI_EXTRA_SKILLS_DIRS` env var (colon-separated) or
+    Set via `EPIMINDAGENT_CLI_EXTRA_SKILLS_DIRS` env var (colon-separated) or
     `[skills].extra_allowed_dirs` in `~/.code2workspace/config.toml`.
     """
 
@@ -885,7 +897,7 @@ class Settings:
         google_cloud_project = resolve_env_var("GOOGLE_CLOUD_PROJECT")
 
         # Detect LangSmith configuration
-        # CODE2WORKSPACE_CLI_LANGSMITH_PROJECT: Project for code2workspace agent tracing
+        # EPIMINDAGENT_CLI_LANGSMITH_PROJECT: Project for EpiMindAgent tracing
         # user_langchain_project: User's ORIGINAL LANGSMITH_PROJECT (before override)
         # When accessed via the module-level `settings` singleton,
         # _ensure_bootstrap() has already run and may have overridden
@@ -896,6 +908,7 @@ class Settings:
             EXTRA_SKILLS_DIRS,
             LANGSMITH_PROJECT,
             SHELL_ALLOW_LIST,
+            get_env,
         )
 
         code2workspace_langchain_project = resolve_env_var(LANGSMITH_PROJECT)
@@ -909,14 +922,14 @@ class Settings:
         # Parse shell command allow-list from environment
         # Format: comma-separated list of commands (e.g., "ls,cat,grep,pwd")
 
-        shell_allow_list_str = os.environ.get(SHELL_ALLOW_LIST)
+        shell_allow_list_str = get_env(SHELL_ALLOW_LIST)
         shell_allow_list = parse_shell_allow_list(shell_allow_list_str)
 
         # Parse extra skill containment roots from env var or config.toml.
         # These extend the path allowlist for load_skill_content but do not
         # add new skill discovery locations.
         extra_skills_dirs = _parse_extra_skills_dirs(
-            os.environ.get(EXTRA_SKILLS_DIRS),
+            get_env(EXTRA_SKILLS_DIRS),
             _read_config_toml_skills_dirs(),
         )
 
@@ -950,8 +963,8 @@ class Settings:
 
             `.env` files are loaded with `override=False`, so shell-exported
             variables always take precedence.  To override a shell-exported key
-            from `.env`, use the `CODE2WORKSPACE_CLI_` prefix (e.g.
-            `CODE2WORKSPACE_CLI_OPENAI_API_KEY`).
+            from `.env`, use the `EPIMINDAGENT_CLI_` prefix (e.g.
+            `EPIMINDAGENT_CLI_OPENAI_API_KEY`).
 
         Args:
             start_path: Directory to start project detection from (defaults to cwd).
@@ -996,10 +1009,11 @@ class Settings:
             EXTRA_SKILLS_DIRS,
             LANGSMITH_PROJECT,
             SHELL_ALLOW_LIST,
+            get_env,
         )
 
         try:
-            shell_allow_list = parse_shell_allow_list(os.environ.get(SHELL_ALLOW_LIST))
+            shell_allow_list = parse_shell_allow_list(get_env(SHELL_ALLOW_LIST))
         except ValueError:
             logger.warning(
                 "Invalid %s during reload; keeping previous value",
@@ -1030,7 +1044,7 @@ class Settings:
             "project_root": project_root,
             "shell_allow_list": shell_allow_list,
             "extra_skills_dirs": _parse_extra_skills_dirs(
-                os.environ.get(EXTRA_SKILLS_DIRS),
+                get_env(EXTRA_SKILLS_DIRS),
                 _read_config_toml_skills_dirs(),
             ),
         }
@@ -1351,7 +1365,7 @@ class Settings:
     def get_extra_skills_dirs(self) -> list[Path]:
         """Get user-configured extra skill directories.
 
-        Set via `CODE2WORKSPACE_CLI_EXTRA_SKILLS_DIRS` (colon-separated paths) or
+        Set via `EPIMINDAGENT_CLI_EXTRA_SKILLS_DIRS` (colon-separated paths) or
         `[skills].extra_allowed_dirs` in `~/.code2workspace/config.toml`.
 
         Returns:
@@ -1580,9 +1594,9 @@ def get_langsmith_project_name() -> str | None:
     Checks for the required API key and tracing environment variables.
     When both are present, resolves the project name with priority:
     `settings.code2workspace_langchain_project` (from
-    `CODE2WORKSPACE_CLI_LANGSMITH_PROJECT`), then `LANGSMITH_PROJECT` from the
+    `EPIMINDAGENT_CLI_LANGSMITH_PROJECT`), then `LANGSMITH_PROJECT` from the
     environment (note: this may already have been overridden at bootstrap time
-    to match `CODE2WORKSPACE_CLI_LANGSMITH_PROJECT`), then `'code2workspace-cli'`.
+    to match `EPIMINDAGENT_CLI_LANGSMITH_PROJECT`), then `'EpiMindAgent-cli'`.
 
     Returns:
         Project name string when LangSmith tracing is active, None otherwise.
@@ -1601,7 +1615,7 @@ def get_langsmith_project_name() -> str | None:
     return (
         _get_settings().code2workspace_langchain_project
         or os.environ.get("LANGSMITH_PROJECT")
-        or "code2workspace-cli"
+        or "EpiMindAgent-cli"
     )
 
 
@@ -1653,7 +1667,7 @@ def fetch_langsmith_project_url(project_name: str) -> str | None:
             from code2workspace_cli.model_config import resolve_env_var
 
             # Explicit api_key because Client() reads os.environ directly
-            # and doesn't know about the CODE2WORKSPACE_CLI_ prefix.
+            # and doesn't know about the EPIMINDAGENT_CLI_ prefix.
             api_key = resolve_env_var("LANGSMITH_API_KEY") or resolve_env_var(
                 "LANGCHAIN_API_KEY"
             )
@@ -1713,7 +1727,7 @@ def build_langsmith_thread_url(thread_id: str) -> str | None:
     if not project_url:
         return None
 
-    return f"{project_url.rstrip('/')}/t/{thread_id}?utm_source=code2workspace-cli"
+    return f"{project_url.rstrip('/')}/t/{thread_id}?utm_source=epimindagent-cli"
 
 
 def reset_langsmith_url_cache() -> None:
@@ -1796,7 +1810,7 @@ def _get_default_model_spec() -> str:
         return config.recent_model
 
     msg = (
-        "No default model configured. Set CODE2WORKSPACE_MODEL in .env "
+        "No default model configured. Set EPIMINDAGENT_MODEL in .env "
         "to a provider:model value, for example `openai:gpt-5.4`."
     )
     raise ModelConfigError(msg)
@@ -1808,7 +1822,7 @@ _OPENROUTER_APP_URL = "https://pypi.org/project/code2workspace-cli/"
 See https://openrouter.ai/docs/app-attribution for details.
 """
 
-_OPENROUTER_APP_TITLE = "Code2Workspace CLI"
+_OPENROUTER_APP_TITLE = "EpiMindAgent CLI"
 """Default `app_title` (maps to `X-Title`) for OpenRouter attribution."""
 
 _OPENROUTER_APP_CATEGORIES: list[str] = ["cli-agent"]
@@ -2318,7 +2332,7 @@ def validate_model_capabilities(model: BaseChatModel, model_name: str) -> None:
             "does not support tool calling."
         )
         console.print(
-            "\nCode2Workspace requires tool calling for agent functionality. "
+            "\nEpiMindAgent requires tool calling for agent functionality. "
             "Please choose a model that supports tool calling."
         )
         console.print("\nSee MODELS.md for supported models.")

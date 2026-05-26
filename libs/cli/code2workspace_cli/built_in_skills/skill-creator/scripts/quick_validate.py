@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Quick validation script for skills - minimal version.
 
-For code2workspace CLI, skills are located at:
+For EpiMindAgent CLI, skills are located at:
 ~/.code2workspace/<agent>/skills/<skill-name>/
 
 Example:

@@ -1,4 +1,4 @@
-# Code2Workspace CLI Tests
+# EpiMindAgent CLI Tests
 
 ## API Keys
 

@@ -1,6 +1,6 @@
-# Development guidelines for code2workspace
+# Development guidelines for EpiMindAgent
 
-`code2workspace` is the implementation base for a graduation project about converting GitHub repositories into runnable workspaces with an agent built on LangGraph and LangChain.
+`EpiMindAgent` is the implementation base for a graduation project about converting GitHub repositories into runnable workspaces with an agent built on LangGraph and LangChain.
 
 ## Repository structure
 
@@ -34,8 +34,8 @@ code2workspace/
 ## Useful commands
 
 ```bash
-uv run --project libs/cli code2workspace
-uv run --project libs/cli code2workspace -n "Reply with OK only." -q
+uv run --project libs/cli EpiMindAgent
+uv run --project libs/cli EpiMindAgent -n "Reply with OK only." -q
 uv run --project libs/cli --group test pytest
 uv run --project libs/cli python -m uvicorn apps.webapp.api:app --app-dir . --reload
 ```

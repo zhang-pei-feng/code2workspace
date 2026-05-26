@@ -1,4 +1,4 @@
-"""Runtime bridge for the Code2Workspace web workbench."""
+"""Runtime bridge for the EpiMindAgent web workbench."""
 
 from __future__ import annotations
 

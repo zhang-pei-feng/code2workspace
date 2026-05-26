@@ -1,6 +1,6 @@
 """Shared debug-logging configuration for verbose file-based tracing.
 
-When the `CODE2WORKSPACE_CLI_DEBUG` environment variable is set, modules that handle
+When the `EPIMINDAGENT_CLI_DEBUG` environment variable is set, modules that handle
 streaming or remote communication can enable detailed file-based logging. This
 helper centralizes the setup so the env-var name, file path, and format are
 defined in one place.
@@ -9,31 +9,30 @@ defined in one place.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
-from code2workspace_cli._env_vars import DEBUG, DEBUG_FILE
+from code2workspace_cli._env_vars import DEBUG, DEBUG_FILE, get_env
 
 
 def configure_debug_logging(target: logging.Logger) -> None:
-    """Attach a file handler to *target* when `CODE2WORKSPACE_CLI_DEBUG` is set.
+    """Attach a file handler to *target* when `EPIMINDAGENT_CLI_DEBUG` is set.
 
-    The log file defaults to `'/tmp/code2workspace_debug.log'` but can be overridden
-    with `CODE2WORKSPACE_CLI_DEBUG_FILE`. The handler appends so that multiple
+    The log file defaults to `'/tmp/epimindagent_debug.log'` but can be overridden
+    with `EPIMINDAGENT_CLI_DEBUG_FILE`. The handler appends so that multiple
     modules share the same log file across a session.
 
-    Does nothing when `CODE2WORKSPACE_CLI_DEBUG` is not set.
+    Does nothing when `EPIMINDAGENT_CLI_DEBUG` is not set.
 
     Args:
         target: Logger to configure.
     """
-    if not os.environ.get(DEBUG):
+    if not get_env(DEBUG):
         return
 
     debug_path = Path(
-        os.environ.get(
+        get_env(
             DEBUG_FILE,
-            "/tmp/code2workspace_debug.log",  # noqa: S108
+            "/tmp/epimindagent_debug.log",  # noqa: S108
         )
     )
     try:

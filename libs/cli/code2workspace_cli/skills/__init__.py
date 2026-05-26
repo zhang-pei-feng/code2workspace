@@ -1,4 +1,4 @@
-"""Skills module for code2workspace CLI.
+"""Skills module for EpiMindAgent CLI.
 
 Public API:
 - execute_skills_command: Execute skills subcommands (list/create/info/delete)

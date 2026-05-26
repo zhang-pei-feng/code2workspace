@@ -2,13 +2,19 @@
 # 基因维度统计汇总
 # 用法: ./stats.sh [ncov|flu|mpxv|all]
 set -euo pipefail
-DB="virus_variation"
-MYSQL=(mysql -u agent_virus -p'VirusAgent@2026!' "$DB")
+DB="${VIRUS_VARIATION_DB:-virus_variation}"
+ROOT_PASSWORD="${VIRUS_VARIATION_ROOT_PASSWORD:-zhangpf12345}"
+
+mysql_exec() {
+  local sql="$1"
+  printf '%s\n' "$ROOT_PASSWORD" | sudo -S -p '' mysql -uroot "$DB" -e "$sql"
+}
+
 V="${1:-all}"
 
 ncov() {
   echo "=== NCOV 基因统计 ==="
-  "${MYSQL[@]}" -e "
+  mysql_exec "
     SELECT gene,
       COUNT(*) total,
       COUNT(DISTINCT aminoacid_site) sites,
@@ -21,7 +27,7 @@ ncov() {
 }
 flu() {
   echo "=== FLU 型别×基因统计 (Top 20) ==="
-  "${MYSQL[@]}" -e "
+  mysql_exec "
     SELECT reference, gene,
       COUNT(*) total,
       COUNT(DISTINCT ref_aminoacid_site) sites,
@@ -34,7 +40,7 @@ flu() {
 }
 mpxv() {
   echo "=== MPXV 基因统计 (Top 20) ==="
-  "${MYSQL[@]}" -e "
+  mysql_exec "
     SELECT gene,
       COUNT(*) total,
       COUNT(DISTINCT ref_aminoacid_site) sites,

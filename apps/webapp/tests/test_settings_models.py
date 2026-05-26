@@ -24,14 +24,14 @@ recent = "openai:gpt-4.1"
 
 [models.providers.openai]
 models = ["gpt-4.1"]
-api_key_env = "CODE2WORKSPACE_CLI_OPENAI_API_KEY"
+api_key_env = "EPIMINDAGENT_CLI_OPENAI_API_KEY"
 enabled = true
 params = { temperature = 0.2 }
 profile = { max_input_tokens = 12345 }
 """.strip()
         + "\n",
     )
-    write_file(root / ".env", "CODE2WORKSPACE_CLI_OPENAI_API_KEY=sk-old\n")
+    write_file(root / ".env", "EPIMINDAGENT_CLI_OPENAI_API_KEY=sk-old\n")
     store = ModelSettingsStore(root)
 
     store.save_settings_payload(
@@ -44,7 +44,7 @@ profile = { max_input_tokens = 12345 }
                     "enabled": True,
                     "provider_kind": "native",
                     "base_url": None,
-                    "api_key_env": "CODE2WORKSPACE_CLI_OPENAI_API_KEY",
+                    "api_key_env": "EPIMINDAGENT_CLI_OPENAI_API_KEY",
                     "api_key": "",
                     "models": ["gpt-5.4"],
                     "test_model": "gpt-5.4",
@@ -72,7 +72,7 @@ default = "relay_demo:moonshot-v1-8k"
 
 [models.providers.relay_demo]
 models = ["moonshot-v1-8k"]
-api_key_env = "CODE2WORKSPACE_CLI_OLD_RELAY_KEY"
+api_key_env = "EPIMINDAGENT_CLI_OLD_RELAY_KEY"
 enabled = true
 base_url = "https://relay.example/v1"
 class_path = "langchain_openai:ChatOpenAI"
@@ -80,7 +80,7 @@ provider_kind = "openai_compatible"
 """.strip()
         + "\n",
     )
-    write_file(root / ".env", "CODE2WORKSPACE_CLI_OLD_RELAY_KEY=relay-secret\n")
+    write_file(root / ".env", "EPIMINDAGENT_CLI_OLD_RELAY_KEY=relay-secret\n")
     store = ModelSettingsStore(root)
 
     store.save_settings_payload(
@@ -93,7 +93,7 @@ provider_kind = "openai_compatible"
                     "enabled": True,
                     "provider_kind": "openai_compatible",
                     "base_url": "https://relay.example/v1",
-                    "api_key_env": "CODE2WORKSPACE_CLI_NEW_RELAY_KEY",
+                    "api_key_env": "EPIMINDAGENT_CLI_NEW_RELAY_KEY",
                     "api_key": "",
                     "models": ["moonshot-v1-8k"],
                     "test_model": "moonshot-v1-8k",
@@ -104,8 +104,8 @@ provider_kind = "openai_compatible"
     )
 
     dotenv_text = (root / ".env").read_text(encoding="utf-8")
-    assert "CODE2WORKSPACE_CLI_NEW_RELAY_KEY=relay-secret" in dotenv_text
-    assert "CODE2WORKSPACE_CLI_OLD_RELAY_KEY" not in dotenv_text
+    assert "EPIMINDAGENT_CLI_NEW_RELAY_KEY=relay-secret" in dotenv_text
+    assert "EPIMINDAGENT_CLI_OLD_RELAY_KEY" not in dotenv_text
 
 
 def test_save_settings_removes_non_default_provider_without_touching_default(

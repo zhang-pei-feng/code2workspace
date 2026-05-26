@@ -4,6 +4,13 @@ import { buildThreadMetadataWithModel, getThreadModelSpec } from "./thread-model
 describe("thread model metadata helpers", () => {
   it("reads per-thread model spec from metadata", () => {
     const model = getThreadModelSpec({
+      metadata: { epimindagent_model_spec: "openai:gpt-4.1" },
+    } as never);
+    expect(model).toBe("openai:gpt-4.1");
+  });
+
+  it("reads legacy per-thread model metadata", () => {
+    const model = getThreadModelSpec({
       metadata: { code2workspace_model_spec: "openai:gpt-4.1" },
     } as never);
     expect(model).toBe("openai:gpt-4.1");
@@ -16,16 +23,19 @@ describe("thread model metadata helpers", () => {
     );
     expect(next).toEqual({
       title: "demo",
-      code2workspace_model_spec: "anthropic:claude-sonnet-4-5",
+      epimindagent_model_spec: "anthropic:claude-sonnet-4-5",
     });
   });
 
   it("removes model spec when cleared", () => {
     const next = buildThreadMetadataWithModel(
-      { code2workspace_model_spec: "openai:gpt-4.1", title: "demo" },
+      {
+        epimindagent_model_spec: "openai:gpt-4.1",
+        code2workspace_model_spec: "openai:gpt-4.1",
+        title: "demo",
+      },
       null,
     );
     expect(next).toEqual({ title: "demo" });
   });
 });
-

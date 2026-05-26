@@ -205,7 +205,7 @@ def _import_provider_module(
         raise ImportError(msg) from exc
 
 
-_LANGSMITH_DEFAULT_TEMPLATE = "code2workspace-cli"
+_LANGSMITH_DEFAULT_TEMPLATE = "epimindagent-cli"
 """Default LangSmith sandbox template name used when no template is specified."""
 
 _LANGSMITH_DEFAULT_IMAGE = "python:3"
@@ -245,7 +245,7 @@ class _LangSmithProvider(SandboxProvider):
             msg = (
                 "No LangSmith sandbox API key found. Set "
                 "LANGSMITH_API_KEY, LANGCHAIN_API_KEY, or LANGSMITH_SANDBOX_API_KEY "
-                "(or the CODE2WORKSPACE_CLI_-prefixed equivalents)."
+                "(or the EPIMINDAGENT_CLI_-prefixed equivalents)."
             )
             raise ValueError(msg)
         self._client: SandboxClient = SandboxClient(api_key=self._api_key)
@@ -401,7 +401,7 @@ class _DaytonaProvider(SandboxProvider):
         if not api_key:
             msg = (
                 "No Daytona API key found. Set DAYTONA_API_KEY "
-                "or CODE2WORKSPACE_CLI_DAYTONA_API_KEY."
+                "or EPIMINDAGENT_CLI_DAYTONA_API_KEY."
             )
             raise ValueError(msg)
         self._client = daytona_module.Daytona(
@@ -493,7 +493,7 @@ class _ModalProvider(SandboxProvider):
                 msg = (
                     "Failed to authenticate with Modal using "
                     "MODAL_TOKEN_ID / MODAL_TOKEN_SECRET "
-                    "(or the CODE2WORKSPACE_CLI_-prefixed equivalents). "
+                    "(or the EPIMINDAGENT_CLI_-prefixed equivalents). "
                     "Verify your credentials are valid."
                 )
                 raise ValueError(msg) from exc
@@ -601,7 +601,7 @@ class _RunloopProvider(SandboxProvider):
         if not api_key:
             msg = (
                 "No Runloop API key found. Set RUNLOOP_API_KEY "
-                "or CODE2WORKSPACE_CLI_RUNLOOP_API_KEY."
+                "or EPIMINDAGENT_CLI_RUNLOOP_API_KEY."
             )
             raise ValueError(msg)
         self._client = runloop_module.Runloop(bearer_token=api_key)
@@ -751,7 +751,7 @@ class _AgentCoreProvider(SandboxProvider):
 
         interpreter = agentcore_module.CodeInterpreter(
             region=self._region,
-            integration_source="code2workspace-cli",
+            integration_source="epimindagent-cli",
         )
         try:
             interpreter.start()

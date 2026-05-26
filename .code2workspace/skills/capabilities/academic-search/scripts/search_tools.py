@@ -8,12 +8,59 @@ import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# API Keys
-PUBMED_API_KEY = "61fe6c7acfd07fc679cad91219b7d8216f09"
-SPRINGER_OA_KEY = "0c6faca94c97955b8c6f984e1b1185a1"
-
 DEFAULT_MAX_RESULTS = 5
 SESSIONS_INDEX = Path.home() / ".openclaw" / "agents" / "main" / "sessions" / "sessions.json"
+SPRINGER_OA_KEY_ENV = "SPRINGER_OA_KEY"
+PUBMED_API_KEY_ENV = "PUBMED_API_KEY"
+
+QUERY_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "by",
+    "for",
+    "from",
+    "in",
+    "into",
+    "latest",
+    "new",
+    "not",
+    "of",
+    "on",
+    "or",
+    "paper",
+    "papers",
+    "preprint",
+    "preprints",
+    "research",
+    "review",
+    "study",
+    "the",
+    "to",
+    "with",
+    "title",
+    "abstract",
+    "journal",
+    "mesh",
+    "nature",
+    "等",
+    "论文",
+    "文献",
+    "最新",
+    "研究",
+}
+TOPIC_REQUIREMENTS = [
+    (
+        {"sars-cov-2", "sars", "covid", "covid-19"},
+        ("sars-cov-2", "sars cov 2", "covid-19", "covid 19", "covid"),
+    ),
+    ({"rsv"}, ("rsv", "respiratory syncytial")),
+    ({"influenza", "flu"}, ("influenza", "flu")),
+    ({"ebola"}, ("ebola",)),
+    ({"mpox", "monkeypox"}, ("mpox", "monkeypox")),
+]
 
 
 def node_text(node):
@@ -75,11 +122,98 @@ def parse_pubmed_pubdate(article):
     return " ".join(part for part in parts if part)
 
 
+def api_key_params(env_name, param_name="api_key"):
+    api_key = os.environ.get(env_name, "").strip()
+    return {param_name: api_key} if api_key else {}
+
+
+def relevance_terms(query):
+    query = re.sub(r"\[[^\]]+\]", " ", query or "")
+    raw_terms = re.findall(r"[A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*|[\u4e00-\u9fff]{2,}", query.lower())
+    terms = []
+    for term in raw_terms:
+        term = term.strip(".-")
+        if len(term) < 2 or term in QUERY_STOPWORDS:
+            continue
+        terms.append(term)
+        for part in re.split(r"[-.]", term):
+            if len(part) >= 3 and part not in QUERY_STOPWORDS:
+                terms.append(part)
+    seen = set()
+    unique = []
+    for term in terms:
+        if term not in seen:
+            seen.add(term)
+            unique.append(term)
+    return unique
+
+
+def record_relevance_score(record, terms, *, fields):
+    title = str(record.get("title", "")).lower()
+    weighted_fields = [(title, 4)]
+    for field in fields:
+        if field == "title":
+            continue
+        value = record.get(field, "")
+        if isinstance(value, list):
+            value = " ".join(str(item) for item in value)
+        weighted_fields.append((str(value).lower(), 1 if field in {"journal", "publicationName"} else 2))
+
+    score = 0
+    for term in terms:
+        for text, weight in weighted_fields:
+            if term in text:
+                score += weight
+                break
+    return score
+
+
+def searchable_record_text(record, fields):
+    values = []
+    for field in ("title", *fields):
+        value = record.get(field, "")
+        if isinstance(value, list):
+            value = " ".join(str(item) for item in value)
+        values.append(str(value))
+    return " ".join(values).lower().replace("-", " ")
+
+
+def required_topic_needles(terms):
+    term_set = set(terms)
+    for triggers, needles in TOPIC_REQUIREMENTS:
+        if term_set & triggers:
+            return needles
+    return ()
+
+
+def rank_records(records, query, *, fields, limit=None, min_score=1):
+    terms = relevance_terms(query)
+    if not terms:
+        return list(records[:limit] if limit is not None else records)
+
+    topic_needles = required_topic_needles(terms)
+    scored = []
+    for index, record in enumerate(records):
+        if topic_needles:
+            haystack = searchable_record_text(record, fields)
+            if not any(needle in haystack for needle in topic_needles):
+                continue
+        score = record_relevance_score(record, terms, fields=fields)
+        if score >= min_score:
+            item = dict(record)
+            item["_relevance_score"] = score
+            scored.append((score, index, item))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    ranked = [item for _, _, item in scored]
+    return ranked[:limit] if limit is not None else ranked
+
+
 def fetch_pubmed_details(pmids):
     if not pmids:
         return []
     sum_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-    params = {"db": "pubmed", "id": ",".join(pmids), "retmode": "xml", "api_key": PUBMED_API_KEY}
+    params = {"db": "pubmed", "id": ",".join(pmids), "retmode": "xml"}
+    params.update(api_key_params(PUBMED_API_KEY_ENV))
     resp = get_with_session_fallback(sum_url, params=params, timeout=15, prefer_direct=True)
     root = ET.fromstring(resp.text)
     parsed = [parse_pubmed_article(article) for article in root.findall(".//PubmedArticle")]
@@ -201,16 +335,29 @@ def resolve_max_results(value):
 
 def search_pubmed(query, max_results=5, details=False):
     url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": max_results, "api_key": PUBMED_API_KEY}
+    pool_size = min(max(max_results * 3, max_results), 50)
+    params = {"db": "pubmed", "term": query, "retmode": "json", "retmax": pool_size}
+    params.update(api_key_params(PUBMED_API_KEY_ENV))
     try:
         resp = get_with_session_fallback(url, params=params, timeout=10, prefer_direct=True)
         id_list = resp.json().get("esearchresult", {}).get("idlist", [])
         if not id_list: return json.dumps({"error": "No papers found in PubMed."})
         if details:
-            return json.dumps(fetch_pubmed_details(id_list), ensure_ascii=False, indent=2)
+            records = fetch_pubmed_details(id_list)
+            results = rank_records(
+                records,
+                query,
+                fields=("title", "abstract", "journal"),
+                limit=max_results,
+                min_score=1,
+            )
+            if not results:
+                return json.dumps({"error": "No PubMed papers passed the relevance filter.", "query": query})
+            return json.dumps(results, ensure_ascii=False, indent=2)
             
         sum_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-        sum_params = {"db": "pubmed", "id": ",".join(id_list), "retmode": "json", "api_key": PUBMED_API_KEY}
+        sum_params = {"db": "pubmed", "id": ",".join(id_list), "retmode": "json"}
+        sum_params.update(api_key_params(PUBMED_API_KEY_ENV))
         sum_resp = get_with_session_fallback(sum_url, params=sum_params, timeout=10, prefer_direct=True)
         summary_data = sum_resp.json().get("result", {})
         
@@ -224,69 +371,84 @@ def search_pubmed(query, max_results=5, details=False):
                     "pubdate": paper.get("pubdate", ""),
                     "link": f"https://pubmed.ncbi.nlm.nih.gov/{uid}/"
                 })
+        results = rank_records(results, query, fields=("title", "journal"), limit=max_results, min_score=1)
+        if not results:
+            return json.dumps({"error": "No PubMed papers passed the relevance filter.", "query": query})
         return json.dumps(results, ensure_ascii=False, indent=2)
     except Exception as e: return json.dumps({"error": str(e)})
 
 def search_springer(query, max_results=5, details=False):
+    if not os.environ.get(SPRINGER_OA_KEY_ENV, "").strip():
+        return json.dumps({"error": f"Missing Springer Nature API key. Set {SPRINGER_OA_KEY_ENV} in the environment."})
+
     url = "https://api.springernature.com/openaccess/json"
-    params = {"api_key": SPRINGER_OA_KEY, "q": query, "p": max_results}
+    pool_size = min(max(max_results * 4, max_results), 50)
+    params = {"q": query, "p": pool_size}
+    params.update(api_key_params(SPRINGER_OA_KEY_ENV))
     try:
         resp = get_with_session_fallback(url, params=params, timeout=10)
         records = resp.json().get("records", [])
         if not records: return json.dumps({"error": "No papers found in Springer."})
 
-        if details:
-            results = [
-                {
-                    "title": r.get("title", ""),
-                    "date": r.get("publicationDate", ""),
-                    "journal": r.get("publicationName", ""),
-                    "doi": r.get("doi", ""),
-                    "authors": [
-                        creator.get("creator", "")
-                        for creator in r.get("creators", [])
-                        if isinstance(creator, dict) and creator.get("creator")
-                    ],
-                    "abstract": springer_abstract(r),
-                    "link": springer_url(r),
-                }
-                for r in records
-            ]
-        else:
-            results = [{"title": r.get("title", ""), "date": r.get("publicationDate", ""), "doi": r.get("doi", "")} for r in records]
+        results = [
+            {
+                "title": r.get("title", ""),
+                "date": r.get("publicationDate", ""),
+                "journal": r.get("publicationName", ""),
+                "doi": r.get("doi", ""),
+                "authors": [
+                    creator.get("creator", "")
+                    for creator in r.get("creators", [])
+                    if isinstance(creator, dict) and creator.get("creator")
+                ],
+                "abstract": springer_abstract(r),
+                "link": springer_url(r),
+            }
+            for r in records
+        ]
+        results = rank_records(results, query, fields=("title", "abstract", "journal"), limit=max_results, min_score=2)
+        if not results:
+            return json.dumps({"error": "No Springer papers passed the relevance filter.", "query": query})
+        if not details:
+            results = [{"title": r.get("title", ""), "date": r.get("date", ""), "doi": r.get("doi", ""), "_relevance_score": r.get("_relevance_score")} for r in results]
         return json.dumps(results, ensure_ascii=False, indent=2)
     except Exception as e: return json.dumps({"error": str(e)})
 
-def search_biorxiv(start_date, end_date, max_results=5, details=False):
+def search_biorxiv(start_date, end_date, max_results=5, details=False, query=None):
     url = f"https://api.biorxiv.org/details/biorxiv/{start_date}/{end_date}"
     try:
         resp = get_with_session_fallback(url, timeout=15)
         collection = resp.json().get("collection", [])
         if not collection: return json.dumps({"error": "No preprints found."})
 
-        if details:
-            results = [
-                {
-                    "title": p.get("title", ""),
-                    "date": p.get("date", ""),
-                    "doi": p.get("doi", ""),
-                    "authors": p.get("authors", ""),
-                    "category": p.get("category", ""),
-                    "abstract": p.get("abstract", ""),
-                    "jatsxml": p.get("jatsxml", ""),
-                    "link": f"https://www.biorxiv.org/content/{p.get('doi', '')}v{p.get('version', '')}" if p.get("doi") else "",
-                }
-                for p in collection[:max_results]
-            ]
+        results = [
+            {
+                "title": p.get("title", ""),
+                "date": p.get("date", ""),
+                "doi": p.get("doi", ""),
+                "authors": p.get("authors", ""),
+                "category": p.get("category", ""),
+                "abstract": p.get("abstract", ""),
+                "jatsxml": p.get("jatsxml", ""),
+                "link": f"https://www.biorxiv.org/content/{p.get('doi', '')}v{p.get('version', '')}" if p.get("doi") else "",
+            }
+            for p in collection
+        ]
+        if query:
+            results = rank_records(results, query, fields=("title", "abstract", "category"), limit=max_results, min_score=1)
+            if not results:
+                return json.dumps({"error": "No bioRxiv preprints passed the relevance filter.", "query": query})
         else:
-            results = [{"title": p.get("title", ""), "date": p.get("date", ""), "doi": p.get("doi", "")} for p in collection[:max_results]]
+            results = results[:max_results]
+        if not details:
+            results = [{"title": p.get("title", ""), "date": p.get("date", ""), "doi": p.get("doi", ""), "_relevance_score": p.get("_relevance_score")} for p in results]
         return json.dumps(results, ensure_ascii=False, indent=2)
     except Exception as e: return json.dumps({"error": str(e)})
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Academic Search CLI for OpenClaw")
     parser.add_argument("--source", choices=["pubmed", "springer", "biorxiv"], required=True, help="The database to search")
-    parser.add_argument("--query", type=str, help="Search keywords (required for pubmed and springer)")
+    parser.add_argument("--query", type=str, help="Search keywords; required for pubmed/springer and optional relevance filter for biorxiv")
     parser.add_argument("--start", type=str, help="Start date YYYY-MM-DD (required for biorxiv)")
     parser.add_argument("--end", type=str, help="End date YYYY-MM-DD (required for biorxiv)")
     parser.add_argument("--max-results", type=int, default=None, help="Maximum number of results to return")
@@ -306,4 +468,4 @@ if __name__ == "__main__":
         print(search_springer(args.query, max_results=max_results, details=details))
     elif args.source == "biorxiv":
         if not args.start or not args.end: print(json.dumps({"error": "Missing --start or --end"})); sys.exit(1)
-        print(search_biorxiv(args.start, args.end, max_results=max_results, details=details))
+        print(search_biorxiv(args.start, args.end, max_results=max_results, details=details, query=args.query))

@@ -31,7 +31,7 @@ _OPENROUTER_APP_URL = "https://github.com/zhang-pei-feng/code2workspace"
 See https://openrouter.ai/docs/app-attribution for details.
 """
 
-_OPENROUTER_APP_TITLE = "Code2Workspace"
+_OPENROUTER_APP_TITLE = "EpiMindAgent"
 """Default `app_title` (maps to `X-Title`) for OpenRouter attribution."""
 
 
@@ -75,7 +75,7 @@ def check_openrouter_version() -> None:
         return
     if is_old:
         msg = (
-            f"code2workspace requires langchain-openrouter>={OPENROUTER_MIN_VERSION}, "
+            f"EpiMindAgent requires langchain-openrouter>={OPENROUTER_MIN_VERSION}, "
             f"but {installed} is installed. "
             f"Run: pip install 'langchain-openrouter>={OPENROUTER_MIN_VERSION}'"
         )

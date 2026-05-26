@@ -1,6 +1,6 @@
-# Code2Workspace SDK
+# EpiMindAgent SDK
 
-This package contains the runtime used by `code2workspace`.
+This package contains the runtime used by `EpiMindAgent`.
 
 Its current core capabilities include:
 

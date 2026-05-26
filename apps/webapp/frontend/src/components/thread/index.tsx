@@ -586,7 +586,7 @@ export function Thread() {
                   }}
                 >
                   <span className="text-xl font-semibold tracking-tight">
-                    Code2Workspace Chat
+                    EpiMindAgent Chat
                   </span>
                 </motion.button>
               </div>
@@ -711,7 +711,7 @@ export function Thread() {
                     {!chatStarted && (
                       <div className="flex items-center">
                         <h1 className="text-2xl font-semibold tracking-tight">
-                          Code2Workspace Chat
+                          EpiMindAgent Chat
                         </h1>
                       </div>
                     )}

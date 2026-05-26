@@ -1,6 +1,6 @@
-# Code2Workspace CLI
+# EpiMindAgent CLI
 
-This package provides the terminal interface for `code2workspace`.
+This package provides the terminal interface for `EpiMindAgent`.
 
 It supports:
 
@@ -13,11 +13,11 @@ It supports:
 Run locally from the repository root:
 
 ```bash
-uv run --project libs/cli code2workspace
+uv run --project libs/cli EpiMindAgent
 ```
 
 Single-task mode:
 
 ```bash
-uv run --project libs/cli code2workspace -n "Reply with OK only." -q
+uv run --project libs/cli EpiMindAgent -n "Reply with OK only." -q
 ```

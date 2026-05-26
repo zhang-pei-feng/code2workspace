@@ -1,6 +1,6 @@
 # 数据库字段语义手册
 
-`virus_variation` 风险库和数据治理智能体 `covid_data` 库的字段定义和含义说明。
+`virus_variation` 主库和可选 `covid19_data` 历史镜像的字段定义和含义说明。
 
 ---
 
@@ -71,11 +71,9 @@
 
 ---
 
-## covid_data（数据治理智能体本地库）
+## 谱系/导入表（`virus_variation` 主库；`covid19_data` 历史镜像）
 
-数据治理智能体仓库：`${DATA_GOVERNANCE_AGENT_ROOT}`
-
-配置来源：`home/.data_governance_agent/config.toml` 的 `[mysql]` 段。优先通过数据治理智能体的 `execute_sql` 入口读取配置，不要把 MySQL 密码复制到输出里。
+本机实际可用库名为 `virus_variation` 和 `covid19_data`，未发现 `covid_data`。默认查询 `virus_variation` 中的同名谱系/导入表；`covid19_data` 只作为历史镜像或对照来源。
 
 ### ncov_source_harvest_runs
 
@@ -148,15 +146,9 @@ Pango constellation 定义解析出的谱系突变表。用于回答“某谱系
 AND position_start BETWEEN 319 AND 541
 ```
 
-### ncov_epietl_reports / ncov_epietl_risk_events / ncov_epietl_channels
+### EpiETL 表边界
 
-EpiETL 监测报告、AI 抽取风险事件和 source channel 元数据。
-
-常用字段：
-
-- reports: `title`, `country`, `pathogen`, `epi_week`, `source_org`, `source_url`, `published_at`, `report_date`, `summary`
-- risk_events: `title`, `severity`, `category`, `pathogen`, `country`, `epi_week`, `source_url`, `period_start`, `period_end`, `summary`
-- channels: `channel_id`, `name`, `organization`, `country_or_region`, `source_type`, `status`, `last_sync`
+本机 MySQL 未发现 `ncov_epietl_reports`、`ncov_epietl_risk_events`、`ncov_epietl_channels`。EpiETL 监测报告、AI 抽取风险事件和 source channel 元数据请使用 `epietl-api` skill 查询。
 
 ---
 

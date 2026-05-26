@@ -1,4 +1,4 @@
-"""Chat input widget for code2workspace-cli with autocomplete and history support."""
+"""Chat input widget for EpiMindAgent CLI with autocomplete and history support."""
 
 from __future__ import annotations
 

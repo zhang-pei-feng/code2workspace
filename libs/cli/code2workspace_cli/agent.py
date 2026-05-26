@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 from langchain.agents.middleware.types import AgentMiddleware
 
 from code2workspace_cli import theme
+from code2workspace_cli._env_vars import get_mapping_env
 from code2workspace_cli.config import (
     _ShellAllowAll,
     config,
@@ -81,17 +82,17 @@ DEFAULT_AGENT_NAME = "agent"
 DEFAULT_SUPERVISOR_REPORT_MODEL = "openai_paid:gpt-5.4"
 """Default model used for report-specific supervisor workers."""
 
-SUPERVISOR_REPORT_MODEL_ENV = "CODE2WORKSPACE_SUPERVISOR_REPORT_MODEL"
+SUPERVISOR_REPORT_MODEL_ENV = "EPIMINDAGENT_SUPERVISOR_REPORT_MODEL"
 SUPERVISOR_REPORT_NODE_MODEL_ENVS: dict[str, str] = {
-    "init_report": "CODE2WORKSPACE_SUPERVISOR_REPORT_INIT_MODEL",
-    "monitoring_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_MONITORING_MODEL",
-    "local_data_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_LOCAL_DATA_MODEL",
-    "existing_data_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_EXISTING_DATA_MODEL",
-    "computed_data_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_COMPUTED_DATA_MODEL",
-    "literature_lane": "CODE2WORKSPACE_SUPERVISOR_REPORT_LITERATURE_MODEL",
-    "compose_report": "CODE2WORKSPACE_SUPERVISOR_REPORT_COMPOSE_MODEL",
-    "summarize": "CODE2WORKSPACE_SUPERVISOR_REPORT_SUMMARIZE_MODEL",
-    "final_response": "CODE2WORKSPACE_SUPERVISOR_REPORT_FINAL_RESPONSE_MODEL",
+    "init_report": "EPIMINDAGENT_SUPERVISOR_REPORT_INIT_MODEL",
+    "monitoring_lane": "EPIMINDAGENT_SUPERVISOR_REPORT_MONITORING_MODEL",
+    "local_data_lane": "EPIMINDAGENT_SUPERVISOR_REPORT_LOCAL_DATA_MODEL",
+    "existing_data_lane": "EPIMINDAGENT_SUPERVISOR_REPORT_EXISTING_DATA_MODEL",
+    "computed_data_lane": "EPIMINDAGENT_SUPERVISOR_REPORT_COMPUTED_DATA_MODEL",
+    "literature_lane": "EPIMINDAGENT_SUPERVISOR_REPORT_LITERATURE_MODEL",
+    "compose_report": "EPIMINDAGENT_SUPERVISOR_REPORT_COMPOSE_MODEL",
+    "summarize": "EPIMINDAGENT_SUPERVISOR_REPORT_SUMMARIZE_MODEL",
+    "final_response": "EPIMINDAGENT_SUPERVISOR_REPORT_FINAL_RESPONSE_MODEL",
 }
 SUPERVISOR_REPORT_RETRY_NODE_IDS: dict[str, tuple[str, ...]] = {
     "init_report": ("retry_init_report",),
@@ -476,7 +477,7 @@ def reset_agent(
             console.print(
                 f"[bold red]Error:[/bold red] Source agent '{source_agent}' not found "
                 "or has no AGENTS.md\n"
-                "  Available agents: code2workspace agents list"
+                "  Available agents: EpiMindAgent agents list"
             )
             raise SystemExit(1)
 
@@ -985,12 +986,14 @@ def _read_report_worker_model_specs(
 
     env = os.environ if environ is None else environ
     default_model = (
-        env.get(SUPERVISOR_REPORT_MODEL_ENV, "").strip()
+        (get_mapping_env(env, SUPERVISOR_REPORT_MODEL_ENV, "") or "").strip()
         or DEFAULT_SUPERVISOR_REPORT_MODEL
     )
     model_specs: dict[str, str] = {}
     for node_id, env_name in SUPERVISOR_REPORT_NODE_MODEL_ENVS.items():
-        model_specs[node_id] = env.get(env_name, "").strip() or default_model
+        model_specs[node_id] = (
+            (get_mapping_env(env, env_name, "") or "").strip() or default_model
+        )
     return model_specs
 
 
@@ -1060,7 +1063,7 @@ def create_cli_agent(
 ) -> tuple[Pregel, CompositeBackend]:
     """Create a CLI-configured agent with flexible options.
 
-    This is the main entry point for creating a code2workspace CLI agent, usable
+    This is the main entry point for creating an EpiMindAgent CLI agent, usable
     both internally and from external code (e.g., benchmarking frameworks).
 
     Args:
@@ -1398,11 +1401,11 @@ def create_cli_agent(
     if sandbox is None:
         # Local mode: Route large results to a unique temp directory
         large_results_backend = FilesystemBackend(
-            root_dir=tempfile.mkdtemp(prefix="code2workspace_large_results_"),
+            root_dir=tempfile.mkdtemp(prefix="epimindagent_large_results_"),
             virtual_mode=True,
         )
         conversation_history_backend = FilesystemBackend(
-            root_dir=tempfile.mkdtemp(prefix="code2workspace_conversation_history_"),
+            root_dir=tempfile.mkdtemp(prefix="epimindagent_conversation_history_"),
             virtual_mode=True,
         )
         composite_backend = CompositeBackend(
@@ -1496,6 +1499,7 @@ def create_cli_agent(
         worker_subagents=report_worker_subagents,
         classifier_model=classifier_model,
         enable_generic_ask_user=enable_ask_user,
+        interactive_confirmation_mode=interactive,
         checkpointer=checkpointer,
     ).with_config(config)
     return agent, composite_backend

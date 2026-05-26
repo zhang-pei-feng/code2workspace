@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from code2workspace_cli._env_vars import get_env
 from code2workspace_cli.operator_store import (
     _cosine_similarity,
     _embed_documents,
@@ -26,8 +27,8 @@ DATASET_RECORD_NAME = "dataset.json"
 DATASET_EMBEDDING_NAME = "embedding.json"
 _LOCAL_EMBEDDING_MODEL = "local-hash-token-embedding-v1"
 _LOCAL_EMBEDDING_DIMENSIONS = 256
-_EMBEDDING_BASE_URL_ENV = "CODE2WORKSPACE_OPERATOR_STORE_EMBEDDING_BASE_URL"
-_EMBEDDING_API_KEY_ENV = "CODE2WORKSPACE_OPERATOR_STORE_EMBEDDING_API_KEY"
+_EMBEDDING_BASE_URL_ENV = "EPIMINDAGENT_OPERATOR_STORE_EMBEDDING_BASE_URL"
+_EMBEDDING_API_KEY_ENV = "EPIMINDAGENT_OPERATOR_STORE_EMBEDDING_API_KEY"
 _PROJECT_ENV_LOADED = False
 
 
@@ -642,13 +643,13 @@ def _native_embed_documents(texts: list[str]) -> tuple[list[list[float]], str | 
 
 def _embedding_base_url() -> str | None:
     _ensure_project_env_loaded()
-    raw = os.environ.get(_EMBEDDING_BASE_URL_ENV) or _resolve_env_var("OPENAI_BASE_URL")
+    raw = get_env(_EMBEDDING_BASE_URL_ENV) or _resolve_env_var("OPENAI_BASE_URL")
     return raw.strip() if isinstance(raw, str) and raw.strip() else None
 
 
 def _embedding_api_key() -> str | None:
     _ensure_project_env_loaded()
-    raw = os.environ.get(_EMBEDDING_API_KEY_ENV) or _resolve_env_var("OPENAI_API_KEY")
+    raw = get_env(_EMBEDDING_API_KEY_ENV) or _resolve_env_var("OPENAI_API_KEY")
     return raw.strip() if isinstance(raw, str) and raw.strip() else None
 
 

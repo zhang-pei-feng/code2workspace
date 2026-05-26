@@ -42,6 +42,11 @@ def _clear_model_caches() -> Iterator[None]:
     clear_caches()
 
 
+def _blank_default_model_env() -> dict[str, str]:
+    """Return empty values for every supported default-model env var."""
+    return {name: "" for name in model_config.DEFAULT_MODEL_ENV_VARS}
+
+
 class TestModelSpec:
     """Tests for ModelSpec value type."""
 
@@ -125,10 +130,10 @@ class TestHasProviderCredentials:
             assert has_provider_credentials("anthropic") is False
 
     def test_returns_true_with_prefixed_env_var(self):
-        """Returns True when only the CODE2WORKSPACE_CLI_ prefixed var is set."""
+        """Returns True when only the EPIMINDAGENT_CLI_ prefixed var is set."""
         with patch.dict(
             "os.environ",
-            {"CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY": "sk-prefixed"},
+            {"EPIMINDAGENT_CLI_ANTHROPIC_API_KEY": "sk-prefixed"},
             clear=True,
         ):
             assert has_provider_credentials("anthropic") is True
@@ -418,15 +423,17 @@ class TestResolveEnvVar:
     def test_returns_canonical_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Falls back to the canonical env var when no prefix is set."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-canonical")
+        monkeypatch.delenv("EPIMINDAGENT_CLI_ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", raising=False)
         from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("ANTHROPIC_API_KEY") == "sk-canonical"
 
     def test_prefix_beats_canonical(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """CODE2WORKSPACE_CLI_ prefixed var takes priority over canonical."""
+        """EPIMINDAGENT_CLI_ prefixed var takes priority over canonical."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-canonical")
-        monkeypatch.setenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", "sk-override")
+        monkeypatch.setenv("EPIMINDAGENT_CLI_ANTHROPIC_API_KEY", "sk-override")
+        monkeypatch.delenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", raising=False)
         from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("ANTHROPIC_API_KEY") == "sk-override"
@@ -434,6 +441,7 @@ class TestResolveEnvVar:
     def test_returns_none_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Returns None when neither form is set."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("EPIMINDAGENT_CLI_ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", raising=False)
         from code2workspace_cli.model_config import resolve_env_var
 
@@ -444,7 +452,8 @@ class TestResolveEnvVar:
     ) -> None:
         """Empty strings are normalized to None."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "")
-        monkeypatch.setenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("EPIMINDAGENT_CLI_ANTHROPIC_API_KEY", "")
+        monkeypatch.delenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", raising=False)
         from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("ANTHROPIC_API_KEY") is None
@@ -452,7 +461,8 @@ class TestResolveEnvVar:
     def test_prefix_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Works when only the prefixed var is set."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.setenv("CODE2WORKSPACE_CLI_OPENAI_API_KEY", "sk-prefixed")
+        monkeypatch.setenv("EPIMINDAGENT_CLI_OPENAI_API_KEY", "sk-prefixed")
+        monkeypatch.delenv("CODE2WORKSPACE_CLI_OPENAI_API_KEY", raising=False)
         from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("OPENAI_API_KEY") == "sk-prefixed"
@@ -462,18 +472,19 @@ class TestResolveEnvVar:
     ) -> None:
         """Empty prefix var blocks fallback to canonical (explicit disable)."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-real")
-        monkeypatch.setenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("EPIMINDAGENT_CLI_ANTHROPIC_API_KEY", "")
+        monkeypatch.delenv("CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY", raising=False)
         from code2workspace_cli.model_config import resolve_env_var
 
         assert resolve_env_var("ANTHROPIC_API_KEY") is None
 
     def test_skips_double_prefix(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Names already carrying the prefix don't get double-prefixed."""
-        monkeypatch.setenv("CODE2WORKSPACE_CLI_MY_KEY", "direct")
-        monkeypatch.delenv("CODE2WORKSPACE_CLI_CODE2WORKSPACE_CLI_MY_KEY", raising=False)
+        monkeypatch.setenv("EPIMINDAGENT_CLI_MY_KEY", "direct")
+        monkeypatch.delenv("EPIMINDAGENT_CLI_EPIMINDAGENT_CLI_MY_KEY", raising=False)
         from code2workspace_cli.model_config import resolve_env_var
 
-        assert resolve_env_var("CODE2WORKSPACE_CLI_MY_KEY") == "direct"
+        assert resolve_env_var("EPIMINDAGENT_CLI_MY_KEY") == "direct"
 
 
 class TestProviderApiKeyEnv:
@@ -524,7 +535,7 @@ default = "claude-sonnet-4-5"
         assert config.default_model == "claude-sonnet-4-5"
 
     def test_env_default_model_overrides_default_config(self, tmp_path):
-        """CODE2WORKSPACE_MODEL is the portable default model entrypoint."""
+        """EPIMINDAGENT_MODEL is the portable default model entrypoint."""
         config_path = tmp_path / "config.toml"
         config_path.write_text("""
 [models]
@@ -533,7 +544,13 @@ default = "openai:gpt-5.2"
 
         with (
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
-            patch.dict("os.environ", {"CODE2WORKSPACE_MODEL": "openai:gpt-5.4"}),
+            patch.dict(
+                "os.environ",
+                {
+                    **_blank_default_model_env(),
+                    "EPIMINDAGENT_MODEL": "openai:gpt-5.4",
+                },
+            ),
         ):
             config = ModelConfig.load()
 
@@ -547,7 +564,13 @@ default = "openai:gpt-5.2"
 default = "openai:gpt-5.2"
 """)
 
-        with patch.dict("os.environ", {"CODE2WORKSPACE_MODEL": "openai:gpt-5.4"}):
+        with patch.dict(
+            "os.environ",
+            {
+                **_blank_default_model_env(),
+                "EPIMINDAGENT_MODEL": "openai:gpt-5.4",
+            },
+        ):
             config = ModelConfig.load(config_path)
 
         assert config.default_model == "openai:gpt-5.2"
@@ -711,7 +734,7 @@ api_key_env = "ANTHROPIC_API_KEY"
             assert config.has_credentials("anthropic") is False
 
     def test_returns_true_with_prefixed_env_var(self, tmp_path):
-        """Returns True when only the CODE2WORKSPACE_CLI_ prefixed var is set."""
+        """Returns True when only the EPIMINDAGENT_CLI_ prefixed var is set."""
         config_path = tmp_path / "config.toml"
         config_path.write_text("""
 [models.providers.anthropic]
@@ -722,7 +745,7 @@ api_key_env = "ANTHROPIC_API_KEY"
 
         with patch.dict(
             "os.environ",
-            {"CODE2WORKSPACE_CLI_ANTHROPIC_API_KEY": "sk-prefixed"},
+            {"EPIMINDAGENT_CLI_ANTHROPIC_API_KEY": "sk-prefixed"},
             clear=True,
         ):
             assert config.has_credentials("anthropic") is True
@@ -967,11 +990,8 @@ class TestModelPersistenceBetweenSessions:
             patch.dict(
                 "os.environ",
                 {
+                    **_blank_default_model_env(),
                     "ANTHROPIC_API_KEY": "test-key",
-                    "CODE2WORKSPACE_MODEL": "",
-                    "CODE2WORKSPACE_DEFAULT_MODEL": "",
-                    "CODE2WORKSPACE_CLI_MODEL": "",
-                    "CODE2WORKSPACE_CLI_DEFAULT_MODEL": "",
                 },
                 clear=False,
             ),
@@ -1003,7 +1023,8 @@ class TestModelPersistenceBetweenSessions:
             patch.dict(
                 "os.environ",
                 {
-                    "CODE2WORKSPACE_MODEL": "openai:gpt-5.4",
+                    **_blank_default_model_env(),
+                    "EPIMINDAGENT_MODEL": "openai:gpt-5.4",
                     "ANTHROPIC_API_KEY": "test-key",
                     "OPENAI_API_KEY": "test-key",
                 },
@@ -1014,7 +1035,7 @@ class TestModelPersistenceBetweenSessions:
 
             assert result == "openai:gpt-5.4", (
                 f"Expected env default 'openai:gpt-5.4' but got '{result}'. "
-                "CODE2WORKSPACE_MODEL should take priority over config defaults."
+                "EPIMINDAGENT_MODEL should take priority over config defaults."
             )
 
 
@@ -2563,11 +2584,8 @@ recent = "anthropic:claude-sonnet-4-5"
             patch.dict(
                 "os.environ",
                 {
+                    **_blank_default_model_env(),
                     "ANTHROPIC_API_KEY": "test-key",
-                    "CODE2WORKSPACE_MODEL": "",
-                    "CODE2WORKSPACE_DEFAULT_MODEL": "",
-                    "CODE2WORKSPACE_CLI_MODEL": "",
-                    "CODE2WORKSPACE_CLI_DEFAULT_MODEL": "",
                 },
                 clear=False,
             ),
@@ -2591,11 +2609,8 @@ recent = "openai:gpt-5.2"
             patch.dict(
                 "os.environ",
                 {
+                    **_blank_default_model_env(),
                     "ANTHROPIC_API_KEY": "test-key",
-                    "CODE2WORKSPACE_MODEL": "",
-                    "CODE2WORKSPACE_DEFAULT_MODEL": "",
-                    "CODE2WORKSPACE_CLI_MODEL": "",
-                    "CODE2WORKSPACE_CLI_DEFAULT_MODEL": "",
                 },
                 clear=False,
             ),
@@ -2615,7 +2630,10 @@ recent = "openai:gpt-5.2"
             patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
             patch.dict(
                 "os.environ",
-                {"CODE2WORKSPACE_MODEL": "openai:gpt-5.4"},
+                {
+                    **_blank_default_model_env(),
+                    "EPIMINDAGENT_MODEL": "openai:gpt-5.4",
+                },
                 clear=False,
             ),
         ):
@@ -2635,16 +2653,13 @@ recent = "openai:gpt-5.2"
             patch.dict(
                 "os.environ",
                 {
+                    **_blank_default_model_env(),
                     "ANTHROPIC_API_KEY": "test-key",
-                    "CODE2WORKSPACE_MODEL": "",
-                    "CODE2WORKSPACE_DEFAULT_MODEL": "",
-                    "CODE2WORKSPACE_CLI_MODEL": "",
-                    "CODE2WORKSPACE_CLI_DEFAULT_MODEL": "",
                 },
                 clear=False,
             ),
         ):
-            with pytest.raises(ModelConfigError, match="CODE2WORKSPACE_MODEL"):
+            with pytest.raises(ModelConfigError, match="EPIMINDAGENT_MODEL"):
                 _get_default_model_spec()
 
 
@@ -2848,7 +2863,11 @@ class TestGetModelProfiles:
                 "code2workspace_cli.model_config._load_provider_profiles",
                 side_effect=mock_load,
             ),
-            patch.object(model_config, "DEFAULT_CONFIG_PATH", Path("/tmp/nonexistent-agent-models.json")),
+            patch.object(
+                model_config,
+                "DEFAULT_CONFIG_PATH",
+                Path("/tmp/nonexistent-agent-models.json"),
+            ),
         ):
             profiles = get_model_profiles()
 

@@ -1,4 +1,4 @@
-"""Middleware for the Code2Workspace agent.
+"""Middleware for the EpiMindAgent agent.
 
 ## Overview
 

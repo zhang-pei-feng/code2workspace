@@ -1,4 +1,4 @@
-# Code2Workspace SDK Tests
+# EpiMindAgent SDK Tests
 
 ## API Keys
 

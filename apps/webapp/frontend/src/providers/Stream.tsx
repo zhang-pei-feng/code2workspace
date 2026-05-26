@@ -237,11 +237,11 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
           <div className="mt-14 flex flex-col gap-2 border-b p-6">
             <div className="flex flex-col items-start gap-2">
               <h1 className="text-xl font-semibold tracking-tight">
-                Code2Workspace Chat
+                EpiMindAgent Chat
               </h1>
             </div>
             <p className="text-muted-foreground">
-              Welcome to Code2Workspace Chat. Before you get started, enter
+              Welcome to EpiMindAgent Chat. Before you get started, enter
               the URL of the deployment and the assistant / graph ID.
             </p>
           </div>

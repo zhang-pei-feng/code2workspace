@@ -594,7 +594,7 @@ def test_put_model_settings_persists_config_refreshes_models_and_dotenv(
                     "enabled": True,
                     "provider_kind": "native",
                     "base_url": None,
-                    "api_key_env": "CODE2WORKSPACE_CLI_OPENAI_API_KEY",
+                    "api_key_env": "EPIMINDAGENT_CLI_OPENAI_API_KEY",
                     "api_key": "sk-openai",
                     "models": ["gpt-5.4"],
                     "test_model": "gpt-5.4",
@@ -605,7 +605,7 @@ def test_put_model_settings_persists_config_refreshes_models_and_dotenv(
                     "enabled": True,
                     "provider_kind": "openai_compatible",
                     "base_url": "https://relay.example/v1",
-                    "api_key_env": "CODE2WORKSPACE_CLI_RELAY_DEMO_API_KEY",
+                    "api_key_env": "EPIMINDAGENT_CLI_RELAY_DEMO_API_KEY",
                     "api_key": "relay-secret",
                     "models": ["moonshot-v1-8k"],
                     "test_model": "moonshot-v1-8k",
@@ -636,8 +636,8 @@ def test_put_model_settings_persists_config_refreshes_models_and_dotenv(
     )
 
     dotenv_text = (settings_root / ".env").read_text()
-    assert "CODE2WORKSPACE_CLI_OPENAI_API_KEY=sk-openai" in dotenv_text
-    assert "CODE2WORKSPACE_CLI_RELAY_DEMO_API_KEY=relay-secret" in dotenv_text
+    assert "EPIMINDAGENT_CLI_OPENAI_API_KEY=sk-openai" in dotenv_text
+    assert "EPIMINDAGENT_CLI_RELAY_DEMO_API_KEY=relay-secret" in dotenv_text
 
     models_response = client.get("/api/models")
     assert models_response.status_code == 200
@@ -675,7 +675,7 @@ def test_put_model_settings_rejects_invalid_default_model(tmp_path: Path) -> Non
                     "enabled": True,
                     "provider_kind": "native",
                     "base_url": None,
-                    "api_key_env": "CODE2WORKSPACE_CLI_OPENAI_API_KEY",
+                    "api_key_env": "EPIMINDAGENT_CLI_OPENAI_API_KEY",
                     "api_key": "sk-openai",
                     "models": ["gpt-4.1"],
                     "test_model": "gpt-4.1",
@@ -710,7 +710,7 @@ def test_post_model_settings_test_reports_success(tmp_path: Path) -> None:
                     "enabled": True,
                     "provider_kind": "native",
                     "base_url": None,
-                    "api_key_env": "CODE2WORKSPACE_CLI_OPENAI_API_KEY",
+                    "api_key_env": "EPIMINDAGENT_CLI_OPENAI_API_KEY",
                     "api_key": "sk-openai",
                     "models": ["gpt-5.4"],
                     "test_model": "gpt-5.4",

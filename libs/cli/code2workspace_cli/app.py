@@ -1,4 +1,4 @@
-"""Textual UI application for code2workspace-cli."""
+"""Textual UI application for EpiMindAgent CLI."""
 
 from __future__ import annotations
 
@@ -156,7 +156,10 @@ def _load_theme_preference() -> str:
         A Textual theme name (e.g., `'langchain'`, `'langchain-light'`).
     """
     try:
-        from code2workspace_cli.model_config import DEFAULT_CONFIG_PATH, _load_config_data
+        from code2workspace_cli.model_config import (
+            DEFAULT_CONFIG_PATH,
+            _load_config_data,
+        )
 
         if not DEFAULT_CONFIG_PATH.exists():
             return theme.DEFAULT_THEME
@@ -410,9 +413,9 @@ _COMMAND_URLS: dict[str, str] = {
 
 
 class Code2WorkspaceApp(App):
-    """Main Textual application for code2workspace-cli."""
+    """Main Textual application for EpiMindAgent CLI."""
 
-    TITLE = "Code2Workspace"
+    TITLE = "EpiMindAgent"
     """Textual application title."""
 
     CSS_PATH = "app.tcss"
@@ -514,7 +517,7 @@ class Code2WorkspaceApp(App):
         model_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize the Code2Workspace application.
+        """Initialize the EpiMindAgent application.
 
         Args:
             agent: Pre-configured LangGraph agent, or `None` when server
@@ -1044,7 +1047,10 @@ class Code2WorkspaceApp(App):
 
         Runs filesystem I/O in a thread to avoid blocking the event loop.
         """
-        from code2workspace_cli.command_registry import SLASH_COMMANDS, build_skill_commands
+        from code2workspace_cli.command_registry import (
+            SLASH_COMMANDS,
+            build_skill_commands,
+        )
 
         try:
             skills, roots = await asyncio.to_thread(self._discover_skills_and_roots)
@@ -1210,7 +1216,10 @@ class Code2WorkspaceApp(App):
         # (e.g., context_limit from the model profile).
         if self._model_kwargs is not None:
             from code2workspace_cli.config import create_model
-            from code2workspace_cli.model_config import ModelConfigError, save_recent_model
+            from code2workspace_cli.model_config import (
+                ModelConfigError,
+                save_recent_model,
+            )
 
             try:
                 result = create_model(**self._model_kwargs)
@@ -1322,7 +1331,9 @@ class Code2WorkspaceApp(App):
                 lambda: asyncio.create_task(self._process_next_from_queue())
             )
 
-    def on_code2workspace_app_server_start_failed(self, event: ServerStartFailed) -> None:
+    def on_code2workspace_app_server_start_failed(
+        self, event: ServerStartFailed
+    ) -> None:
         """Handle background server startup failure."""
         self._connecting = False
         self._server_startup_error = f"{type(event.error).__name__}: {event.error}"
@@ -2712,13 +2723,13 @@ class Code2WorkspaceApp(App):
                     __version__ as cli_version,
                 )
 
-                cli_line = f"code2workspace-cli version: {cli_version}"
+                cli_line = f"EpiMindAgent CLI version: {cli_version}"
             except ImportError:
                 logger.debug("code2workspace_cli._version module not found")
-                cli_line = "code2workspace-cli version: unknown"
+                cli_line = "EpiMindAgent CLI version: unknown"
             except Exception:
                 logger.warning("Unexpected error looking up CLI version", exc_info=True)
-                cli_line = "code2workspace-cli version: unknown"
+                cli_line = "EpiMindAgent CLI version: unknown"
             try:
                 from importlib.metadata import (
                     PackageNotFoundError,
@@ -2726,13 +2737,13 @@ class Code2WorkspaceApp(App):
                 )
 
                 sdk_version = _pkg_version("code2workspace")
-                sdk_line = f"code2workspace (SDK) version: {sdk_version}"
+                sdk_line = f"EpiMindAgent SDK version: {sdk_version}"
             except PackageNotFoundError:
-                logger.debug("code2workspace SDK package not found in environment")
-                sdk_line = "code2workspace (SDK) version: unknown"
+                logger.debug("EpiMindAgent SDK package not found in environment")
+                sdk_line = "EpiMindAgent SDK version: unknown"
             except Exception:
                 logger.warning("Unexpected error looking up SDK version", exc_info=True)
-                sdk_line = "code2workspace (SDK) version: unknown"
+                sdk_line = "EpiMindAgent SDK version: unknown"
             await self._mount_message(AppMessage(f"{cli_line}\n{sdk_line}"))
         elif cmd == "/clear":
             self._pending_messages.clear()
@@ -3303,9 +3314,7 @@ class Code2WorkspaceApp(App):
         await self._mount_message(UserMessage(message))
         message_kwargs: dict[str, Any] | None = None
         if self._session_state and self._session_state.plain_chat_mode:
-            message_kwargs = {
-                "additional_kwargs": {"code2workspace_route": "fallback"}
-            }
+            message_kwargs = {"additional_kwargs": {"epimindagent_route": "fallback"}}
         await self._send_to_agent(message, message_kwargs=message_kwargs)
 
     async def _send_to_agent(
@@ -5066,7 +5075,7 @@ async def run_textual_app(
     agent: Any = None,  # noqa: ANN401
     assistant_id: str | None = None,
     backend: CompositeBackend | None = None,
-    auto_approve: bool = False,
+    auto_approve: bool = True,
     cwd: str | Path | None = None,
     thread_id: str | None = None,
     resume_thread: str | None = None,

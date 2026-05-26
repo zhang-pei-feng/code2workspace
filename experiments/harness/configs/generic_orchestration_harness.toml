@@ -4,43 +4,6 @@ output_root = "experiments/harness/runs"
 max_iterations = 2
 max_parallel_cases = 1
 
-[proposer]
-command = [
-  "python3",
-  "experiments/harness/proposers/generic_orchestration_surface_proposer.py",
-]
-max_runtime_minutes = 5
-
-[surfaces.generic_family]
-kind = "workspace_file"
-target = ".code2workspace/skills/orchestration/supervisor-guidance/references/families/generic_qa.md"
-filename = "generic_qa.md"
-base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/families/generic_qa.md"
-
-[surfaces.init_generic]
-kind = "workspace_file"
-target = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/init_generic.md"
-filename = "init_generic.md"
-base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/init_generic.md"
-
-[surfaces.worker_context]
-kind = "workspace_file"
-target = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/worker_context.md"
-filename = "worker_context.md"
-base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/worker_context.md"
-
-[surfaces.worker_solution]
-kind = "workspace_file"
-target = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/worker_solution.md"
-filename = "worker_solution.md"
-base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/worker_solution.md"
-
-[surfaces.compose_generic]
-kind = "workspace_file"
-target = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/compose_generic.md"
-filename = "compose_generic.md"
-base_file = ".code2workspace/skills/orchestration/supervisor-guidance/references/nodes/compose_generic.md"
-
 [[cases]]
 case_id = "generic-trace-artifacts-train"
 split = "train"
@@ -75,3 +38,31 @@ split = "holdout"
 weight = 1.0
 max_runtime_minutes = 8
 prompt = "请只基于本地代码，说明 tool_activity.jsonl 里早先的 unknown tool event 是怎么来的，后来又是怎么修掉的。回答简短。"
+
+[[cases]]
+case_id = "generic-skill-evolution-chain-holdout"
+split = "holdout"
+weight = 1.0
+max_runtime_minutes = 8
+prompt = "请只基于本地代码，给我一个简短结论：generic harness 现在是真的在做 skill 进化了吗？如果是，链路是什么。"
+
+[[cases]]
+case_id = "generic-spring-festival-covid-scorecard"
+split = "scorecard"
+weight = 1.0
+max_runtime_minutes = 15
+prompt = "2026 年初的春运人口流动是否促进了新冠传播？先给我一个口头判断，不要正式写作，但要说明证据边界。"
+
+[[cases]]
+case_id = "generic-covid-flu-peak-scorecard"
+split = "scorecard"
+weight = 1.0
+max_runtime_minutes = 15
+prompt = "下一波新冠/流感阳性率的高峰会在什么时间？先给我一个口头判断，不要正式写作，但要说明证据边界。"
+
+[[cases]]
+case_id = "generic-ba32-xfg-severity-scorecard"
+split = "scorecard"
+weight = 1.0
+max_runtime_minutes = 15
+prompt = "BA.3.2 和 XFG 毒株的子代中，哪一种会导致临床重症率增加？先帮我分析一下，区分证据和猜测，不要正式写作。"

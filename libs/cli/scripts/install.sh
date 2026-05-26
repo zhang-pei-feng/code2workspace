@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Install code2workspace-cli.
+# Install EpiMindAgent CLI.
 #
 # Usage:
 #   curl -LsSf https://raw.githubusercontent.com/zhang-pei-feng/code2workspace/main/libs/cli/scripts/install.sh | bash
 #
 # Environment variables:
-#   CODE2WORKSPACE_EXTRAS  — comma-separated pip extras, e.g. "ollama",
-#                        "ollama,groq", or "daytona"
-#                        (see pyproject.toml for available extras)
-#   CODE2WORKSPACE_PYTHON  — Python version to use (default: 3.13)
-#   CODE2WORKSPACE_SKIP_OPTIONAL — set to 1 to skip optional tool checks
+#   EPIMINDAGENT_EXTRAS  — comma-separated pip extras, e.g. "ollama",
+#                          "ollama,groq", or "daytona"
+#                          (see pyproject.toml for available extras)
+#   EPIMINDAGENT_PYTHON  — Python version to use (default: 3.13)
+#   EPIMINDAGENT_SKIP_OPTIONAL — set to 1 to skip optional tool checks
 #   UV_BIN             — path to uv binary (auto-detected if unset)
 #
 # Credits:
@@ -88,7 +88,7 @@ detect_os
 # ---------------------------------------------------------------------------
 # MDM tools run scripts as root in a minimal environment where HOME may be
 # unset or point to /var/root.  Resolve the real console user's home so uv
-# and code2workspace install to the right place.
+# and EpiMindAgent install to the right place.
 if [ "$OS" = "macos" ] && { [ -z "${HOME:-}" ] || [ "$(id -u)" -eq 0 ]; }; then
   CONSOLE_USER="$(stat -f '%Su' /dev/console 2>/dev/null)" || {
     log_warn "Could not determine console user via /dev/console. Falling back to directory scan."
@@ -184,9 +184,9 @@ prompt_yn() {
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-EXTRAS="${CODE2WORKSPACE_EXTRAS:-}"
-PYTHON_VERSION="${CODE2WORKSPACE_PYTHON:-3.13}"
-SKIP_OPTIONAL="${CODE2WORKSPACE_SKIP_OPTIONAL:-0}"
+EXTRAS="${EPIMINDAGENT_EXTRAS:-${CODE2WORKSPACE_EXTRAS:-}}"
+PYTHON_VERSION="${EPIMINDAGENT_PYTHON:-${CODE2WORKSPACE_PYTHON:-3.13}}"
+SKIP_OPTIONAL="${EPIMINDAGENT_SKIP_OPTIONAL:-${CODE2WORKSPACE_SKIP_OPTIONAL:-0}}"
 
 # Validate and normalize extras: accept bare CSV, wrap in brackets for pip
 if [[ -n "$EXTRAS" ]]; then
@@ -194,7 +194,7 @@ if [[ -n "$EXTRAS" ]]; then
   EXTRAS="${EXTRAS#[}"
   EXTRAS="${EXTRAS%]}"
   if [[ ! "$EXTRAS" =~ ^[-a-zA-Z0-9,]+$ ]]; then
-    log_error "CODE2WORKSPACE_EXTRAS must be comma-separated extra names, e.g. 'anthropic,groq' or 'daytona'"
+    log_error "EPIMINDAGENT_EXTRAS must be comma-separated extra names, e.g. 'anthropic,groq' or 'daytona'"
     exit 1
   fi
   EXTRAS="[${EXTRAS}]"
@@ -249,27 +249,31 @@ if [ -z "${UV_BIN:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Install code2workspace-cli
+# Install EpiMindAgent CLI package
 # ---------------------------------------------------------------------------
 PACKAGE="code2workspace-cli${EXTRAS}"
 
 # Capture pre-install version (if any) for messaging
 PRE_VERSION=""
-if command -v code2workspace >/dev/null 2>&1; then
+if command -v EpiMindAgent >/dev/null 2>&1; then
+  PRE_VERSION=$(EpiMindAgent -v 2>/dev/null | head -1 | awk '{print $NF}') || PRE_VERSION=""
+elif [ -x "${HOME}/.local/bin/EpiMindAgent" ]; then
+  PRE_VERSION=$("${HOME}/.local/bin/EpiMindAgent" -v 2>/dev/null | head -1 | awk '{print $NF}') || PRE_VERSION=""
+elif command -v code2workspace >/dev/null 2>&1; then
   PRE_VERSION=$(code2workspace -v 2>/dev/null | head -1 | awk '{print $NF}') || PRE_VERSION=""
 elif [ -x "${HOME}/.local/bin/code2workspace" ]; then
   PRE_VERSION=$("${HOME}/.local/bin/code2workspace" -v 2>/dev/null | head -1 | awk '{print $NF}') || PRE_VERSION=""
 fi
 
 if [ -n "$PRE_VERSION" ]; then
-  log_info "code2workspace-cli ${PRE_VERSION} found — checking for updates..."
+  log_info "EpiMindAgent CLI ${PRE_VERSION} found — checking for updates..."
 else
   log_info "Installing ${PACKAGE}..."
 fi
 
 if ! "$UV_BIN" tool install -U --python "$PYTHON_VERSION" "$PACKAGE"; then
   log_error "Failed to install ${PACKAGE}. See errors above."
-  log_error "Common fixes: check your network, try a different Python version (CODE2WORKSPACE_PYTHON=3.12), or install manually."
+  log_error "Common fixes: check your network, try a different Python version (EPIMINDAGENT_PYTHON=3.12), or install manually."
   exit 1
 fi
 fix_owner "${HOME}/.local/bin" "${HOME}/.local/share/uv"  # uv binaries + tool data
@@ -278,28 +282,32 @@ if [ "$OS" = "macos" ] && [ -d "${HOME}/Library/Caches/uv" ]; then
 elif [ -d "${HOME}/.cache/uv" ]; then
   fix_owner "${HOME}/.cache/uv"
 fi
-log_success "code2workspace-cli installed."
+log_success "EpiMindAgent CLI installed."
 
 # ---------------------------------------------------------------------------
 # Post-install verification
 # ---------------------------------------------------------------------------
-CODE2WORKSPACE_BIN=""
-if command -v code2workspace >/dev/null 2>&1; then
-  CODE2WORKSPACE_BIN="code2workspace"
+EPIMINDAGENT_BIN=""
+if command -v EpiMindAgent >/dev/null 2>&1; then
+  EPIMINDAGENT_BIN="EpiMindAgent"
+elif command -v code2workspace >/dev/null 2>&1; then
+  EPIMINDAGENT_BIN="code2workspace"
+elif [ -x "${HOME}/.local/bin/EpiMindAgent" ]; then
+  EPIMINDAGENT_BIN="${HOME}/.local/bin/EpiMindAgent"
 elif [ -x "${HOME}/.local/bin/code2workspace" ]; then
-  CODE2WORKSPACE_BIN="${HOME}/.local/bin/code2workspace"
+  EPIMINDAGENT_BIN="${HOME}/.local/bin/code2workspace"
 fi
 
-if [ -n "$CODE2WORKSPACE_BIN" ]; then
-  if VERSION=$("$CODE2WORKSPACE_BIN" -v 2>&1); then
-    log_success "Verified: code2workspace ${VERSION}"
+if [ -n "$EPIMINDAGENT_BIN" ]; then
+  if VERSION=$("$EPIMINDAGENT_BIN" -v 2>&1); then
+    log_success "Verified: EpiMindAgent ${VERSION}"
   else
-    log_warn "code2workspace binary found but 'code2workspace -v' failed:"
+    log_warn "EpiMindAgent binary found but 'EpiMindAgent -v' failed:"
     log_warn "  ${VERSION}"
-    log_warn "The installation may be broken. Try running: code2workspace -v"
+    log_warn "The installation may be broken. Try running: EpiMindAgent -v"
   fi
 else
-  log_warn "code2workspace command not found in PATH. Restart your shell or run:"
+  log_warn "EpiMindAgent command not found in PATH. Restart your shell or run:"
   log_warn "  source ~/.zshrc   # (or ~/.bashrc)"
 fi
 
@@ -433,7 +441,7 @@ fi
 # ---------------------------------------------------------------------------
 echo ""
 # shellcheck disable=SC2059
-printf "${GREEN}✔${NC} Setup complete. Run: ${BOLD}code2workspace${NC}\n"
+printf "${GREEN}✔${NC} Setup complete. Run: ${BOLD}EpiMindAgent${NC}\n"
 echo ""
-echo "For help and support, see the Code2Workspace CLI docs:"
+echo "For help and support, see the EpiMindAgent CLI docs:"
 echo "  https://github.com/zhang-pei-feng/code2workspace/blob/main/libs/cli/README.md"

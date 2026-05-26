@@ -1,4 +1,4 @@
-"""MCP (Model Context Protocol) tools loader for code2workspace CLI.
+"""MCP (Model Context Protocol) tools loader for EpiMindAgent CLI.
 
 This module provides async functions to load and manage MCP servers using
 `langchain-mcp-adapters`, supporting Claude Desktop style JSON configs.

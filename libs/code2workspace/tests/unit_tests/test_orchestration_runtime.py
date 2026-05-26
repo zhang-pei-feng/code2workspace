@@ -635,6 +635,68 @@ async def test_init_report_with_shape_declared_passes_node_decision(
     assert decision.failed_nodes == []
 
 
+@pytest.mark.asyncio
+async def test_init_report_with_archetype_synonyms_passes_node_decision(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "orchestration_runs" / "run-report-archetype-synonym"
+    (run_dir / "report_init").mkdir(parents=True)
+    (run_dir / "report_init" / "report_contract.json").write_text(
+        json.dumps(
+            {
+                "primary_archetype": "WHO-style risk assessment",
+                "report_shape_notes": [
+                    "Use the user-requested section order.",
+                    "Use numbered Markdown major sections.",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    graph = TaskGraph(
+        graph_id="graph-report-archetype-synonym",
+        task_type="report",
+        round_index=1,
+        nodes=[
+            TaskNode(
+                node_id="init_report",
+                title="Initialize report",
+                objective="plan report graph",
+                capability_bundles=["plan", "task_manage", "validate"],
+                metadata={"decision_check": True, "run_dir": str(run_dir)},
+            )
+        ],
+        edges=[],
+    )
+
+    async def worker_runner(node: TaskNode) -> WorkerResult:  # noqa: ARG001
+        return WorkerResult(
+            status="completed",
+            summary="report contract initialized",
+            artifacts=["report_init/report_contract.json"],
+            spawned_subgraph={
+                "nodes": [
+                    {
+                        "node_id": "monitoring_lane",
+                        "title": "Monitoring lane",
+                        "objective": "Collect monitoring evidence.",
+                        "capability_bundles": ["web_search", "web_fetch", "validate"],
+                    }
+                ],
+                "edges": [],
+            },
+        )
+
+    result = await execute_graph_round(graph, worker_runner)
+    decision = decide_supervisor_step(result)
+
+    by_node = {item.node_id: item for item in result.node_results}
+    assert by_node["init_report"].status == "completed"
+    assert "check_init_report" not in by_node
+    assert decision.decision == "stop"
+    assert decision.failed_nodes == []
+
+
 def test_planner_excludes_explicitly_forbidden_benchmark_tools() -> None:
     planner = HeuristicSupervisorPlanner()
     benchmark_root = Path.cwd() / "workspace" / "test-benchmark-catalog-exclude"

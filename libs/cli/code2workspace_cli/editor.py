@@ -91,7 +91,7 @@ def open_in_editor(current_text: str) -> str | None:
     try:
         with tempfile.NamedTemporaryFile(
             suffix=".md",
-            prefix="code2workspace-edit-",
+            prefix="epimindagent-edit-",
             delete=False,
             mode="w",
             encoding="utf-8",

@@ -9,15 +9,21 @@
 #   ./site.sh flu A-seg4_H3 HA 226
 #   ./site.sh mpxv OPG210 100 200
 set -euo pipefail
-DB="virus_variation"
-MYSQL=(mysql -u agent_virus -p'VirusAgent@2026!' "$DB")
+DB="${VIRUS_VARIATION_DB:-virus_variation}"
+ROOT_PASSWORD="${VIRUS_VARIATION_ROOT_PASSWORD:-zhangpf12345}"
+
+mysql_exec() {
+  local sql="$1"
+  printf '%s\n' "$ROOT_PASSWORD" | sudo -S -p '' mysql -uroot "$DB" -e "$sql"
+}
+
 V="${1:-}"; shift || true
 
 case "$V" in
 ncov)
   GENE="${1:?gene}"; S="${2:?site}"; E="${3:-$S}"
   echo "=== NCOV | $GENE | site $S~$E ==="
-  "${MYSQL[@]}" -e "
+  mysql_exec "
     SELECT gene, aminoacid_site,
            CONCAT(ref_aminoacid,aminoacid_site,aminoacid) mut,
            ace2, antibody, aminoacid_substitution
@@ -27,7 +33,7 @@ ncov)
 flu)
   REF="${1:?reference}"; GENE="${2:?gene}"; S="${3:?site}"; E="${4:-$S}"
   echo "=== FLU | $REF | $GENE | site $S~$E ==="
-  "${MYSQL[@]}" -e "
+  mysql_exec "
     SELECT reference, ref_aminoacid_site,
            CONCAT(ref_aminoacid,ref_aminoacid_site,aminoacid) mut,
            anti_risk, receptor_risk_23, receptor_risk_26, matrix_risk
@@ -38,7 +44,7 @@ flu)
 mpxv)
   GENE="${1:?gene}"; S="${2:?site}"; E="${3:-$S}"
   echo "=== MPXV | $GENE | site $S~$E ==="
-  "${MYSQL[@]}" -e "
+  mysql_exec "
     SELECT gene, ref_aminoacid_site,
            CONCAT(ref_aminoacid,ref_aminoacid_site,aminoacid) mut,
            anti_risk, matrix_risk

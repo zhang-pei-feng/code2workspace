@@ -1,121 +1,260 @@
 ---
 name: epietl-api
-description: Query the EpiETL Epidemic Intelligence Data API for global disease surveillance reports, AI-extracted pathogen risk events, data source channels, and curated respiratory/COVID data sources. Use this before respiratory-disease-wide-monitor for source catalog/source URL/source type/structured XLS CSV JSON data source questions, even when the topic is COVID/flu/RSV. Use when users ask for EpiETL, epidemic intelligence, global disease surveillance reports, pathogen risk events, disease outbreak reports by country/source/pathogen/severity, public health channel listings, or source catalogs/source URLs/source types covering Dashboard, Report Collection/报告集合, News, and structured Data sources. Covered examples include WHO COVID-19 dashboards/CSV/hospitalization-ICU data/variant report collection/global risk assessment, China CDC/中国疾控 report collections, Hong Kong CHP/香港卫生防护中心 COVID/flu reports and XLS data including flux_data.xlsx/covidx_data.xlsx, and Taiwan CDC/台湾疾控 COVID report collections.
+description: Query the EpiETL surveillance database for authenticated surveillance reports and AI-extracted risk events, and use the public channel catalogue for source/channel discovery. Use for EpiETL, epidemic intelligence, infectious-disease surveillance reports, pathogen risk events, public-health source catalog/source URL/source type questions, and structured respiratory/COVID/flu source discovery.
 ---
 
-# EpiETL API
+# EpiETL - Database Query API
 
-Use this skill to query EpiETL at `https://epietl.com` for disease surveillance reports, pathogen risk events, channel lists, API health checks, and curated source catalogs.
+You are an AI agent with access to the **EpiETL** surveillance database
+through two HTTP endpoints. This skill is **query-only**: search reports
+and AI-extracted risk events. It does not aggregate, summarize, or reason
+on its own - that is your job once you have the rows.
 
-## Natural Language Triggers
+Data comes from official surveillance channels (WHO, ECDC, US CDC,
+China CDC, Africa CDC, PAHO, national CDCs, ...) and is refreshed daily.
 
-Use this skill when users ask for:
+---
 
-- EpiETL / epidemic intelligence / pathogen risk events / disease outbreak reports.
-- Public health source channels, data source catalogs, source types, source URLs, or whether a source is a dashboard, report collection, news item, or structured data table.
-- Reports or events filtered by country, source, pathogen, disease, severity, or channel.
-- WHO COVID-19 dashboards, WHO COVID CSV data, WHO COVID hospitalization/ICU data, WHO COVID variants/report collections, or WHO COVID global risk assessment.
-- China CDC / 中国疾控 report collections / 报告集合 for national infectious disease surveillance, COVID situation, notifiable diseases, public health events, influenza, or acute respiratory infectious disease sentinel monitoring.
-- Hong Kong CHP / 香港卫生防护中心 / 香港疾控 COVID/influenza surveillance reports or structured XLS data such as `flux_data.xlsx` and `covidx_data.xlsx`.
-- Taiwan CDC / 台湾疾控 COVID report collections / 报告集合.
+## Local helper
 
-Do not use this skill as a replacement for local `virus_variation` SQL queries or pure literature search. If the user asks for a finished written report, gather EpiETL evidence if relevant, then route report writing through `multi-source-report` or the current supervisor report flow.
-
-## Source Types
-
-- `Dashboard`: stable source URL; data is primarily presented as charts.
-- `Report Collection`: usually updated by week or reporting period; data is primarily presented as reports.
-- `News`: source URL is not fixed; content is primarily report/news style.
-- `Data`: relatively structured tables such as Excel, CSV, or JSON.
-
-## Curated Source Coverage
-
-WHO COVID-19:
-
-- Dashboard:
-  - `https://data.who.int/dashboards/covid19/summary`
-  - `https://data.who.int/dashboards/covid19/circulation`
-  - `https://data.who.int/dashboards/covid19/cases`
-  - `https://data.who.int/dashboards/covid19/deaths`
-  - `https://data.who.int/dashboards/covid19/hospitalizations`
-- Report Collection:
-  - `https://data.who.int/dashboards/covid19/variants`
-- Data:
-  - `https://srhdpeuwpubsa.blob.core.windows.net/whdh/COVID/WHO-COVID-19-global-data.csv`
-  - `https://srhdpeuwpubsa.blob.core.windows.net/whdh/COVID/WHO-COVID-19-global-table-data.csv`
-  - `https://srhdpeuwpubsa.blob.core.windows.net/whdh/COVID/WHO-COVID-19-global-hosp-icu-data.csv`
-- News:
-  - `https://www.who.int/publications/m/item/covid-19-global-risk-assessment--version-9`
-
-CN-CDC:
-
-- Report Collection:
-  - `https://www.chinacdc.cn/jksj/jksj01/`
-  - `https://www.chinacdc.cn/jksj/xgbdyq/`
-  - `https://www.chinacdc.cn/jksj/jksj02/`
-  - `https://www.chinacdc.cn/jksj/jksj03/`
-  - `https://www.chinacdc.cn/jksj/jksj04_14249/`
-  - `https://www.chinacdc.cn/jksj/jksj04_14275/`
-
-HK-CDC / Hong Kong CHP:
-
-- Report Collection:
-  - `https://www.chp.gov.hk/sc/resources/29/100148.html`
-- Data:
-  - `https://www.chp.gov.hk/files/xls/flux_data.xlsx`
-  - `https://www.chp.gov.hk/files/xls/covidx_data.xlsx`
-
-TW-CDC:
-
-- Report Collection:
-  - `https://www.cdc.gov.tw/Category/MPage/iclxC6BjjFmtM1oT54EVuw`
-
-## Authentication
-
-- Do not hard-code API keys into skill files or responses.
-- Use `EPIETL_API_KEY` for authenticated report search:
-
-```bash
-export EPIETL_API_KEY="..."
-```
-
-- `/api/reports` requires `Authorization: Bearer <key>`.
-- `/api/risk/events`, `/api/channels`, and `/api/health` are public.
-
-## Quick Start
-
-Run the helper script from this skill:
+Prefer the bundled helper from the repository root instead of hand-writing
+`curl`:
 
 ```bash
 python3 skills/capabilities/epietl-api/scripts/epietl_api.py health
 python3 skills/capabilities/epietl-api/scripts/epietl_api.py channels --limit 20
+python3 skills/capabilities/epietl-api/scripts/epietl_api.py reports --country China --limit 5
 python3 skills/capabilities/epietl-api/scripts/epietl_api.py events --severity critical --pathogen cholera --limit 10
-EPIETL_API_KEY="$EPIETL_API_KEY" python3 skills/capabilities/epietl-api/scripts/epietl_api.py reports --country China --limit 5
 ```
 
-Use `--param key=value` for query parameters not exposed as first-class flags:
+For authenticated endpoints, set `EPIETL_API_KEY` or `EPIETL_X_API_KEY` in
+the environment before running the helper. The helper sends both
+`Authorization: Bearer <key>` and `X-API-Key: <key>` when a key is
+available. It also applies client-side trimming when a collection endpoint
+returns more rows than requested.
 
-```bash
-python3 skills/capabilities/epietl-api/scripts/epietl_api.py events --param pathogen=cholera --param severity=critical --limit 10
-```
+---
 
-## Workflow
+## When to use this skill
 
-1. Clarify the user's target if needed: reports vs risk events vs channels.
-2. Prefer `events` for AI-extracted pathogen risk events. This is public.
-3. Use `reports` for surveillance report search. Ensure `EPIETL_API_KEY` is set before calling it.
-4. Keep `limit` at or below 200 and use `offset` for pagination.
-5. Summarize returned items with dates, country/location, pathogen/disease, severity, source/channel, and source URLs when available.
-6. If the API returns an error, report the HTTP status and response summary rather than inventing results.
+Trigger on user questions such as:
 
-## API Reference
+- _"Find recent surveillance reports about H5N1 in Cambodia."_
+- _"What critical risk events are active right now?"_
+- _"Show ECDC respiratory reports from the last 30 days."_
+- _"Compare dengue activity in Brazil vs. Argentina this month."_
+- _"Which public-health source channels or structured data sources does
+  EpiETL know about?"_
 
-Read `references/api.md` when you need endpoint details, parameters, citation text, or direct `curl` examples.
+Do **not** use this skill for general medical advice, individual diagnosis,
+or non-infectious-disease questions.
 
-## Attribution
+---
 
-When using EpiETL data in a final answer, include a concise source note:
+## Base URL & authentication
 
 ```text
-信息来源：EpiETL (https://epietl.com), developed and maintained by Greater Bay Area Center for Bioinformation (GBACB). Original surveillance data belongs to the respective public health agencies listed in the source records.
+Base URL:  https://epietl.com
+Header:    Authorization: Bearer epietl_<token>
+           (X-API-Key: epietl_<token> is also accepted)
+Get a key: https://epietl.com/?tab=api  ->  API Keys
 ```
+
+If the user has not provided a key and the task needs `reports` or
+`events`, ask for one before calling those endpoints. The public
+`channels` and `health` endpoints can be used without a key for source
+catalogue discovery and connectivity checks.
+
+---
+
+## Endpoints
+
+Authenticated `reports` and `events` endpoints return the same envelope:
+
+```json
+{
+  "total": 739,
+  "limit": 50,
+  "offset": 0,
+  "items": [ /* rows */ ]
+}
+```
+
+### 1. `GET /api/reports` - surveillance reports
+
+Search the report catalogue. Results are paginated, sorted by `synced_at`
+descending.
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `country` | string | - | Country / region name (fuzzy match) |
+| `organization` | string | - | Source organization name (fuzzy match) |
+| `period_from` | `YYYY-MM-DD` | - | `publish_date >= period_from` |
+| `period_to` | `YYYY-MM-DD` | - | `publish_date <= period_to` |
+| `keyword` | string | - | Title / content keyword (fuzzy match) |
+| `limit` | int (1-200) | 50 | Page size |
+| `offset` | int | 0 | Pagination offset |
+
+```bash
+curl -H "Authorization: Bearer YOUR_KEY" \
+  "https://epietl.com/api/reports?country=China&limit=5"
+```
+
+Each row in `items`:
+
+```json
+{
+  "report_id": "2caaf69a17e4d02e",
+  "channel_id": "tw_cdc_covid",
+  "title": "COVID-19 Epidemic Report",
+  "organization": "Taiwan Centers for Disease Control",
+  "country": "China (Taiwan)",
+  "publish_date": "2026-03-30",
+  "epidemiological_week": 12,
+  "period_start": "2026-03-24",
+  "period_end": "2026-03-30",
+  "source_url": "https://...",
+  "pdf_path": "pdf/tw_cdc_covid/.../report.pdf",
+  "char_count": 2717,
+  "extracted_at": "2026-04-05T21:09:09",
+  "synced_at": "2026-04-05T21:47:00"
+}
+```
+
+### 2. `GET /api/risk/events` - AI-extracted risk events
+
+Search structured risk events distilled from the reports above. Ordered
+by `period_end` desc, then severity priority.
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `country` | string | - | Country name (fuzzy) |
+| `severity` | `critical` \| `high` \| `medium` \| `low` | - | Risk level |
+| `risk_category` | `respiratory` \| `vector_borne` \| `other` | - | Category |
+| `pathogen` | string | - | Pathogen name (fuzzy) |
+| `period_from` | `YYYY-MM-DD` | - | `period_start >= period_from` |
+| `period_to` | `YYYY-MM-DD` | - | `period_end <= period_to` |
+| `limit` | int (1-200) | 50 | Page size |
+| `offset` | int | 0 | Pagination offset |
+
+```bash
+curl -H "Authorization: Bearer YOUR_KEY" \
+  "https://epietl.com/api/risk/events?severity=critical&pathogen=cholera"
+```
+
+Each row in `items`:
+
+```json
+{
+  "title": "Cholera outbreak across multiple African countries",
+  "severity": "critical",
+  "category": "other",
+  "pathogen": "Vibrio cholerae",
+  "summary": "Ongoing cholera outbreak with high case counts...",
+  "country": "Dem. Rep. Congo",
+  "epi_week": "2026-W07",
+  "period_start": "2026-02-08",
+  "period_end": "2026-02-15",
+  "regions": ["Dem. Rep. Congo", "Mozambique", "Angola"],
+  "source_url": "https://...",
+  "source_org": "Africa CDC"
+}
+```
+
+### 3. `GET /api/channels` - public channel catalogue
+
+This public endpoint returns monitored sources with `channel_id`,
+organization, country, source type, base URL, and sync metadata. Use it
+when the user asks about source catalogues, source URLs, source types, or
+which organization strings to use in report queries.
+
+```bash
+python3 skills/capabilities/epietl-api/scripts/epietl_api.py channels --limit 20
+```
+
+---
+
+## Query cookbook
+
+Map natural-language asks to one or two calls. Substitute real dates
+(today minus N days) where you see `YYYY-MM-DD`.
+
+- **"What surveillance reports has China published in the last 30 days?"**
+  `GET /api/reports?country=China&period_from=YYYY-MM-DD&limit=50`
+
+- **"Any critical-severity risk events worldwide right now?"**
+  `GET /api/risk/events?severity=critical&limit=50`
+
+- **"Recent dengue activity in Brazil?"**
+  `GET /api/risk/events?country=Brazil&pathogen=dengue&period_from=YYYY-MM-DD`
+
+- **"Find original reports mentioning H5N1."**
+  `GET /api/reports?keyword=H5N1&limit=10`
+
+- **"What has ECDC published about respiratory illness?"**
+  `GET /api/reports?organization=ECDC&keyword=respiratory&limit=20`
+
+- **"Vector-borne risks in Latin America."**
+  Iterate per country, e.g.
+  `GET /api/risk/events?country=Brazil&risk_category=vector_borne` and combine.
+
+- **"Pull every match, not just the first page."**
+  Loop with `offset += limit` until `len(items) < limit`. Hard cap of 200 per page.
+
+- **"Just give me titles and dates, no PDF text."**
+  Default response already excludes full markdown - no extra parameter
+  needed, and `char_count` tells you how big the body would be.
+
+When the user asks for an analysis ("compare X and Y", "what's new this
+week", "is there an outbreak in Z"), make **2-4 targeted calls** and
+synthesize. Do not try to one-shot it with a single broad query.
+
+---
+
+## Errors
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `400` | Bad query (e.g. malformed date) | Show the message and retry with fixed params |
+| `401` | Missing / invalid key | Ask the user for a valid `epietl_<token>` |
+| `429` | Rate-limited (default 100 req/min per key) | Back off, then retry |
+| `5xx` | Server error | Retry once; otherwise surface the failure |
+
+---
+
+## Citation rule
+
+Every factual claim in your answer **must** cite the originating report
+through `items[].source_url` and `items[].source_org` (for events) or
+`items[].source_url` and `items[].organization` (for reports). Do not
+invent figures, dates, or source institutions.
+
+**Per-claim citation** (inline, for each fact you quote):
+
+> Malawi reported a 204% increase in cholera cases in early April
+> ([Africa CDC, 2026-04-09](https://example.org/africa-cdc-report)).
+
+**Overall attribution** (include verbatim whenever you produce a
+report, summary, or research artifact built on this data):
+
+> Data sourced from EpiETL (https://epietl.com), developed and
+> maintained by Greater Bay Area Center for Bioinformation (GBACB).
+> Original surveillance data published by respective national and
+> international public health agencies; see individual report source
+> URLs for details.
+
+---
+
+## More
+
+- **Interactive docs + key management:**
+  [https://epietl.com/?tab=api](https://epietl.com/?tab=api) - see every
+  parameter, copy-pasteable curl, and create / revoke keys there.
+- **Channel catalogue (public, no key required):**
+  `GET https://epietl.com/api/channels` returns every monitored source
+  with its `channel_id`, organization, country, and last sync time. Use
+  it to learn which `organization` strings will match.
+- **Honesty:** data is AI-extracted from public surveillance reports;
+  always verify critical claims against `source_url`. Do not claim
+  access to private datasets. Cite both **EpiETL** and the original
+  agency in research contexts.

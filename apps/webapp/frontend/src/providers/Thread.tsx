@@ -60,7 +60,7 @@ function adaptThread(summary: WebThreadSummary): Thread {
       cwd: summary.cwd ?? undefined,
       active_status: summary.active_status,
       assistant_id: summary.assistant_id,
-      code2workspace_model_spec: summary.model_spec ?? undefined,
+      epimindagent_model_spec: summary.model_spec ?? undefined,
     },
     values: summary.initial_prompt
       ? {

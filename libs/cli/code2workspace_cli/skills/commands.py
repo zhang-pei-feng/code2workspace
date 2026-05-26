@@ -353,7 +353,7 @@ description: "{description}"
 # (Warning: SKILL.md files exceeding 10 MB are silently skipped at load time.)
 # Optional fields per Agent Skills spec:
 # license: Apache-2.0
-# compatibility: Designed for Code2Workspace CLI
+# compatibility: Designed for EpiMindAgent CLI
 # metadata:
 #   author: your-org
 #   version: "1.0"

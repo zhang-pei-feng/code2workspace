@@ -38,10 +38,10 @@ logger = logging.getLogger(__name__)
 
 
 def _set_or_clear_server_env(name: str, value: str | None) -> None:
-    """Set or clear a `CODE2WORKSPACE_CLI_SERVER_*` environment variable.
+    """Set or clear an `EPIMINDAGENT_CLI_SERVER_*` environment variable.
 
     Args:
-        name: Suffix after `CODE2WORKSPACE_CLI_SERVER_`.
+        name: Suffix after `EPIMINDAGENT_CLI_SERVER_`.
         value: String value to set, or `None` to clear the variable.
     """
     key = f"{SERVER_ENV_PREFIX}{name}"
@@ -52,7 +52,7 @@ def _set_or_clear_server_env(name: str, value: str | None) -> None:
 
 
 def _apply_server_config(config: ServerConfig) -> None:
-    """Write a `ServerConfig` to `CODE2WORKSPACE_CLI_SERVER_*` env vars.
+    """Write a `ServerConfig` to `EPIMINDAGENT_CLI_SERVER_*` env vars.
 
     Uses `ServerConfig.to_env()` so that the set of variables and their
     serialization format are defined in one place (the `ServerConfig` dataclass)
@@ -126,7 +126,7 @@ def _write_checkpointer(work_dir: Path) -> None:
 
     The generated module reads the DB path env var at runtime so the path
     is never baked into generated source. This is consistent with the
-    `CODE2WORKSPACE_CLI_SERVER_*` env-var communication pattern used elsewhere.
+    `EPIMINDAGENT_CLI_SERVER_*` env-var communication pattern used elsewhere.
 
     Args:
         work_dir: Server working directory.
@@ -177,7 +177,7 @@ def _write_pyproject(work_dir: Path) -> None:
     """
     cli_dir = Path(__file__).parent.parent
     content = f"""[project]
-name = "code2workspace-server-runtime"
+name = "epimindagent-server-runtime"
 version = "0.0.1"
 requires-python = ">=3.11"
 dependencies = [
@@ -268,7 +268,7 @@ async def start_server_and_get_agent(
     )
     _apply_server_config(config)
 
-    work_dir = Path(tempfile.mkdtemp(prefix="code2workspace_server_"))
+    work_dir = Path(tempfile.mkdtemp(prefix="epimindagent_server_"))
     _scaffold_workspace(work_dir)
 
     server = ServerProcess(

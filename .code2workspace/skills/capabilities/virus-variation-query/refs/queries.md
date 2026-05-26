@@ -1,6 +1,6 @@
 # SQL 查询模板集
 
-`virus_variation` 风险库和数据治理智能体 `covid_data` 库的常用 SQL 查询模板。
+`virus_variation` 主库和可选 `covid19_data` 历史镜像的常用 SQL 查询模板。
 
 ## 新冠 ncov_amino_acid_risk
 
@@ -29,15 +29,13 @@ FROM ncov_amino_acid_risk GROUP BY gene ORDER BY escape2plus DESC;
 
 ---
 
-## 数据治理库 covid_data
+## 谱系/导入表
 
-优先用配置驱动入口执行，避免泄露 MySQL 密码：
+默认在 `virus_variation` 中查询；只有需要对照历史镜像时才改查 `covid19_data`。
 
 ```bash
-cd "$DATA_GOVERNANCE_AGENT_ROOT" && PYTHONPATH=src .venv/bin/python - <<'PY'
-from data_governance_mvp.local_db import execute_sql
-print(execute_sql("""SELECT COUNT(*) FROM ncov_lineage_mutations;""", batch=True))
-PY
+printf '%s\n' 'zhangpf12345' | sudo -S -p '' mysql -uroot virus_variation \
+  -e "SELECT COUNT(*) FROM ncov_lineage_mutations;"
 ```
 
 ### 谱系 Spike/RBD 突变
@@ -184,7 +182,7 @@ FROM mpxv_variation;
 ## 导出 CSV
 
 ```bash
-mysql -u agent_virus -p'VirusAgent@2026!' virus_variation --batch --silent \
+printf '%s\n' 'zhangpf12345' | sudo -S -p '' mysql -uroot virus_variation --batch --silent \
   -e "SELECT gene,aminoacid_site,ref_aminoacid,aminoacid,ace2,antibody
       FROM ncov_amino_acid_risk WHERE antibody>=2" \
   | sed 's/\t/,/g' > /tmp/ncov_escape.csv

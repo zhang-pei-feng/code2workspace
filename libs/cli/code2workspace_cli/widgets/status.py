@@ -1,4 +1,4 @@
-"""Status bar widget for code2workspace-cli."""
+"""Status bar widget for EpiMindAgent CLI."""
 
 from __future__ import annotations
 

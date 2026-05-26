@@ -9,7 +9,7 @@ Examples:
  init_skill.py my-api-helper --path skills/private
  init_skill.py custom-skill --path /custom/location
 
-For code2workspace CLI:
+For EpiMindAgent CLI:
  init_skill.py my-skill --path ~/.code2workspace/agent/skills
 """
 
@@ -332,7 +332,7 @@ def main():
         print(" init_skill.py my-new-skill --path skills/public")
         print(" init_skill.py my-api-helper --path skills/private")
         print(" init_skill.py custom-skill --path /custom/location")
-        print("\nFor code2workspace CLI:")
+        print("\nFor EpiMindAgent CLI:")
         print(" init_skill.py my-skill --path ~/.code2workspace/agent/skills")
         sys.exit(1)
 

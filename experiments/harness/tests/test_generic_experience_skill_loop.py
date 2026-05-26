@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from code2workspace_cli.generic_experience_store import (
+    experience_table_path,
     rebuild_distilled_guidance as actual_rebuild_distilled_guidance,
 )
 from code2workspace_cli.generic_experience_store import write_record as actual_write_record
@@ -18,7 +19,6 @@ from experiments.harness.generic_orchestration_harness.core import (
     Proposal,
     RunLayout,
     SplitScore,
-    Surface,
 )
 from experiments.harness.generic_orchestration_harness.runner import (
     _export_accepted_candidate_experience,
@@ -79,17 +79,6 @@ def test_export_accepted_candidate_experience_writes_records_and_generated_skill
         output_root=tmp_path / "runs",
         max_iterations=1,
         max_parallel_cases=1,
-        proposer_command=None,
-        proposer_max_runtime_minutes=1,
-        surfaces={
-            "generic_family": Surface(
-                name="generic_family",
-                kind="workspace_file",
-                target=".code2workspace/skills/orchestration/supervisor-guidance/references/families/generic_qa.md",
-                filename="generic_qa.md",
-                base_value="base\n",
-            )
-        },
         cases=(
             GenericCase(
                 case_id="generic-train",
@@ -134,7 +123,7 @@ def test_export_accepted_candidate_experience_writes_records_and_generated_skill
     )
     candidate = CandidateEvaluation(
         variant="iter-001",
-        proposal=Proposal(changed_surfaces=("generic_family",), workspace_dir=str(tmp_path), summary="improve"),
+        proposal=Proposal(changed_surfaces=(), workspace_dir=str(tmp_path), summary="improve"),
         train=SplitScore(
             split="train",
             variant="iter-001",
@@ -187,6 +176,9 @@ def test_export_accepted_candidate_experience_writes_records_and_generated_skill
 
     assert written
     assert written[0].exists()
+    table = json.loads(experience_table_path(tmp_path).read_text(encoding="utf-8"))
+    assert table["total_instance_count"] == 1
+    assert table["entries"][0]["instance_paths"] == [written[0].relative_to(tmp_path).as_posix()]
     assert (tmp_path / ".code2workspace/skills/orchestration/generic-experience/generated/generic_orchestration_experience.md").exists()
 
 
@@ -285,3 +277,6 @@ def test_sync_experience_skill_from_historical_run_root(
 
     assert len(written) == 1
     assert written[0].exists()
+    table = json.loads(experience_table_path(tmp_path).read_text(encoding="utf-8"))
+    assert table["total_instance_count"] == 1
+    assert table["entries"][0]["instance_paths"] == [written[0].relative_to(tmp_path).as_posix()]

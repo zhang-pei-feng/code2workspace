@@ -1,4 +1,4 @@
-"""Textual widgets for code2workspace-cli.
+"""Textual widgets for EpiMindAgent CLI.
 
 Import directly from submodules, e.g.:
 

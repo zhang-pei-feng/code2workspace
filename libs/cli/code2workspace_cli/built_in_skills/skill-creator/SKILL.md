@@ -2,18 +2,18 @@
 name: skill-creator
 description: "Guide for creating effective skills that extend agent capabilities with specialized knowledge, workflows, or tool integrations. Use this skill when the user asks to: (1) create a new skill, (2) make a skill, (3) build a skill, (4) set up a skill, (5) initialize a skill, (6) scaffold a skill, (7) update or modify an existing skill, (8) validate a skill, (9) learn about skill structure, (10) understand how skills work, or (11) get guidance on skill design patterns. Trigger on phrases like \"create a skill\", \"new skill\", \"make a skill\", \"skill for X\", \"how do I create a skill\", or \"help me build a skill\"."
 license: MIT
-compatibility: designed for code2workspace-cli
+compatibility: designed for EpiMindAgent CLI
 ---
 
 # Skill Creator
 
-### Skill Location for Code2Workspace
+### Skill Location for EpiMindAgent
 
-The code2workspace CLI loads skills from five sources, listed here from lowest to highest precedence:
+The EpiMindAgent CLI loads skills from five sources, listed here from lowest to highest precedence:
 
 | # | Directory | Scope | Notes |
 |---|-----------|-------|-------|
-| 0 | `<package>/built_in_skills/` | Built-in | Ships with code2workspace CLI |
+| 0 | `<package>/built_in_skills/` | Built-in | Ships with EpiMindAgent CLI |
 | 1 | `~/.code2workspace/<agent>/skills/` | User (code2workspace alias) | Default for `code2workspace skills create` |
 | 2 | `~/.agents/skills/` | User | Shared across agent tools |
 | 3 | `.code2workspace/skills/` | Project (code2workspace alias) | Default for `code2workspace skills create --project` |
@@ -284,7 +284,7 @@ Usage:
 scripts/init_skill.py <skill-name> --path <output-directory>
 ```
 
-For code2workspace CLI, use any of the skill directories listed in "Skill Location for Code2Workspace" above:
+For EpiMindAgent CLI, use any of the skill directories listed in "Skill Location for EpiMindAgent" above:
 
 ```bash
 # User skills (default)

@@ -82,7 +82,7 @@ export function buildProviderFromTemplate(
   const key = template.provider_key ?? `relay_${relayIndex}`;
   const label = template.provider_key ? template.label : `自定义中转 ${relayIndex}`;
   const apiKeyEnv =
-    template.api_key_env ?? `CODE2WORKSPACE_CLI_${key.toUpperCase()}_API_KEY`;
+    template.api_key_env ?? `EPIMINDAGENT_CLI_${key.toUpperCase()}_API_KEY`;
   return normalizeProviderForEditor({
     key,
     label,

@@ -33,13 +33,13 @@ def _print_option_section(*lines: str, title: str = "Options") -> None:
 
 
 def show_help() -> None:
-    """Show top-level help information for the code2workspace CLI."""
+    """Show top-level help information for the EpiMindAgent CLI."""
     editable_path = _get_editable_install_path()
     install_type = f" (local: {escape(editable_path)})" if editable_path else ""
     banner_color = theme.PRIMARY_DEV if _is_editable_install() else theme.PRIMARY
     console.print()
     console.print(
-        f"[bold {banner_color}]code2workspace-cli[/bold {banner_color}]"
+        f"[bold {banner_color}]EpiMindAgent CLI[/bold {banner_color}]"
         f" v{__version__}{install_type}"
     )
     console.print()
@@ -50,27 +50,27 @@ def show_help() -> None:
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
     console.print(
-        "  code2workspace [OPTIONS]                           Start interactive thread"
+        "  EpiMindAgent [OPTIONS]                           Start interactive thread"
     )
-    console.print("  code2workspace agents <list|reset>                 Manage agents")
+    console.print("  EpiMindAgent agents <list|reset>                 Manage agents")
     console.print(
-        "  code2workspace skills <list|create|info|delete>    Manage agent skills"
-    )
-    console.print(
-        "  code2workspace threads <list|delete>               Manage conversation threads"
+        "  EpiMindAgent skills <list|create|info|delete>    Manage agent skills"
     )
     console.print(
-        "  code2workspace update                              Check for and install updates"
+        "  EpiMindAgent threads <list|delete>               Manage conversation threads"
+    )
+    console.print(
+        "  EpiMindAgent update                              Check for and install updates"
     )
     console.print()
     console.print("[bold]Deploy (beta):[/bold]", style=theme.PRIMARY)
     console.print(
-        "  code2workspace init [NAME]                  Scaffold a new deploy project"
+        "  EpiMindAgent init [NAME]                  Scaffold a new deploy project"
     )
     console.print(
-        "  code2workspace dev    --config code2workspace.toml  Run a local dev server"
+        "  EpiMindAgent dev    --config code2workspace.toml  Run a local dev server"
     )
-    console.print("  code2workspace deploy --config code2workspace.toml  Bundle and deploy")
+    console.print("  EpiMindAgent deploy --config code2workspace.toml  Bundle and deploy")
     console.print()
 
     console.print("[bold]Options:[/bold]", style=theme.PRIMARY)
@@ -86,7 +86,10 @@ def show_help() -> None:
     console.print("  -m, --message TEXT         Initial prompt to auto-submit on start")
     console.print("  --skill NAME              Invoke a skill when the session starts")
     console.print(
-        "  -y, --auto-approve         Auto-approve all tool calls (toggle: Shift+Tab)"
+        "  -y, --auto-approve         Start with tool auto-approve enabled (default)"
+    )
+    console.print(
+        "  --no-auto-approve          Start in manual approval mode (toggle: Shift+Tab)"
     )
     console.print("  --sandbox TYPE             Remote sandbox for execution")
     console.print(
@@ -118,40 +121,45 @@ def show_help() -> None:
         "  --json                     Emit machine-readable JSON for commands"
     )
     console.print(
-        "  -S, --shell-allow-list CMDS  Restrict default shell access: comma-separated cmds, 'recommended', or 'all'"
+        "  -S, --shell-allow-list CMDS  Restrict shell access: cmds, "
+        "'recommended', or 'all'"
+    )
+    console.print(
+        "                             In TUI, restrictive lists start manual mode "
+        "unless -y is explicit"
     )
     console.print("  --default-model [MODEL]    Set, show, or manage the default model")
     console.print("  --clear-default-model      Clear the default model")
     console.print(
         "  --update                   Check for and install updates, then exit"
     )
-    console.print("  -v, --version              Show code2workspace CLI and SDK versions")
+    console.print("  -v, --version              Show EpiMindAgent CLI and SDK versions")
     console.print("  -h, --help                 Show this help message and exit")
     console.print()
 
     console.print("[bold]Non-Interactive Mode:[/bold]", style=theme.PRIMARY)
     console.print(
-        "  code2workspace -n 'Summarize README.md'     # Run task (no local shell access)",
+        "  EpiMindAgent -n 'Summarize README.md'     # Run task (no local shell access)",
         style=theme.MUTED,
     )
     console.print(
-        "  code2workspace -n 'List files' -S recommended  # Use safe commands",
+        "  EpiMindAgent -n 'List files' -S recommended  # Use safe commands",
         style=theme.MUTED,
     )
     console.print(
-        "  code2workspace -n 'Search logs' -S ls,cat,grep # Specify list",
+        "  EpiMindAgent -n 'Search logs' -S ls,cat,grep # Specify list",
         style=theme.MUTED,
     )
     console.print(
-        "  code2workspace -n 'Fix tests' -S all           # Any command",
+        "  EpiMindAgent -n 'Fix tests' -S all           # Any command",
         style=theme.MUTED,
     )
     console.print(
-        "  cat prompt.txt | code2workspace --stdin -q      # Explicit stdin",
+        "  cat prompt.txt | EpiMindAgent --stdin -q      # Explicit stdin",
         style=theme.MUTED,
     )
     console.print(
-        "  code2workspace --skill code-review -m 'review this patch'",
+        "  EpiMindAgent --skill code-review -m 'review this patch'",
         style=theme.MUTED,
     )
     console.print()
@@ -164,7 +172,7 @@ def show_list_help() -> None:
     """
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace list [options]")
+    console.print("  EpiMindAgent list [options]")
     console.print()
     console.print(
         "List all agents found in ~/.code2workspace/. Each agent has its own",
@@ -176,8 +184,8 @@ def show_list_help() -> None:
     _print_option_section()
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace list")
-    console.print("  code2workspace list --json")
+    console.print("  EpiMindAgent list")
+    console.print("  EpiMindAgent list --json")
     console.print()
 
 
@@ -185,7 +193,7 @@ def show_agents_help() -> None:
     """Show help information for the `agents` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace agents <command> [options]")
+    console.print("  EpiMindAgent agents <command> [options]")
     console.print()
     console.print("[bold]Commands:[/bold]", style=theme.PRIMARY)
     console.print("  list|ls           List all agents")
@@ -194,9 +202,9 @@ def show_agents_help() -> None:
     _print_option_section()
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace agents list")
-    console.print("  code2workspace agents reset --agent coder")
-    console.print("  code2workspace agents reset --agent coder --target researcher")
+    console.print("  EpiMindAgent agents list")
+    console.print("  EpiMindAgent agents reset --agent coder")
+    console.print("  EpiMindAgent agents reset --agent coder --target researcher")
     console.print()
 
 
@@ -204,7 +212,7 @@ def show_reset_help() -> None:
     """Show help information for the `reset` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace reset --agent NAME [--target SRC]")
+    console.print("  EpiMindAgent reset --agent NAME [--target SRC]")
     console.print()
     console.print(
         "Restore an agent's AGENTS.md to the built-in default, or copy",
@@ -223,9 +231,9 @@ def show_reset_help() -> None:
     )
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace reset --agent coder")
-    console.print("  code2workspace reset --agent coder --target researcher")
-    console.print("  code2workspace reset --agent coder --dry-run")
+    console.print("  EpiMindAgent reset --agent coder")
+    console.print("  EpiMindAgent reset --agent coder --target researcher")
+    console.print("  EpiMindAgent reset --agent coder --dry-run")
     console.print()
 
 
@@ -237,7 +245,7 @@ def show_skills_help() -> None:
     """
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills <command> [options]")
+    console.print("  EpiMindAgent skills <command> [options]")
     console.print()
     console.print("[bold]Commands:[/bold]", style=theme.PRIMARY)
     console.print("  list|ls           List all available skills")
@@ -252,14 +260,14 @@ def show_skills_help() -> None:
     )
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills list")
-    console.print("  code2workspace skills list --project")
-    console.print("  code2workspace skills create my-skill")
-    console.print("  code2workspace skills create my-skill --agent myagent")
-    console.print("  code2workspace skills info my-skill")
-    console.print("  code2workspace skills delete my-skill")
-    console.print("  code2workspace skills delete my-skill --force --project")
-    console.print("  code2workspace skills delete -h")
+    console.print("  EpiMindAgent skills list")
+    console.print("  EpiMindAgent skills list --project")
+    console.print("  EpiMindAgent skills create my-skill")
+    console.print("  EpiMindAgent skills create my-skill --agent myagent")
+    console.print("  EpiMindAgent skills info my-skill")
+    console.print("  EpiMindAgent skills delete my-skill")
+    console.print("  EpiMindAgent skills delete my-skill --force --project")
+    console.print("  EpiMindAgent skills delete -h")
     console.print()
     console.print(
         "[bold]Skill directories (highest precedence first):[/bold]",
@@ -279,7 +287,7 @@ def show_skills_list_help() -> None:
     """Show help information for the `skills list` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills list [options]")
+    console.print("  EpiMindAgent skills list [options]")
     console.print()
     _print_option_section(
         "  --agent NAME            Agent identifier (default: agent)",
@@ -287,9 +295,9 @@ def show_skills_list_help() -> None:
     )
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills list")
-    console.print("  code2workspace skills list --project")
-    console.print("  code2workspace skills list --json")
+    console.print("  EpiMindAgent skills list")
+    console.print("  EpiMindAgent skills list --project")
+    console.print("  EpiMindAgent skills list --json")
     console.print()
 
 
@@ -297,7 +305,7 @@ def show_skills_create_help() -> None:
     """Show help information for the `skills create` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills create <name> [options]")
+    console.print("  EpiMindAgent skills create <name> [options]")
     console.print()
     _print_option_section(
         "  --agent NAME            Agent identifier (default: agent)",
@@ -306,8 +314,8 @@ def show_skills_create_help() -> None:
     )
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills create web-research")
-    console.print("  code2workspace skills create my-skill --project")
+    console.print("  EpiMindAgent skills create web-research")
+    console.print("  EpiMindAgent skills create my-skill --project")
     console.print()
 
 
@@ -315,7 +323,7 @@ def show_skills_info_help() -> None:
     """Show help information for the `skills info` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills info <name> [options]")
+    console.print("  EpiMindAgent skills info <name> [options]")
     console.print()
     _print_option_section(
         "  --agent NAME            Agent identifier (default: agent)",
@@ -323,8 +331,8 @@ def show_skills_info_help() -> None:
     )
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills info web-research")
-    console.print("  code2workspace skills info my-skill --project")
+    console.print("  EpiMindAgent skills info web-research")
+    console.print("  EpiMindAgent skills info my-skill --project")
     console.print()
 
 
@@ -332,7 +340,7 @@ def show_skills_delete_help() -> None:
     """Show help information for the `skills delete` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills delete <name> [options]")
+    console.print("  EpiMindAgent skills delete <name> [options]")
     console.print()
     _print_option_section(
         "  --agent NAME            Agent identifier (default: agent)",
@@ -342,10 +350,10 @@ def show_skills_delete_help() -> None:
     )
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace skills delete old-skill")
-    console.print("  code2workspace skills delete old-skill --force")
-    console.print("  code2workspace skills delete old-skill --project")
-    console.print("  code2workspace skills delete old-skill --dry-run")
+    console.print("  EpiMindAgent skills delete old-skill")
+    console.print("  EpiMindAgent skills delete old-skill --force")
+    console.print("  EpiMindAgent skills delete old-skill --project")
+    console.print("  EpiMindAgent skills delete old-skill --dry-run")
     console.print()
 
 
@@ -353,7 +361,7 @@ def show_update_help() -> None:
     """Show help information for the `update` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace update [options]")
+    console.print("  EpiMindAgent update [options]")
     console.print()
     console.print(
         "Check for and install CLI updates from PyPI.",
@@ -362,8 +370,8 @@ def show_update_help() -> None:
     _print_option_section()
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace update")
-    console.print("  code2workspace update --json")
+    console.print("  EpiMindAgent update")
+    console.print("  EpiMindAgent update --json")
     console.print()
 
 
@@ -375,7 +383,7 @@ def show_threads_help() -> None:
     """
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace threads <command> [options]")
+    console.print("  EpiMindAgent threads <command> [options]")
     console.print()
     console.print("[bold]Commands:[/bold]", style=theme.PRIMARY)
     console.print("  list|ls           List all threads")
@@ -384,10 +392,10 @@ def show_threads_help() -> None:
     _print_option_section()
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace threads list")
-    console.print("  code2workspace threads list -n 10")
-    console.print("  code2workspace threads list --agent mybot")
-    console.print("  code2workspace threads delete abc123")
+    console.print("  EpiMindAgent threads list")
+    console.print("  EpiMindAgent threads list -n 10")
+    console.print("  EpiMindAgent threads list --agent mybot")
+    console.print("  EpiMindAgent threads delete abc123")
     console.print()
 
 
@@ -395,15 +403,15 @@ def show_threads_delete_help() -> None:
     """Show help information for the `threads delete` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace threads delete <ID> [options]")
+    console.print("  EpiMindAgent threads delete <ID> [options]")
     console.print()
     _print_option_section(
         "  --dry-run               Show what would happen without making changes",
     )
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace threads delete abc123")
-    console.print("  code2workspace threads delete abc123 --dry-run")
+    console.print("  EpiMindAgent threads delete abc123")
+    console.print("  EpiMindAgent threads delete abc123 --dry-run")
     console.print()
 
 
@@ -411,7 +419,7 @@ def show_threads_list_help() -> None:
     """Show help information for the `threads list` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace threads list [options]")
+    console.print("  EpiMindAgent threads list [options]")
     console.print()
     _print_option_section(
         "  --agent NAME              Filter by agent name",
@@ -424,10 +432,10 @@ def show_threads_list_help() -> None:
     )
     console.print()
     console.print("[bold]Examples:[/bold]", style=theme.PRIMARY)
-    console.print("  code2workspace threads list")
-    console.print("  code2workspace threads list -n 10")
-    console.print("  code2workspace threads list --agent mybot")
-    console.print("  code2workspace threads list --branch main -v")
-    console.print("  code2workspace threads list --sort created --limit 50")
-    console.print("  code2workspace threads list -r")
+    console.print("  EpiMindAgent threads list")
+    console.print("  EpiMindAgent threads list -n 10")
+    console.print("  EpiMindAgent threads list --agent mybot")
+    console.print("  EpiMindAgent threads list --branch main -v")
+    console.print("  EpiMindAgent threads list --sort created --limit 50")
+    console.print("  EpiMindAgent threads list -r")
     console.print()

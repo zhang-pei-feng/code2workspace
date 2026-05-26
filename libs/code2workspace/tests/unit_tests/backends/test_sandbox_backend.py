@@ -578,7 +578,7 @@ def test_edit_command_template_format() -> None:
 
     assert "python3 -c" in cmd
     assert payload_b64 in cmd
-    assert "__CODE2WORKSPACE_EDIT_EOF__" in cmd
+    assert "__EPIMINDAGENT_EDIT_EOF__" in cmd
 
 
 def test_edit_command_template_ends_with_newline() -> None:

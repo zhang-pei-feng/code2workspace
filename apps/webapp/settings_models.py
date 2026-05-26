@@ -28,7 +28,7 @@ _TEMPLATES: tuple[dict[str, Any], ...] = (
         "label": "OpenAI",
         "provider_kind": "native",
         "base_url": None,
-        "api_key_env": "CODE2WORKSPACE_CLI_OPENAI_API_KEY",
+        "api_key_env": "EPIMINDAGENT_CLI_OPENAI_API_KEY",
     },
     {
         "key": "gemini",
@@ -36,7 +36,7 @@ _TEMPLATES: tuple[dict[str, Any], ...] = (
         "label": "Gemini",
         "provider_kind": "native",
         "base_url": None,
-        "api_key_env": "CODE2WORKSPACE_CLI_GOOGLE_API_KEY",
+        "api_key_env": "EPIMINDAGENT_CLI_GOOGLE_API_KEY",
     },
     {
         "key": "deepseek",
@@ -44,7 +44,7 @@ _TEMPLATES: tuple[dict[str, Any], ...] = (
         "label": "DeepSeek",
         "provider_kind": "openai_compatible",
         "base_url": "https://api.deepseek.com",
-        "api_key_env": "CODE2WORKSPACE_CLI_DEEPSEEK_API_KEY",
+        "api_key_env": "EPIMINDAGENT_CLI_DEEPSEEK_API_KEY",
     },
     {
         "key": "kimi",
@@ -52,7 +52,7 @@ _TEMPLATES: tuple[dict[str, Any], ...] = (
         "label": "Kimi",
         "provider_kind": "openai_compatible",
         "base_url": "https://api.moonshot.cn/v1",
-        "api_key_env": "CODE2WORKSPACE_CLI_KIMI_API_KEY",
+        "api_key_env": "EPIMINDAGENT_CLI_KIMI_API_KEY",
     },
     {
         "key": "glm",
@@ -60,7 +60,7 @@ _TEMPLATES: tuple[dict[str, Any], ...] = (
         "label": "GLM",
         "provider_kind": "openai_compatible",
         "base_url": "https://open.bigmodel.cn/api/paas/v4/",
-        "api_key_env": "CODE2WORKSPACE_CLI_GLM_API_KEY",
+        "api_key_env": "EPIMINDAGENT_CLI_GLM_API_KEY",
     },
     {
         "key": "qwen",
@@ -68,7 +68,7 @@ _TEMPLATES: tuple[dict[str, Any], ...] = (
         "label": "Qwen",
         "provider_kind": "openai_compatible",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "CODE2WORKSPACE_CLI_QWEN_API_KEY",
+        "api_key_env": "EPIMINDAGENT_CLI_QWEN_API_KEY",
     },
     {
         "key": "custom_openai_compatible",

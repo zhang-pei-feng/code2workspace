@@ -42,5 +42,6 @@
     "suppress": [
       "tavily"
     ]
-  }
+  },
+  "recent": "openai:gpt-5.4"
 }

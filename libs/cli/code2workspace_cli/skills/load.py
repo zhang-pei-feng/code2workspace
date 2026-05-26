@@ -132,7 +132,7 @@ def list_skills(
                     if source_label == "built-in":
                         extra["metadata"] = {
                             **skill["metadata"],
-                            "code2workspace-cli-version": _cli_version,
+                            "epimindagent-cli-version": _cli_version,
                         }
                     extended = cast("ExtendedSkillMetadata", {**skill, **extra})
                     all_skills[skill["name"]] = extended

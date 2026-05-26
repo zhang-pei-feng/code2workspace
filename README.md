@@ -1,6 +1,6 @@
-# code2workspace
+# EpiMindAgent
 
-`code2workspace` is the implementation base for a graduation project about
+`EpiMindAgent` is the implementation base for a graduation project about
 agent orchestration with LangGraph and LangChain. This branch packages the
 current supervisor-first agent as a portable question-answering build.
 
@@ -86,13 +86,13 @@ use, such as `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
 default model selection remain defined in `backend/config/agent_models.json`.
 
 ```bash
-uv run --project libs/cli code2workspace
+uv run --project libs/cli EpiMindAgent
 ```
 
 Single non-interactive task:
 
 ```bash
-uv run --project libs/cli code2workspace -n "Reply with OK only." -q
+uv run --project libs/cli EpiMindAgent -n "Reply with OK only." -q
 ```
 
 ## Near-Term Direction
@@ -104,4 +104,4 @@ The current sequence is:
 3. keep the remaining web API backend minimal unless a new frontend is
    intentionally introduced
 4. feed the resulting evidence into the thesis narrative and future
-   `code2workspace` pipeline work
+   `EpiMindAgent` pipeline work

@@ -1,4 +1,4 @@
-"""Update lifecycle for `code2workspace-cli`.
+"""Update lifecycle for `EpiMindAgent CLI`.
 
 Handles version checking against PyPI (with caching), install-method detection,
 auto-upgrade execution, config-driven opt-in/out, and "what's new" tracking.
@@ -105,7 +105,7 @@ def get_latest_version(
     bypass_cache: bool = False,
     include_prereleases: bool = False,
 ) -> str | None:
-    """Fetch the latest code2workspace-cli version from PyPI, with caching.
+    """Fetch the latest EpiMindAgent CLI version from PyPI, with caching.
 
     Results are cached to `CACHE_FILE` to avoid repeated network calls.
     The cache stores both the latest stable and pre-release versions so a
@@ -175,7 +175,7 @@ def get_latest_version(
 
 
 def is_update_available(*, bypass_cache: bool = False) -> tuple[bool, str | None]:
-    """Check whether a newer version of code2workspace-cli is available.
+    """Check whether a newer version of EpiMindAgent CLI is available.
 
     When the installed version is a pre-release (e.g. `0.0.35a1`),
     pre-release versions on PyPI are included in the comparison so alpha
@@ -225,7 +225,7 @@ def is_update_available(*, bypass_cache: bool = False) -> tuple[bool, str | None
 
 
 def detect_install_method() -> InstallMethod:
-    """Detect how `code2workspace-cli` was installed.
+    """Detect how `EpiMindAgent CLI` was installed.
 
     Checks `sys.prefix` against known paths for uv and Homebrew.
 
@@ -252,7 +252,7 @@ def detect_install_method() -> InstallMethod:
 
 
 def upgrade_command(method: InstallMethod | None = None) -> str:
-    """Return the shell command to upgrade `code2workspace-cli`.
+    """Return the shell command to upgrade `EpiMindAgent CLI`.
 
     Falls back to the pip command for unrecognized install methods.
 
@@ -267,7 +267,7 @@ def upgrade_command(method: InstallMethod | None = None) -> str:
 
 
 async def perform_upgrade() -> tuple[bool, str]:
-    """Attempt to upgrade `code2workspace-cli` using the detected install method.
+    """Attempt to upgrade `EpiMindAgent CLI` using the detected install method.
 
     Only tries the detected method — does not fall back to other package
     managers to avoid cross-environment contamination.
@@ -326,14 +326,14 @@ async def perform_upgrade() -> tuple[bool, str]:
 def is_update_check_enabled() -> bool:
     """Return whether update checks are enabled.
 
-    Checks `CODE2WORKSPACE_CLI_NO_UPDATE_CHECK` env var and the `[update].check` key
+    Checks `EPIMINDAGENT_CLI_NO_UPDATE_CHECK` env var and the `[update].check` key
     in `config.toml`.
 
     Defaults to enabled.
     """
-    from code2workspace_cli._env_vars import NO_UPDATE_CHECK
+    from code2workspace_cli._env_vars import NO_UPDATE_CHECK, get_env
 
-    if os.environ.get(NO_UPDATE_CHECK):
+    if get_env(NO_UPDATE_CHECK):
         return False
     return _read_update_config().get("check", True)
 
@@ -341,19 +341,19 @@ def is_update_check_enabled() -> bool:
 def is_auto_update_enabled() -> bool:
     """Return whether auto-update is enabled.
 
-    Opt-in via `CODE2WORKSPACE_CLI_AUTO_UPDATE=1` env var or
+    Opt-in via `EPIMINDAGENT_CLI_AUTO_UPDATE=1` env var or
     `[update].auto_update = true` in `config.toml`.
 
     Defaults to `False`.
 
     Always disabled for editable installs.
     """
-    from code2workspace_cli._env_vars import AUTO_UPDATE
+    from code2workspace_cli._env_vars import AUTO_UPDATE, get_env
     from code2workspace_cli.config import _is_editable_install
 
     if _is_editable_install():
         return False
-    if os.environ.get(AUTO_UPDATE, "").lower() in {"1", "true", "yes"}:
+    if (get_env(AUTO_UPDATE, "") or "").lower() in {"1", "true", "yes"}:
         return True
     return _read_update_config().get("auto_update", False)
 

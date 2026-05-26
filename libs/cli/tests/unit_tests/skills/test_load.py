@@ -652,9 +652,9 @@ class TestListSkillsBuiltIn:
         assert creator["source"] == "built-in"
         assert len(creator["description"]) > 0
         assert creator["license"] == "MIT"
-        assert creator["compatibility"] == "designed for code2workspace-cli"
-        assert "code2workspace-cli-version" in creator["metadata"]
-        assert creator["metadata"]["code2workspace-cli-version"] == _cli_version
+        assert creator["compatibility"] == "designed for EpiMindAgent CLI"
+        assert "epimindagent-cli-version" in creator["metadata"]
+        assert creator["metadata"]["epimindagent-cli-version"] == _cli_version
 
     def test_real_remember_skill_ships(self) -> None:
         """Verify the actual built-in remember SKILL.md exists and loads."""
@@ -674,9 +674,9 @@ class TestListSkillsBuiltIn:
         assert remember["source"] == "built-in"
         assert len(remember["description"]) > 0
         assert remember["license"] == "MIT"
-        assert remember["compatibility"] == "designed for code2workspace-cli"
-        assert "code2workspace-cli-version" in remember["metadata"]
-        assert remember["metadata"]["code2workspace-cli-version"] == _cli_version
+        assert remember["compatibility"] == "designed for EpiMindAgent CLI"
+        assert "epimindagent-cli-version" in remember["metadata"]
+        assert remember["metadata"]["epimindagent-cli-version"] == _cli_version
 
     def test_oserror_in_one_source_does_not_break_others(self, tmp_path: Path) -> None:
         """An OSError in one source should not prevent other sources from loading.

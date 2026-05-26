@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import inspect
 import json
+import logging
 import os
 import re
 import shutil
@@ -45,6 +46,7 @@ from code2workspace.orchestration_runtime import (
     decide_supervisor_step,
     execute_graph_round,
 )
+from code2workspace_cli._env_vars import get_env
 from code2workspace_cli.benchmark_result_store import (
     BENCHMARK_RECORD_NAME,
     BenchmarkResultSearchFilter,
@@ -65,15 +67,19 @@ from code2workspace_cli.supervisor_capabilities import (
     node_guidance_lines,
 )
 
+logger = logging.getLogger(__name__)
+
 SUPERVISOR_REPORT_NODE_TIMEOUT_SECONDS = 20 * 60
 """Default timeout for report-family supervisor worker nodes, in seconds."""
 
-SUPERVISOR_REPORT_NODE_TIMEOUT_ENV = "CODE2WORKSPACE_SUPERVISOR_REPORT_NODE_TIMEOUT_SECONDS"
+SUPERVISOR_REPORT_NODE_TIMEOUT_ENV = (
+    "EPIMINDAGENT_SUPERVISOR_REPORT_NODE_TIMEOUT_SECONDS"
+)
 SUPERVISOR_WORKER_HEARTBEAT_SECONDS = 15.0
 """Default heartbeat interval for long-running supervisor worker nodes, in seconds."""
 
-SUPERVISOR_WORKER_HEARTBEAT_ENV = "CODE2WORKSPACE_SUPERVISOR_WORKER_HEARTBEAT_SECONDS"
-SUPERVISOR_RAW_WORKER_TRACE_ENV = "CODE2WORKSPACE_SUPERVISOR_RAW_WORKER_TRACE"
+SUPERVISOR_WORKER_HEARTBEAT_ENV = "EPIMINDAGENT_SUPERVISOR_WORKER_HEARTBEAT_SECONDS"
+SUPERVISOR_RAW_WORKER_TRACE_ENV = "EPIMINDAGENT_SUPERVISOR_RAW_WORKER_TRACE"
 """Set to 0/false/no/off to skip verbose per-worker raw trace artifacts."""
 
 if TYPE_CHECKING:
@@ -196,15 +202,15 @@ class SupervisorWorkerRunner:
 
 
 _BENCHMARK_REGISTER_AGENTIC_SELECTION_ENV = (
-    "CODE2WORKSPACE_BENCHMARK_REGISTER_AGENTIC_SELECTION"
+    "EPIMINDAGENT_BENCHMARK_REGISTER_AGENTIC_SELECTION"
 )
 _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION = "1"
 _BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_ENV = (
-    "CODE2WORKSPACE_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS"
+    "EPIMINDAGENT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS"
 )
 _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS = 45.0
 _INTERNAL_BENCHMARK_REGISTER_SELECTOR_TAG = "internal_benchmark_register_selector"
-_BENCHMARK_CASE_AGENTIC_REPAIR_ENV = "CODE2WORKSPACE_BENCHMARK_CASE_AGENTIC_REPAIR"
+_BENCHMARK_CASE_AGENTIC_REPAIR_ENV = "EPIMINDAGENT_BENCHMARK_CASE_AGENTIC_REPAIR"
 _DEFAULT_BENCHMARK_CASE_AGENTIC_REPAIR = "1"
 _BENCHMARK_REGISTER_AGENTIC_CANDIDATE_LIMIT = 12
 _BENCHMARK_PREBUILD_TIMEOUT_SECONDS = 14400
@@ -230,21 +236,31 @@ _TRANSIENT_WORKER_ERROR_MARKERS = (
     "Error code: 504",
 )
 _GENERIC_WORKER_TRANSIENT_RETRIES = 2
-_WORKER_PROMPT_MODE_ENV = "CODE2WORKSPACE_SUPERVISOR_WORKER_PROMPT_MODE"
+_WORKER_PROMPT_MODE_ENV = "EPIMINDAGENT_SUPERVISOR_WORKER_PROMPT_MODE"
 _DEFAULT_WORKER_PROMPT_MODE = "messages"
 _URL_RE = re.compile(r"https?://[^\s<>)\"']+")
-_LOCAL_ABSOLUTE_PATH_RE = re.compile(
-    r"(?<![\w:])/(?:[^\s`'\"<>{}\[\]，。；：！？、]+)"
-)
+_LOCAL_ABSOLUTE_PATH_RE = re.compile(r"(?<![\w:])/(?:[^\s`'\"<>{}\[\]，。；：！？、]+)")
 _GITHUB_REPO_MATERIALIZE_TIMEOUT_SECONDS = 1800
 _LOCAL_REPO_SEARCH_MAX_DEPTH = 4
+_INTERACTIVE_CONFIRMATION_FOOTER = "如果你觉得可以，我就开始执行任务。"
+_INTERACTIVE_PROPOSAL_SYSTEM_PROMPT = f"""你是 EpiMindAgent 交互入口的方案确认助手。
+
+当前阶段只负责澄清意图和整理执行方案，不执行任务。
+
+规则：
+- 不调用工具、不运行命令、不读取或修改文件，也不要声称已经检查过本地文件。
+- 如果用户意图不清楚，先指出需要确认的信息，并给出一个可调整的初步方案。
+- 如果用户正在修改需求，整合最近对话形成新的方案。
+- 输出要简洁、直接，默认使用中文。
+- 最后一行必须是：{_INTERACTIVE_CONFIRMATION_FOOTER}
+"""
 _CODE_REPOSITORY_ROOT = Path(__file__).resolve().parents[3] / "code_repository"
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_SHARED_OPERATOR_STORE_ROOT_ENV = "CODE2WORKSPACE_SHARED_OPERATOR_STORE_ROOT"
-_SHARED_DATASET_STORE_ROOT_ENV = "CODE2WORKSPACE_SHARED_DATASET_STORE_ROOT"
+_SHARED_OPERATOR_STORE_ROOT_ENV = "EPIMINDAGENT_SHARED_OPERATOR_STORE_ROOT"
+_SHARED_DATASET_STORE_ROOT_ENV = "EPIMINDAGENT_SHARED_DATASET_STORE_ROOT"
 _BENCHMARK_COMPARISON_HISTORY_STORE_DIR = "benchmark_comparison_history_store"
 _SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT_ENV = (
-    "CODE2WORKSPACE_SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT"
+    "EPIMINDAGENT_SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT"
 )
 _BENCHMARK_HISTORY_BACKFILL_ATTEMPTED: set[Path] = set()
 
@@ -325,7 +341,9 @@ class SQLiteCaseIndex:
         request_path = run_dir / "request.json"
         decision_path = run_dir / "final_decision.json"
         summary_path = run_dir / "final_summary.md"
-        if not (request_path.exists() and decision_path.exists() and summary_path.exists()):
+        if not (
+            request_path.exists() and decision_path.exists() and summary_path.exists()
+        ):
             return None
         request_payload = json.loads(request_path.read_text(encoding="utf-8"))
         decision_payload = json.loads(decision_path.read_text(encoding="utf-8"))
@@ -359,7 +377,9 @@ async def run_supervisor_orchestration(
     index.rebuild_from_workspace_root(case_root)
     retrieved_cases = index.search(task, limit=3)
 
-    _write_json(run_dir / "request.json", {"task": task, "workspace_root": str(workspace_root)})
+    _write_json(
+        run_dir / "request.json", {"task": task, "workspace_root": str(workspace_root)}
+    )
     _write_json(
         run_dir / "retrieved_cases.json",
         {"cases": [item.to_dict() for item in retrieved_cases]},
@@ -430,24 +450,34 @@ async def run_supervisor_orchestration(
             _emit_supervisor_event(
                 kind="generic_plan_created",
                 run_dir=str(run_dir),
-                has_spawned_subgraph=bool(round_result.node_results[0].spawned_subgraph),
+                has_spawned_subgraph=bool(
+                    round_result.node_results[0].spawned_subgraph
+                ),
             )
             continue
         if task_type == "report" and _report_init_round_finished(round_result):
             _emit_supervisor_event(
                 kind="report_plan_created",
                 run_dir=str(run_dir),
-                has_spawned_subgraph=bool(round_result.node_results[0].spawned_subgraph),
+                has_spawned_subgraph=bool(
+                    round_result.node_results[0].spawned_subgraph
+                ),
             )
             continue
-        if task_type == "benchmark" and _benchmark_register_round_finished(round_result):
+        if task_type == "benchmark" and _benchmark_register_round_finished(
+            round_result
+        ):
             _emit_supervisor_event(
                 kind="benchmark_register_completed",
                 round_index=round_result.graph.round_index,
-                selected_tools=_benchmark_selected_tools_from_round_result(round_result),
+                selected_tools=_benchmark_selected_tools_from_round_result(
+                    round_result
+                ),
             )
             continue
-        final_decision = decide_supervisor_step(round_result, max_rounds=effective_max_rounds)
+        final_decision = decide_supervisor_step(
+            round_result, max_rounds=effective_max_rounds
+        )
         if final_decision.decision == "replan":
             continue
         break
@@ -476,6 +506,8 @@ async def run_supervisor_orchestration(
             rounds=rounds,
             refusal=exc,
         )
+    if task_type == "report":
+        user_response = _normalize_report_markdown_syntax(user_response)
     user_response = _relativize_user_facing_paths(user_response, run_dir=run_dir)
     (run_dir / "final_summary.md").write_text(final_summary, encoding="utf-8")
     (run_dir / "final_response.md").write_text(user_response, encoding="utf-8")
@@ -529,6 +561,7 @@ def build_supervisor_enabled_agent(
     worker_subagents: list[SupervisorWorkerSubagent] | None = None,
     classifier_model=None,
     enable_generic_ask_user: bool = True,
+    interactive_confirmation_mode: bool = False,
     checkpointer: Checkpointer | None = None,
 ) -> Pregel:
     """Wrap the base agent with supervisor routing for supported task types."""
@@ -539,13 +572,31 @@ def build_supervisor_enabled_agent(
         if _latest_human_route_mode(state) == "fallback":
             return Command(goto="fallback")
         if task:
+            if interactive_confirmation_mode and not _latest_human_requests_execution(
+                state
+            ):
+                return Command(goto="proposal")
             return Command(goto="supervise")
         return Command(goto="fallback")
 
+    async def proposal(state: AgentState) -> dict[str, object]:
+        text = await _render_interactive_execution_proposal(
+            state=state,
+            proposal_model=classifier_model,
+        )
+        return {"messages": [AIMessage(content=text)]}
+
     async def supervise(state: AgentState) -> dict[str, object]:
-        task = _latest_human_text(state) or ""
+        task = (
+            _confirmed_interactive_execution_task(state)
+            if interactive_confirmation_mode
+            else _latest_human_text(state)
+        ) or ""
         try:
-            task_classification, classification_details = await classify_task_with_model(
+            (
+                task_classification,
+                classification_details,
+            ) = await classify_task_with_model(
                 model=classifier_model,
                 task=task,
             )
@@ -566,7 +617,7 @@ def build_supervisor_enabled_agent(
             classification_details=classification_details,
             generic_approach_selector=(
                 _select_generic_approach_with_user
-                if enable_generic_ask_user
+                if enable_generic_ask_user and not interactive_confirmation_mode
                 else None
             ),
         )
@@ -575,9 +626,11 @@ def build_supervisor_enabled_agent(
     builder = StateGraph(AgentState)
     builder.add_node("route", route)
     builder.add_node("fallback", fallback_agent)
+    builder.add_node("proposal", proposal)
     builder.add_node("supervise", supervise)
     builder.add_edge(START, "route")
     builder.add_edge("fallback", END)
+    builder.add_edge("proposal", END)
     builder.add_edge("supervise", END)
     return builder.compile(checkpointer=checkpointer)
 
@@ -595,7 +648,8 @@ def _generic_analysis_round_finished(round_result: Any) -> bool:
 def _benchmark_register_round_finished(round_result: Any) -> bool:
     return (
         round_result.graph.task_type == "benchmark"
-        and [item.node_id for item in round_result.node_results] in (["register"], ["retry_register"])
+        and [item.node_id for item in round_result.node_results]
+        in (["register"], ["retry_register"])
         and round_result.node_results[0].status in {"completed", "partial"}
         and bool(_benchmark_selected_tools_from_round_result(round_result))
     )
@@ -610,7 +664,9 @@ def _benchmark_selected_tools_from_round_result(round_result: Any) -> list[str]:
     selected_tools = payload.get("selected_tools")
     if not isinstance(selected_tools, list):
         return []
-    return [str(item) for item in selected_tools if isinstance(item, str) and item.strip()]
+    return [
+        str(item) for item in selected_tools if isinstance(item, str) and item.strip()
+    ]
 
 
 def _report_init_round_finished(round_result: Any) -> bool:
@@ -638,7 +694,9 @@ def _build_generic_approach_options(
     task: str,
     analysis_summary: str,
 ) -> list[GenericApproachOption]:
-    task_hint = task.strip().splitlines()[0][:120] if task.strip() else "the requested task"
+    task_hint = (
+        task.strip().splitlines()[0][:120] if task.strip() else "the requested task"
+    )
     analysis_hint = analysis_summary.strip()[:220] or "The analysis node completed."
     return [
         GenericApproachOption(
@@ -782,7 +840,9 @@ def _new_run_dir(workspace_root: Path) -> Path:
         return candidate
 
 
-def _maybe_prepare_worker_inputs(*, node: TaskNode, workspace_root: Path) -> WorkerResult | None:
+def _maybe_prepare_worker_inputs(
+    *, node: TaskNode, workspace_root: Path
+) -> WorkerResult | None:
     metadata = node.metadata if isinstance(node.metadata, dict) else {}
     if metadata.get("task_type") != "github2workspace":
         return None
@@ -863,7 +923,9 @@ def _reuse_github2workspace_successful_wdl_smoke(
     )
 
 
-def _prepare_github2workspace_repo(*, node: TaskNode, workspace_root: Path) -> WorkerResult | None:
+def _prepare_github2workspace_repo(
+    *, node: TaskNode, workspace_root: Path
+) -> WorkerResult | None:
     metadata = node.metadata if isinstance(node.metadata, dict) else {}
     task = str(metadata.get("task", "")).strip()
     spec = _github_repo_spec_from_task(task)
@@ -964,7 +1026,9 @@ def _prepare_github2workspace_repo(*, node: TaskNode, workspace_root: Path) -> W
                 {
                     "strategy": strategy,
                     "status": "success",
-                    "detail": _trim_repo_materialization_output(completed.stdout, completed.stderr),
+                    "detail": _trim_repo_materialization_output(
+                        completed.stdout, completed.stderr
+                    ),
                 }
             )
             _write_github_repo_materialization_log(
@@ -981,7 +1045,9 @@ def _prepare_github2workspace_repo(*, node: TaskNode, workspace_root: Path) -> W
             {
                 "strategy": strategy,
                 "status": "failed",
-                "detail": _trim_repo_materialization_output(completed.stdout, completed.stderr),
+                "detail": _trim_repo_materialization_output(
+                    completed.stdout, completed.stderr
+                ),
             }
         )
 
@@ -1027,7 +1093,9 @@ def _prepare_github2workspace_repo(*, node: TaskNode, workspace_root: Path) -> W
             {
                 "strategy": "local_clone",
                 "status": "failed",
-                "detail": _trim_repo_materialization_output(completed.stdout, completed.stderr),
+                "detail": _trim_repo_materialization_output(
+                    completed.stdout, completed.stderr
+                ),
             }
         )
     else:
@@ -1067,7 +1135,9 @@ def _prepare_github2workspace_repo(*, node: TaskNode, workspace_root: Path) -> W
     )
 
 
-async def _invoke_worker_agent(*, agent, node: TaskNode, workspace_root: Path) -> WorkerResult:
+async def _invoke_worker_agent(
+    *, agent, node: TaskNode, workspace_root: Path
+) -> WorkerResult:
     prepared = await asyncio.to_thread(
         _maybe_prepare_worker_inputs,
         node=node,
@@ -1100,7 +1170,9 @@ async def _invoke_worker_agent(*, agent, node: TaskNode, workspace_root: Path) -
     )
 
 
-async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path) -> WorkerResult:
+async def _invoke_worker_runnable(
+    *, agent, node: TaskNode, workspace_root: Path
+) -> WorkerResult:
     prompt = _build_worker_prompt(node=node, workspace_root=workspace_root)
     invoke_payload, invoke_kwargs = _build_worker_invoke_request(prompt)
     last_error: Exception | None = None
@@ -1123,7 +1195,9 @@ async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path
                 invoke_kwargs=invoke_kwargs,
                 node=node,
             )
-            _append_raw_worker_message_events(node=node, attempt=attempt + 1, messages=messages)
+            _append_raw_worker_message_events(
+                node=node, attempt=attempt + 1, messages=messages
+            )
             refusal_message = _extract_messages_refusal(messages)
             if refusal_message is not None:
                 raise ModelRefusalError(
@@ -1143,7 +1217,9 @@ async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path
                     "attempt": attempt + 1,
                     "started_at": started_at.isoformat(),
                     "finished_at": finished_at.isoformat(),
-                    "duration_seconds": round((finished_at - started_at).total_seconds(), 3),
+                    "duration_seconds": round(
+                        (finished_at - started_at).total_seconds(), 3
+                    ),
                     "model_name": model_name,
                     "usage": usage,
                     "source_urls": _extract_source_urls_from_messages(messages),
@@ -1162,7 +1238,9 @@ async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path
                     "attempt": attempt + 1,
                     "started_at": started_at.isoformat(),
                     "finished_at": finished_at.isoformat(),
-                    "duration_seconds": round((finished_at - started_at).total_seconds(), 3),
+                    "duration_seconds": round(
+                        (finished_at - started_at).total_seconds(), 3
+                    ),
                     "error": f"{type(exc).__name__}: {exc}",
                 },
             )
@@ -1198,7 +1276,10 @@ async def _invoke_worker_runnable(*, agent, node: TaskNode, workspace_root: Path
                     )
                     last_error = recovery_exc
                     raise
-            if attempt >= _GENERIC_WORKER_TRANSIENT_RETRIES or not _is_transient_worker_exception(exc):
+            if (
+                attempt >= _GENERIC_WORKER_TRANSIENT_RETRIES
+                or not _is_transient_worker_exception(exc)
+            ):
                 raise
             _emit_supervisor_event(
                 kind="worker_retrying",
@@ -1227,8 +1308,14 @@ async def _invoke_report_lane_recovery(
     error: Exception,
     failed_attempt: int,
 ) -> WorkerResult:
-    run_dir = Path(str(node.metadata.get("run_dir", ""))) if isinstance(node.metadata, dict) else Path()
-    raw_trace_path = run_dir / "raw_worker_traces" / f"{node.node_id}.jsonl" if run_dir else Path()
+    run_dir = (
+        Path(str(node.metadata.get("run_dir", "")))
+        if isinstance(node.metadata, dict)
+        else Path()
+    )
+    raw_trace_path = (
+        run_dir / "raw_worker_traces" / f"{node.node_id}.jsonl" if run_dir else Path()
+    )
     tool_activity_path = run_dir / "tool_activity.jsonl" if run_dir else Path()
     recovery_prompt = (
         f"{base_prompt}\n\n"
@@ -1259,7 +1346,9 @@ async def _invoke_report_lane_recovery(
         invoke_kwargs=invoke_kwargs,
         node=node,
     )
-    _append_raw_worker_message_events(node=node, attempt=failed_attempt + 1, messages=messages)
+    _append_raw_worker_message_events(
+        node=node, attempt=failed_attempt + 1, messages=messages
+    )
     refusal_message = _extract_messages_refusal(messages)
     if refusal_message is not None:
         raise ModelRefusalError(
@@ -1377,7 +1466,9 @@ def _record_worker_tool_events(
             state=tool_state,
         )
         if pending_event is not None:
-            _emit_worker_tool_call_event(node=node, event=pending_event, state=tool_state)
+            _emit_worker_tool_call_event(
+                node=node, event=pending_event, state=tool_state
+            )
         event = {
             "event": "worker_tool_result",
             "node_id": node.node_id,
@@ -1450,7 +1541,10 @@ def _pending_tool_call_event_for_result(
     if not tool_call_id:
         return None
     for pending in reversed(state.pending_tool_calls):
-        if pending.get("tool_call_id") != tool_call_id or pending.get("emitted") is True:
+        if (
+            pending.get("tool_call_id") != tool_call_id
+            or pending.get("emitted") is True
+        ):
             continue
         pending["emitted"] = True
         pending["node_id"] = node.node_id
@@ -1492,7 +1586,11 @@ def _extract_messages_refusal(messages: list[object]) -> str | None:
 
 def _message_tool_calls(message: object) -> list[dict[str, object]]:
     tool_calls = getattr(message, "tool_calls", None)
-    normalized_calls = [item for item in tool_calls if isinstance(item, dict)] if isinstance(tool_calls, list) else []
+    normalized_calls = (
+        [item for item in tool_calls if isinstance(item, dict)]
+        if isinstance(tool_calls, list)
+        else []
+    )
     if normalized_calls:
         return normalized_calls
     content_blocks = getattr(message, "content_blocks", None)
@@ -1524,7 +1622,9 @@ def _message_tool_result(
     if not isinstance(message, ToolMessage):
         return None
     tool_call_id = str(getattr(message, "tool_call_id", "") or "")
-    tool_name = str(getattr(message, "name", "") or tool_names_by_id.get(tool_call_id, "unknown"))
+    tool_name = str(
+        getattr(message, "name", "") or tool_names_by_id.get(tool_call_id, "unknown")
+    )
     status = str(getattr(message, "status", "") or "success")
     return {
         "tool_name": tool_name,
@@ -1535,7 +1635,9 @@ def _message_tool_result(
 
 
 def _append_worker_tool_activity(*, node: TaskNode, event: dict[str, object]) -> None:
-    run_dir_raw = node.metadata.get("run_dir") if isinstance(node.metadata, dict) else None
+    run_dir_raw = (
+        node.metadata.get("run_dir") if isinstance(node.metadata, dict) else None
+    )
     if not isinstance(run_dir_raw, str) or not run_dir_raw:
         return
     try:
@@ -1551,7 +1653,7 @@ def _append_tool_activity_event(*, run_dir: Path, event: dict[str, object]) -> N
 
 
 def _raw_worker_trace_enabled() -> bool:
-    value = os.environ.get(SUPERVISOR_RAW_WORKER_TRACE_ENV, "1").strip().lower()
+    value = (get_env(SUPERVISOR_RAW_WORKER_TRACE_ENV, "1") or "1").strip().lower()
     return value not in {"0", "false", "no", "off"}
 
 
@@ -1626,21 +1728,29 @@ def _serialize_worker_message(message: object) -> dict[str, object]:
     return _json_safe(payload)
 
 
-def _worker_message_model_and_usage(messages: list[object]) -> tuple[str | None, dict[str, object] | None]:
+def _worker_message_model_and_usage(
+    messages: list[object],
+) -> tuple[str | None, dict[str, object] | None]:
     model_name: str | None = None
     usage: dict[str, object] | None = None
     for message in reversed(messages):
         response_metadata = getattr(message, "response_metadata", None)
         if isinstance(response_metadata, dict) and model_name is None:
             provider = str(response_metadata.get("model_provider", "") or "").strip()
-            name = str(response_metadata.get("model_name", "") or response_metadata.get("model", "") or "").strip()
+            name = str(
+                response_metadata.get("model_name", "")
+                or response_metadata.get("model", "")
+                or ""
+            ).strip()
             if provider and name:
                 model_name = f"{provider}:{name}"
             elif name:
                 model_name = name
         usage_metadata = getattr(message, "usage_metadata", None)
         if isinstance(usage_metadata, dict) and usage is None:
-            usage = {str(key): _json_safe(value) for key, value in usage_metadata.items()}
+            usage = {
+                str(key): _json_safe(value) for key, value in usage_metadata.items()
+            }
         if model_name is not None and usage is not None:
             break
     return model_name, usage
@@ -1649,7 +1759,9 @@ def _worker_message_model_and_usage(messages: list[object]) -> tuple[str | None,
 def _extract_source_urls_from_messages(messages: list[object]) -> list[str]:
     urls: list[str] = []
     for message in messages:
-        urls.extend(_extract_source_urls_from_object(_serialize_worker_message(message)))
+        urls.extend(
+            _extract_source_urls_from_object(_serialize_worker_message(message))
+        )
     return _dedupe_urls(urls)
 
 
@@ -1837,20 +1949,33 @@ def _build_worker_invoke_request(
 
 
 def _worker_prompt_mode() -> str:
-    return os.environ.get(
-        _WORKER_PROMPT_MODE_ENV,
-        _DEFAULT_WORKER_PROMPT_MODE,
-    ).strip().lower()
+    return (
+        (
+            get_env(
+                _WORKER_PROMPT_MODE_ENV,
+                _DEFAULT_WORKER_PROMPT_MODE,
+            )
+            or _DEFAULT_WORKER_PROMPT_MODE
+        )
+        .strip()
+        .lower()
+    )
 
 
-def _maybe_run_deterministic_worker(*, node: TaskNode, workspace_root: Path) -> WorkerResult | None:
+def _maybe_run_deterministic_worker(
+    *, node: TaskNode, workspace_root: Path
+) -> WorkerResult | None:
     metadata = node.metadata if isinstance(node.metadata, dict) else {}
     if metadata.get("task_type") != "benchmark":
         return None
     if node.node_id in {"register", "retry_register"}:
-        return _run_deterministic_benchmark_register(node=node, workspace_root=workspace_root)
+        return _run_deterministic_benchmark_register(
+            node=node, workspace_root=workspace_root
+        )
     if node.node_id == "summarize":
-        return _run_deterministic_benchmark_summary(node=node, workspace_root=workspace_root)
+        return _run_deterministic_benchmark_summary(
+            node=node, workspace_root=workspace_root
+        )
     if _looks_like_user_delivery_node(node.node_id):
         return None
     if _is_agent_owned_benchmark_case_node(node):
@@ -1980,9 +2105,12 @@ def _write_benchmark_register_agentic_debug(
 
 
 def _benchmark_case_agentic_repair_enabled() -> bool:
-    value = os.environ.get(
-        _BENCHMARK_CASE_AGENTIC_REPAIR_ENV,
-        _DEFAULT_BENCHMARK_CASE_AGENTIC_REPAIR,
+    value = (
+        get_env(
+            _BENCHMARK_CASE_AGENTIC_REPAIR_ENV,
+            _DEFAULT_BENCHMARK_CASE_AGENTIC_REPAIR,
+        )
+        or _DEFAULT_BENCHMARK_CASE_AGENTIC_REPAIR
     ).strip()
     return value.lower() not in {"0", "false", "no", "off"}
 
@@ -2132,7 +2260,9 @@ def _read_text_excerpt(path: Path | None, *, max_chars: int = 4000) -> str:
     return text[-max_chars:]
 
 
-def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Path) -> WorkerResult:
+def _run_deterministic_benchmark_register(
+    *, node: TaskNode, workspace_root: Path
+) -> WorkerResult:
     metadata = node.metadata if isinstance(node.metadata, dict) else {}
     run_dir_raw = metadata.get("run_dir")
     if not isinstance(run_dir_raw, str) or not run_dir_raw.strip():
@@ -2153,11 +2283,11 @@ def _run_deterministic_benchmark_register(*, node: TaskNode, workspace_root: Pat
     }
     benchmark_root_raw = metadata.get("benchmark_root")
     benchmark_root = (
-        benchmark_root_raw.strip()
-        if isinstance(benchmark_root_raw, str)
-        else ""
+        benchmark_root_raw.strip() if isinstance(benchmark_root_raw, str) else ""
     )
-    violating_requested_tools = [tool for tool in selected_tools if tool in excluded_tools]
+    violating_requested_tools = [
+        tool for tool in selected_tools if tool in excluded_tools
+    ]
     if violating_requested_tools:
         return WorkerResult(
             status="failed",
@@ -2487,7 +2617,9 @@ async def _select_benchmark_tools_with_agent(
                 for item in ranked_dataset_candidates
                 if not _dataset_candidate_is_operator_specific(item)
             ]
-            fallback_dataset = generic_ranked[0] if generic_ranked else ranked_dataset_candidates[0]
+            fallback_dataset = (
+                generic_ranked[0] if generic_ranked else ranked_dataset_candidates[0]
+            )
             dataset_options = [fallback_dataset]
             debug_payload["dataset_option_fallback"] = [
                 str(fallback_dataset.get("dataset_id", "")).strip()
@@ -2498,7 +2630,10 @@ async def _select_benchmark_tools_with_agent(
         debug_payload["failure_stage"] = "rank_datasets"
         debug_payload["failure_reason"] = "no_dataset_options"
         return None, debug_payload
-    dataset_candidate, dataset_selection_debug = await _select_benchmark_dataset_with_agent(
+    (
+        dataset_candidate,
+        dataset_selection_debug,
+    ) = await _select_benchmark_dataset_with_agent(
         agent=agent,
         task=task,
         dataset_options=dataset_options,
@@ -2509,7 +2644,9 @@ async def _select_benchmark_tools_with_agent(
         dataset_candidate = dataset_options[0]
         debug_payload["dataset_selection_source"] = "default_first_option"
     else:
-        debug_payload["dataset_selection_source"] = dataset_selection_debug.get("selection_source")
+        debug_payload["dataset_selection_source"] = dataset_selection_debug.get(
+            "selection_source"
+        )
     selected_dataset_id = str(dataset_candidate.get("dataset_id", "")).strip()
     compatible_candidates = [
         item
@@ -2628,7 +2765,9 @@ async def _select_benchmark_tools_with_agent(
         if str(item.get("name", "")).strip()
     ]
     preferred_count = max(1, len(preferred_names))
-    candidate_names = {str(item.get("name", "")).strip() for item in compatible_candidates}
+    candidate_names = {
+        str(item.get("name", "")).strip() for item in compatible_candidates
+    }
     selected_tools = [
         str(item).strip()
         for item in parsed.get("selected_tools", [])
@@ -2641,11 +2780,15 @@ async def _select_benchmark_tools_with_agent(
         debug_payload["agent_attempts"] = attempts
         return None, debug_payload
     explicit_mentions = [
-        name for name in preferred_names if _task_explicitly_mentions_benchmark_tool(task, name)
+        name
+        for name in preferred_names
+        if _task_explicitly_mentions_benchmark_tool(task, name)
     ]
     if explicit_mentions:
         selected_tools = list(dict.fromkeys([*explicit_mentions, *selected_tools]))
-    elif len(preferred_names) > 1 and set(selected_tools).issubset(set(preferred_names)):
+    elif len(preferred_names) > 1 and set(selected_tools).issubset(
+        set(preferred_names)
+    ):
         selected_tools = preferred_names
     elif preferred_count <= 1:
         selected_tools = selected_tools[:1]
@@ -2800,11 +2943,15 @@ async def _select_benchmark_tools_with_agent_exploratory(
         debug_payload["failure_reason"] = "no_valid_selected_tools"
         return None, debug_payload
     explicit_mentions = [
-        name for name in preferred_names if _task_explicitly_mentions_benchmark_tool(task, name)
+        name
+        for name in preferred_names
+        if _task_explicitly_mentions_benchmark_tool(task, name)
     ]
     if explicit_mentions:
         selected_tools = list(dict.fromkeys([*explicit_mentions, *selected_tools]))
-    elif len(preferred_names) > 1 and set(selected_tools).issubset(set(preferred_names)):
+    elif len(preferred_names) > 1 and set(selected_tools).issubset(
+        set(preferred_names)
+    ):
         selected_tools = preferred_names
     elif len(preferred_names) <= 1:
         selected_tools = selected_tools[:1]
@@ -2812,7 +2959,9 @@ async def _select_benchmark_tools_with_agent_exploratory(
         selected_tools = selected_tools[: len(preferred_names)]
 
     selected_operators = [
-        item for item in candidates if str(item.get("name", "")).strip() in set(selected_tools)
+        item
+        for item in candidates
+        if str(item.get("name", "")).strip() in set(selected_tools)
     ]
     raw_tool_dataset_keys = parsed.get("tool_dataset_keys")
     requested_dataset_keys = (
@@ -2860,7 +3009,9 @@ async def _select_benchmark_tools_with_agent_exploratory(
     }
     if len(unique_dataset_keys) == 1 and selected_datasets:
         result_payload["selected_dataset_id"] = unique_dataset_keys[0]
-        result_payload["selected_dataset"] = selected_datasets.get(unique_dataset_keys[0])
+        result_payload["selected_dataset"] = selected_datasets.get(
+            unique_dataset_keys[0]
+        )
     debug_payload["result_preview"] = {
         "dataset_strategy": "per_operator_dataset",
         "dataset_key": result_payload["dataset_key"],
@@ -2898,7 +3049,11 @@ def _resolve_benchmark_selected_tools(
         if dataset_strategy == "shared_dataset"
         else None
     )
-    dataset_key = str(dataset_candidate.get("dataset_id", "")).strip() if dataset_candidate else ""
+    dataset_key = (
+        str(dataset_candidate.get("dataset_id", "")).strip()
+        if dataset_candidate
+        else ""
+    )
     if dataset_candidate is not None:
         candidate_pool = [
             item
@@ -2920,9 +3075,16 @@ def _resolve_benchmark_selected_tools(
         report["excluded_tools"] = sorted(excluded_tools)
         report.setdefault("task", task)
         report.setdefault("dataset_strategy", dataset_strategy)
-        if report.get("dataset_strategy") == "shared_dataset" and not str(report.get("dataset_key", "")).strip():
-            report["dataset_key"] = dataset_key or _benchmark_dataset_hint_from_task(task)
-        if dataset_candidate is not None and not isinstance(report.get("selected_dataset"), dict):
+        if (
+            report.get("dataset_strategy") == "shared_dataset"
+            and not str(report.get("dataset_key", "")).strip()
+        ):
+            report["dataset_key"] = dataset_key or _benchmark_dataset_hint_from_task(
+                task
+            )
+        if dataset_candidate is not None and not isinstance(
+            report.get("selected_dataset"), dict
+        ):
             report["selected_dataset"] = dataset_candidate
         if report.get("dataset_strategy") == "per_operator_dataset":
             raw_map = report.get("tool_dataset_keys")
@@ -2936,18 +3098,25 @@ def _resolve_benchmark_selected_tools(
                 else {}
             )
             if not existing_map:
-                tool_dataset_keys, selected_datasets = _resolve_benchmark_dataset_keys_for_tools(
-                    task=task,
-                    workspace_root=workspace_root,
-                    operator_candidates=candidate_pool,
-                    selected_tools=selected_tools,
-                    excluded_tools=excluded_tools,
-                    benchmark_root=benchmark_root,
+                tool_dataset_keys, selected_datasets = (
+                    _resolve_benchmark_dataset_keys_for_tools(
+                        task=task,
+                        workspace_root=workspace_root,
+                        operator_candidates=candidate_pool,
+                        selected_tools=selected_tools,
+                        excluded_tools=excluded_tools,
+                        benchmark_root=benchmark_root,
+                    )
                 )
                 report["tool_dataset_keys"] = tool_dataset_keys
                 report["selected_datasets"] = selected_datasets
-                unique_dataset_keys = sorted({key for key in tool_dataset_keys.values() if key})
-                if len(unique_dataset_keys) == 1 and not str(report.get("dataset_key", "")).strip():
+                unique_dataset_keys = sorted(
+                    {key for key in tool_dataset_keys.values() if key}
+                )
+                if (
+                    len(unique_dataset_keys) == 1
+                    and not str(report.get("dataset_key", "")).strip()
+                ):
                     report["dataset_key"] = unique_dataset_keys[0]
         report.setdefault("selection_strategy", "agent_operator_store_search")
         report.setdefault("requested_tools", requested_tools)
@@ -2956,21 +3125,25 @@ def _resolve_benchmark_selected_tools(
             [str(path) for path in _candidate_operator_store_roots(workspace_root)],
         )
         report.setdefault("catalog_available", False)
-        if not isinstance(report.get("selected_operators"), list) or not report.get("selected_operators"):
+        if not isinstance(report.get("selected_operators"), list) or not report.get(
+            "selected_operators"
+        ):
             selected_names = set(selected_tools)
             report["selected_operators"] = [
-                item for item in candidate_pool if str(item.get("name", "")).strip() in selected_names
+                item
+                for item in candidate_pool
+                if str(item.get("name", "")).strip() in selected_names
             ]
         return selected_tools, report
     if requested_tools:
         selected_tools = [
-            tool
-            for tool in requested_tools
-            if tool not in excluded_tools
+            tool for tool in requested_tools if tool not in excluded_tools
         ]
         selected_names = set(selected_tools)
         selected_operator_payloads = [
-            item for item in candidate_pool if str(item.get("name", "")).strip() in selected_names
+            item
+            for item in candidate_pool
+            if str(item.get("name", "")).strip() in selected_names
         ]
         final_strategy = "metadata_selected_tools"
     else:
@@ -3007,13 +3180,15 @@ def _resolve_benchmark_selected_tools(
     if dataset_candidate is not None:
         report["selected_dataset"] = dataset_candidate
     if dataset_strategy == "per_operator_dataset" and selected_tools:
-        tool_dataset_keys, selected_datasets = _resolve_benchmark_dataset_keys_for_tools(
-            task=task,
-            workspace_root=workspace_root,
-            operator_candidates=selected_operator_payloads,
-            selected_tools=selected_tools,
-            excluded_tools=excluded_tools,
-            benchmark_root=benchmark_root,
+        tool_dataset_keys, selected_datasets = (
+            _resolve_benchmark_dataset_keys_for_tools(
+                task=task,
+                workspace_root=workspace_root,
+                operator_candidates=selected_operator_payloads,
+                selected_tools=selected_tools,
+                excluded_tools=excluded_tools,
+                benchmark_root=benchmark_root,
+            )
         )
         report["tool_dataset_keys"] = tool_dataset_keys
         report["selected_datasets"] = selected_datasets
@@ -3082,7 +3257,11 @@ def _collect_benchmark_operator_candidates(
             current = candidates.get(name)
             candidate["score"] = score
             candidate["rank"] = rank
-            if current is None or score > current[0] or (score == current[0] and rank < current[1]):
+            if (
+                current is None
+                or score > current[0]
+                or (score == current[0] and rank < current[1])
+            ):
                 candidates[name] = (score, rank, candidate)
     for candidate in _rank_benchmark_operator_records_locally(
         workspace_root=workspace_root,
@@ -3095,7 +3274,11 @@ def _collect_benchmark_operator_candidates(
         score = int(candidate.get("score", 0))
         rank = int(candidate.get("rank", 0))
         current = candidates.get(name)
-        if current is None or score > current[0] or (score == current[0] and rank < current[1]):
+        if (
+            current is None
+            or score > current[0]
+            or (score == current[0] and rank < current[1])
+        ):
             candidates[name] = (score, rank, candidate)
     for candidate in _collect_explicit_benchmark_operator_candidates(
         task=task,
@@ -3109,7 +3292,11 @@ def _collect_benchmark_operator_candidates(
         rank = int(candidate.get("rank", 0))
         candidate["score"] = score
         current = candidates.get(name)
-        if current is None or score > current[0] or (score == current[0] and rank < current[1]):
+        if (
+            current is None
+            or score > current[0]
+            or (score == current[0] and rank < current[1])
+        ):
             candidates[name] = (score, rank, candidate)
     ranked = sorted(
         candidates.values(),
@@ -3126,8 +3313,7 @@ def _collect_benchmark_operator_candidates(
     ]
     if explicitly_named:
         explicit_names = {
-            str(candidate.get("name", "")).strip()
-            for candidate in explicitly_named
+            str(candidate.get("name", "")).strip() for candidate in explicitly_named
         }
         target_count = max(1, limit, len(explicitly_named))
         merged = explicitly_named + [
@@ -3163,7 +3349,9 @@ def _collect_explicit_benchmark_operator_candidates(
             if not name or not _task_explicitly_mentions_benchmark_tool(task, name):
                 continue
             current = candidates.get(name)
-            if current is None or int(candidate.get("_score", 0)) > int(current.get("_score", 0)):
+            if current is None or int(candidate.get("_score", 0)) > int(
+                current.get("_score", 0)
+            ):
                 candidate["rank"] = -100
                 candidates[name] = candidate
     return list(candidates.values())
@@ -3219,7 +3407,11 @@ def _benchmark_dataset_hint_from_task(task: str) -> str:
 
 
 def _benchmark_dataset_strategy_for_task(task: str) -> str:
-    return "shared_dataset" if _benchmark_task_requires_shared_dataset(task) else "per_operator_dataset"
+    return (
+        "shared_dataset"
+        if _benchmark_task_requires_shared_dataset(task)
+        else "per_operator_dataset"
+    )
 
 
 def _benchmark_task_requires_shared_dataset(task: str) -> bool:
@@ -3292,9 +3484,12 @@ def _resolve_benchmark_dataset_keys_for_tools(
             if requested_key
             else None
         )
-        if dataset_candidate is not None and not _benchmark_operator_compatible_with_dataset(
-            operator=operator,
-            dataset_candidate=dataset_candidate,
+        if (
+            dataset_candidate is not None
+            and not _benchmark_operator_compatible_with_dataset(
+                operator=operator,
+                dataset_candidate=dataset_candidate,
+            )
         ):
             dataset_candidate = None
         if dataset_candidate is None:
@@ -3333,7 +3528,9 @@ def _find_benchmark_dataset_candidate_by_id(
     for store_root in _candidate_dataset_store_roots(workspace_root):
         try:
             store = DatasetStore(store_root)
-            rows = store.search_datasets(DatasetSearchFilter(dataset_id=dataset_id, limit=3))
+            rows = store.search_datasets(
+                DatasetSearchFilter(dataset_id=dataset_id, limit=3)
+            )
         except sqlite3.Error:
             continue
         for row in rows:
@@ -3404,10 +3601,17 @@ def _resolve_benchmark_dataset_candidate(
         ]
         compatibility_count = len(compatible)
         shared_candidate = (
-            1 if compatibility_count >= 2 or compatibility_count == len(relevant_operators) else 0
+            1
+            if compatibility_count >= 2
+            or compatibility_count == len(relevant_operators)
+            else 0
         )
-        generic_bonus = 0 if _dataset_candidate_is_operator_specific(dataset_candidate) else 1
-        query_score = _benchmark_dataset_task_score(task=task, dataset_candidate=dataset_candidate)
+        generic_bonus = (
+            0 if _dataset_candidate_is_operator_specific(dataset_candidate) else 1
+        )
+        query_score = _benchmark_dataset_task_score(
+            task=task, dataset_candidate=dataset_candidate
+        )
         return (
             compatibility_count,
             shared_candidate,
@@ -3420,9 +3624,9 @@ def _resolve_benchmark_dataset_candidate(
         key=score,
         reverse=True,
     )
-    multi_tool_benchmark = (
-        len(relevant_operators) >= 2 or _task_requests_multiple_benchmark_tools(task)
-    )
+    multi_tool_benchmark = len(
+        relevant_operators
+    ) >= 2 or _task_requests_multiple_benchmark_tools(task)
     if multi_tool_benchmark:
         generic_ranked = [
             candidate
@@ -3436,7 +3640,9 @@ def _resolve_benchmark_dataset_candidate(
     return best if score(best)[0] > 0 else None
 
 
-def _dataset_candidate_is_operator_specific(dataset_candidate: dict[str, object]) -> bool:
+def _dataset_candidate_is_operator_specific(
+    dataset_candidate: dict[str, object],
+) -> bool:
     compatible_ids = [
         str(item).strip()
         for item in dataset_candidate.get("compatible_operator_ids", [])
@@ -3498,20 +3704,25 @@ def _benchmark_operator_compatible_with_dataset(
     if not required_media:
         unique_paths_by_media: dict[str, set[str]] = {}
         for item in input_rows:
-            media = _normalize_benchmark_media_type(str(item.get("media_type", "")).strip())
+            media = _normalize_benchmark_media_type(
+                str(item.get("media_type", "")).strip()
+            )
             if not media or media == "json":
                 continue
-            path_key = str(item.get("path", "")).strip() or str(item.get("name", "")).strip()
+            path_key = (
+                str(item.get("path", "")).strip() or str(item.get("name", "")).strip()
+            )
             if path_key:
                 unique_paths_by_media.setdefault(media, set()).add(path_key)
         required_media = {
-            media: len(paths)
-            for media, paths in unique_paths_by_media.items()
-            if paths
+            media: len(paths) for media, paths in unique_paths_by_media.items() if paths
         }
     if not required_media:
         return False
-    return all(dataset_media_counts.get(media, 0) >= count for media, count in required_media.items())
+    return all(
+        dataset_media_counts.get(media, 0) >= count
+        for media, count in required_media.items()
+    )
 
 
 def _operator_inputs_look_paired_end(inputs: list[dict[str, object]]) -> bool:
@@ -3649,7 +3860,11 @@ def _benchmark_task_path_candidates(task: str, *, workspace_root: Path) -> list[
         candidates = (
             [raw_path]
             if raw_path.is_absolute()
-            else [workspace_root / raw_path, _PROJECT_ROOT / raw_path, Path.cwd() / raw_path]
+            else [
+                workspace_root / raw_path,
+                _PROJECT_ROOT / raw_path,
+                Path.cwd() / raw_path,
+            ]
         )
         for candidate in candidates:
             if not candidate.exists():
@@ -3688,7 +3903,9 @@ def _benchmark_data_files_from_path(path: Path) -> list[Path]:
 
 def _benchmark_user_dataset_candidate_from_path(path: Path) -> dict[str, object] | None:
     files = _benchmark_data_files_from_path(path)
-    files = [item for item in files if _benchmark_media_type_from_path(item) != "json"] or files
+    files = [
+        item for item in files if _benchmark_media_type_from_path(item) != "json"
+    ] or files
     if not files:
         return None
     dataset_root = path if path.is_dir() else path.parent
@@ -3735,7 +3952,8 @@ def _benchmark_user_dataset_candidate_from_path(path: Path) -> dict[str, object]
             summary,
             "files: "
             + " ".join(
-                f"{item['name']} {item['media_type']} {item['uri']}" for item in file_records
+                f"{item['name']} {item['media_type']} {item['uri']}"
+                for item in file_records
             ),
         ]
     )
@@ -3774,7 +3992,9 @@ def _benchmark_user_dataset_candidates(
     return candidates
 
 
-def _benchmark_dataset_task_score(*, task: str, dataset_candidate: dict[str, object]) -> int:
+def _benchmark_dataset_task_score(
+    *, task: str, dataset_candidate: dict[str, object]
+) -> int:
     dataset_text = "\n".join(
         [
             str(dataset_candidate.get("dataset_id", "")),
@@ -3786,7 +4006,10 @@ def _benchmark_dataset_task_score(*, task: str, dataset_candidate: dict[str, obj
     )
     score = _benchmark_query_overlap_score(query=task, searchable_text=dataset_text)
     score += _benchmark_intent_hint_score(query=task, searchable_text=dataset_text)
-    if str(dataset_candidate.get("source_kind", "")).strip() == "user_provided_external_path":
+    if (
+        str(dataset_candidate.get("source_kind", "")).strip()
+        == "user_provided_external_path"
+    ):
         score += 1000
         task_lower_for_source = task.casefold()
         if any(
@@ -3809,31 +4032,64 @@ def _benchmark_dataset_task_score(*, task: str, dataset_candidate: dict[str, obj
     domain = str(dataset_candidate.get("domain", "")).strip().casefold()
 
     wants_assembly = any(marker in task_lower for marker in ("assembly", "组装"))
-    wants_long_read = any(marker in task_lower for marker in ("long read", "长读", "pacbio", "hifi", "ont", "nanopore"))
-    wants_short_read = any(marker in task_lower for marker in ("short read", "短读", "paired-end", "paired end"))
-    wants_circrna = any(marker in task_lower for marker in ("circrna", "circ", "环状rna"))
-    wants_immune_escape = any(marker in task_lower for marker in ("immune", "escape", "免疫逃逸"))
+    wants_long_read = any(
+        marker in task_lower
+        for marker in ("long read", "长读", "pacbio", "hifi", "ont", "nanopore")
+    )
+    wants_short_read = any(
+        marker in task_lower
+        for marker in ("short read", "短读", "paired-end", "paired end")
+    )
+    wants_circrna = any(
+        marker in task_lower for marker in ("circrna", "circ", "环状rna")
+    )
+    wants_immune_escape = any(
+        marker in task_lower for marker in ("immune", "escape", "免疫逃逸")
+    )
 
     if wants_assembly:
-        if domain == "genome_assembly" or "assembly" in dataset_lower or "组装" in dataset_lower:
+        if (
+            domain == "genome_assembly"
+            or "assembly" in dataset_lower
+            or "组装" in dataset_lower
+        ):
             score += 20
         else:
             score -= 20
     if wants_long_read:
-        if any(marker in dataset_lower for marker in ("long-read", "long read", "长读", "pacbio", "hifi", "ont", "nanopore")):
+        if any(
+            marker in dataset_lower
+            for marker in (
+                "long-read",
+                "long read",
+                "长读",
+                "pacbio",
+                "hifi",
+                "ont",
+                "nanopore",
+            )
+        ):
             score += 24
         else:
             score -= 12
     if wants_short_read:
-        if any(marker in dataset_lower for marker in ("short-read", "short read", "短读", "paired")):
+        if any(
+            marker in dataset_lower
+            for marker in ("short-read", "short read", "短读", "paired")
+        ):
             score += 16
     if wants_circrna:
-        if "circrna" in domain or any(marker in dataset_lower for marker in ("circrna", "circ", "环状rna")):
+        if "circrna" in domain or any(
+            marker in dataset_lower for marker in ("circrna", "circ", "环状rna")
+        ):
             score += 20
         else:
             score -= 10
     if wants_immune_escape:
-        if any(marker in dataset_lower for marker in ("immune", "escape", "免疫逃逸", "covabdab", "pdbqt")):
+        if any(
+            marker in dataset_lower
+            for marker in ("immune", "escape", "免疫逃逸", "covabdab", "pdbqt")
+        ):
             score += 20
         else:
             score -= 10
@@ -3874,20 +4130,26 @@ def _discover_shared_store_roots(
         return (-mtime, path.as_posix())
 
     add(workspace_root / store_dirname)
-    shared_root = os.environ.get(shared_root_env, "").strip()
+    shared_root = (get_env(shared_root_env, "") or "").strip()
     if shared_root:
         add(Path(shared_root))
 
     shared_workspace_root = _PROJECT_ROOT / "workspace"
     try:
-        workspace_in_repo = workspace_root.resolve().is_relative_to(shared_workspace_root.resolve())
+        workspace_in_repo = workspace_root.resolve().is_relative_to(
+            shared_workspace_root.resolve()
+        )
     except OSError:
         workspace_in_repo = False
     except RuntimeError:
         workspace_in_repo = False
     if workspace_in_repo:
         add(shared_workspace_root / store_dirname)
-    if workspace_in_repo and shared_workspace_root.exists() and shared_workspace_root.is_dir():
+    if (
+        workspace_in_repo
+        and shared_workspace_root.exists()
+        and shared_workspace_root.is_dir()
+    ):
         session_roots = sorted(
             (
                 candidate
@@ -3940,9 +4202,7 @@ def _benchmark_candidate_from_operator_payload(
     ]
     validation_payload = payload.get("validation")
     validation_status = (
-        validation_payload.get("status")
-        if isinstance(validation_payload, dict)
-        else ""
+        validation_payload.get("status") if isinstance(validation_payload, dict) else ""
     )
     status = str(
         payload.get("validation_status")
@@ -3963,7 +4223,10 @@ def _benchmark_candidate_from_operator_payload(
     partial_but_wdl_ready = status == "partial" and (
         "wdl-completed" in tags or "execution-ready" in tags
     )
-    if status not in {"completed", "registered_ready", "registered"} and not partial_but_wdl_ready:
+    if (
+        status not in {"completed", "registered_ready", "registered"}
+        and not partial_but_wdl_ready
+    ):
         return None
     score = 0
     if family == "benchmark":
@@ -3988,11 +4251,7 @@ def _benchmark_candidate_from_operator_payload(
         if isinstance(payload.get("runtime"), dict)
         else ""
     ).strip()
-    input_rows = [
-        item
-        for item in payload.get("inputs", [])
-        if isinstance(item, dict)
-    ]
+    input_rows = [item for item in payload.get("inputs", []) if isinstance(item, dict)]
     if _operator_looks_paired_end_read_workload(
         inputs=input_rows,
         inputs_json_path=inputs_json_path,
@@ -4043,14 +4302,10 @@ def _benchmark_candidate_from_operator_payload(
         "source_repo": str(payload.get("source_repo", "")).strip(),
         "source_commit": str(payload.get("source_commit", "")).strip(),
         "inputs": [
-            item
-            for item in payload.get("inputs", [])
-            if isinstance(item, dict)
+            item for item in payload.get("inputs", []) if isinstance(item, dict)
         ],
         "outputs": [
-            item
-            for item in payload.get("outputs", [])
-            if isinstance(item, dict)
+            item for item in payload.get("outputs", []) if isinstance(item, dict)
         ],
         "expected_outputs": [
             str(item).strip()
@@ -4091,13 +4346,19 @@ def _rank_benchmark_operator_records_locally(
                     str(candidate.get("canonical_text", "")),
                 ]
             )
-            score = 5 * _benchmark_query_overlap_score(query=query, searchable_text=text)
+            score = 5 * _benchmark_query_overlap_score(
+                query=query, searchable_text=text
+            )
             score += _benchmark_intent_hint_score(query=query, searchable_text=text)
             score += int(candidate.pop("_score"))
             candidate["score"] = score
             candidate["rank"] = rank
             current = scored.get(name)
-            if current is None or score > current[0] or (score == current[0] and rank < current[1]):
+            if (
+                current is None
+                or score > current[0]
+                or (score == current[0] and rank < current[1])
+            ):
                 scored[name] = (score, rank, candidate)
             rank += 1
     ranked = sorted(
@@ -4127,7 +4388,9 @@ def _task_explicitly_mentions_benchmark_tool(task: str, name: str) -> bool:
     return bool(normalized_name) and normalized_name in normalized_task
 
 
-def _benchmark_candidate_shared_input_signature(candidate: dict[str, object]) -> tuple[str, ...]:
+def _benchmark_candidate_shared_input_signature(
+    candidate: dict[str, object],
+) -> tuple[str, ...]:
     paths: list[str] = []
     for item in candidate.get("inputs", []):
         if not isinstance(item, dict):
@@ -4138,7 +4401,13 @@ def _benchmark_candidate_shared_input_signature(candidate: dict[str, object]) ->
             continue
         path = Path(raw_path)
         basename = path.name.casefold()
-        if basename in {"inputs.json", "input.json", "config.json", "config.yaml", "config.yml"}:
+        if basename in {
+            "inputs.json",
+            "input.json",
+            "config.json",
+            "config.yaml",
+            "config.yml",
+        }:
             continue
         if name in {"inputs.json", "input.json"}:
             continue
@@ -4174,7 +4443,9 @@ def _benchmark_case_input_signature_from_benchmark_root(
     benchmark_root: str,
     tool_name: str,
 ) -> tuple[str, ...]:
-    case_dir = _benchmark_case_dir_for_tool(benchmark_root=benchmark_root, tool_name=tool_name)
+    case_dir = _benchmark_case_dir_for_tool(
+        benchmark_root=benchmark_root, tool_name=tool_name
+    )
     if case_dir is None:
         return ()
     inputs_path: Path | None = None
@@ -4242,7 +4513,9 @@ def _benchmark_case_input_signature_from_benchmark_root(
         if raw_path.is_absolute():
             candidate_paths.append(raw_path)
         else:
-            candidate_paths.extend([repo_root / raw_path, case_dir / raw_path, raw_path])
+            candidate_paths.extend(
+                [repo_root / raw_path, case_dir / raw_path, raw_path]
+            )
         for path in candidate_paths:
             if path.exists():
                 try:
@@ -4311,11 +4584,7 @@ def _select_benchmark_candidate_subset(
             continue
         shared_groups.setdefault(signature, []).append(candidate)
     ranked_groups = sorted(
-        (
-            group
-            for group in shared_groups.values()
-            if len(group) >= 2
-        ),
+        (group for group in shared_groups.values() if len(group) >= 2),
         key=lambda group: (
             -len(group),
             -sum(int(item.get("score", 0)) for item in group),
@@ -4330,23 +4599,33 @@ def _select_benchmark_candidate_subset(
 
 
 def _benchmark_register_agentic_selection_enabled() -> bool:
-    value = os.environ.get(
-        _BENCHMARK_REGISTER_AGENTIC_SELECTION_ENV,
-        _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION,
+    value = (
+        get_env(
+            _BENCHMARK_REGISTER_AGENTIC_SELECTION_ENV,
+            _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION,
+        )
+        or _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION
     ).strip()
     return value.lower() not in {"0", "false", "no", "off"}
 
 
 def _benchmark_register_agentic_selection_timeout_seconds() -> float:
-    raw_value = os.environ.get(
-        _BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_ENV,
-        str(_DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS),
+    raw_value = (
+        get_env(
+            _BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_ENV,
+            str(_DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS),
+        )
+        or str(_DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS)
     ).strip()
     try:
         timeout = float(raw_value)
     except ValueError:
         timeout = _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS
-    return timeout if timeout > 0 else _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS
+    return (
+        timeout
+        if timeout > 0
+        else _DEFAULT_BENCHMARK_REGISTER_AGENTIC_SELECTION_TIMEOUT_SECONDS
+    )
 
 
 async def _invoke_benchmark_register_selector(
@@ -4717,8 +4996,15 @@ def _benchmark_register_agent_dataset_options(
         compatibility_count = len(compatible)
         if compatibility_count <= 0:
             continue
-        score = _benchmark_dataset_task_score(task=task, dataset_candidate=dataset_candidate)
-        shared_bonus = 1 if compatibility_count >= 2 or compatibility_count == len(relevant_operators) else 0
+        score = _benchmark_dataset_task_score(
+            task=task, dataset_candidate=dataset_candidate
+        )
+        shared_bonus = (
+            1
+            if compatibility_count >= 2
+            or compatibility_count == len(relevant_operators)
+            else 0
+        )
         options.append((compatibility_count, shared_bonus, score, dataset_candidate))
     options.sort(
         key=lambda item: (
@@ -4729,9 +5015,9 @@ def _benchmark_register_agent_dataset_options(
         )
     )
     ranked_options = [item[3] for item in options]
-    multi_tool_benchmark = (
-        len(relevant_operators) >= 2 or _task_requests_multiple_benchmark_tools(task)
-    )
+    multi_tool_benchmark = len(
+        relevant_operators
+    ) >= 2 or _task_requests_multiple_benchmark_tools(task)
     if multi_tool_benchmark:
         shared_generic = [
             item
@@ -4840,7 +5126,9 @@ def _materialize_benchmark_selection_cases(
     cases_root = run_dir / "cases"
     cases_root.mkdir(parents=True, exist_ok=True)
     dataset_key = str(selection_report.get("dataset_key", "")).strip()
-    dataset_strategy = str(selection_report.get("dataset_strategy", "")).strip() or _benchmark_dataset_strategy_for_task(task)
+    dataset_strategy = str(
+        selection_report.get("dataset_strategy", "")
+    ).strip() or _benchmark_dataset_strategy_for_task(task)
     selection_report["dataset_strategy"] = dataset_strategy
     raw_tool_dataset_keys = selection_report.get("tool_dataset_keys")
     tool_dataset_keys: dict[str, str] = (
@@ -4872,13 +5160,15 @@ def _materialize_benchmark_selection_cases(
                     if not isinstance(selection_report.get("selected_dataset"), dict):
                         selection_report["selected_dataset"] = dataset_candidate
     if dataset_strategy == "per_operator_dataset" and not tool_dataset_keys:
-        tool_dataset_keys, selected_datasets = _resolve_benchmark_dataset_keys_for_tools(
-            task=task,
-            workspace_root=workspace_root,
-            operator_candidates=selected_operators,
-            selected_tools=selected_tools,
-            excluded_tools=set(),
-            benchmark_root=benchmark_root,
+        tool_dataset_keys, selected_datasets = (
+            _resolve_benchmark_dataset_keys_for_tools(
+                task=task,
+                workspace_root=workspace_root,
+                operator_candidates=selected_operators,
+                selected_tools=selected_tools,
+                excluded_tools=set(),
+                benchmark_root=benchmark_root,
+            )
         )
         selection_report["tool_dataset_keys"] = tool_dataset_keys
         selection_report["selected_datasets"] = selected_datasets
@@ -4896,7 +5186,9 @@ def _materialize_benchmark_selection_cases(
     if isinstance(selected_datasets, dict):
         for key, value in selected_datasets.items():
             if isinstance(value, dict):
-                dataset_id = str(value.get("dataset_id", "")).strip() or str(key).strip()
+                dataset_id = (
+                    str(value.get("dataset_id", "")).strip() or str(key).strip()
+                )
                 if dataset_id:
                     selected_dataset_by_key[dataset_id] = value
     root_cases: dict[str, dict[str, object]] = {}
@@ -4915,7 +5207,9 @@ def _materialize_benchmark_selection_cases(
             dataset_key=case_dataset_key,
             dataset_candidate=case_dataset_candidate,
             dataset_strategy=dataset_strategy,
-            selection_reason=str(selection_report.get("agent_selection_rationale", "")).strip()
+            selection_reason=str(
+                selection_report.get("agent_selection_rationale", "")
+            ).strip()
             or str(selection_report.get("selection_strategy", "")),
         )
         case_rows.append(row)
@@ -5010,11 +5304,13 @@ def _materialize_benchmark_selection_case(
     (case_dir / "wdl").mkdir(parents=True, exist_ok=True)
     (case_dir / "run").mkdir(parents=True, exist_ok=True)
     (case_dir / "docker").mkdir(parents=True, exist_ok=True)
-    selected_input_files, selected_input_source = _benchmark_selected_input_files_for_case(
-        operator=operator,
-        dataset_key=dataset_key,
-        dataset_candidate=dataset_candidate,
-        workspace_root=workspace_root,
+    selected_input_files, selected_input_source = (
+        _benchmark_selected_input_files_for_case(
+            operator=operator,
+            dataset_key=dataset_key,
+            dataset_candidate=dataset_candidate,
+            workspace_root=workspace_root,
+        )
     )
     runtime_image = str(operator.get("runtime_image", "")).strip()
     workflow_path = str(operator.get("workflow_path", "")).strip()
@@ -5164,7 +5460,9 @@ def _materialize_benchmark_selection_case(
     )
     staged_wdl_path = _stage_benchmark_operator_artifact(
         source_path=workflow_path,
-        target_path=case_dir / "wdl" / (Path(workflow_path).name if workflow_path else "workflow.wdl"),
+        target_path=case_dir
+        / "wdl"
+        / (Path(workflow_path).name if workflow_path else "workflow.wdl"),
     )
     staged_inputs_path = _stage_benchmark_operator_artifact(
         source_path=inputs_json_path,
@@ -5181,8 +5479,12 @@ def _materialize_benchmark_selection_case(
         {
             "repo": name,
             "dockerfile_path": dockerfile_path or None,
-            "wdl_path": str(staged_wdl_path) if staged_wdl_path is not None else (workflow_path or None),
-            "inputs_json_path": str(staged_inputs_path) if staged_inputs_path is not None else (inputs_json_path or None),
+            "wdl_path": str(staged_wdl_path)
+            if staged_wdl_path is not None
+            else (workflow_path or None),
+            "inputs_json_path": str(staged_inputs_path)
+            if staged_inputs_path is not None
+            else (inputs_json_path or None),
             "repo_native_command_candidates": [],
             "local_result_candidates": expected_outputs,
             "runtime_image": runtime_image,
@@ -5224,7 +5526,9 @@ def _materialize_benchmark_selection_case(
     }
 
 
-def _stage_benchmark_operator_artifact(*, source_path: str, target_path: Path) -> Path | None:
+def _stage_benchmark_operator_artifact(
+    *, source_path: str, target_path: Path
+) -> Path | None:
     if not source_path:
         return None
     source = Path(source_path)
@@ -5252,7 +5556,9 @@ def _sanitize_benchmark_inputs_json(
         if isinstance(value, dict):
             cleaned: dict[str, object] = {}
             for key, nested in value.items():
-                if isinstance(key, str) and re.match(r"^_comment", key.strip(), flags=re.IGNORECASE):
+                if isinstance(key, str) and re.match(
+                    r"^_comment", key.strip(), flags=re.IGNORECASE
+                ):
                     continue
                 cleaned[key] = sanitize(nested, key_hint=str(key))
             return cleaned
@@ -5365,13 +5671,21 @@ def _benchmark_placeholder_replacement(
         return direct
 
     lowered_key = key_hint.casefold()
-    if lowered_key.endswith("fastq1") or lowered_key.endswith("read1") or lowered_key.endswith("r1"):
+    if (
+        lowered_key.endswith("fastq1")
+        or lowered_key.endswith("read1")
+        or lowered_key.endswith("r1")
+    ):
         fastq_candidates = _benchmark_selected_paths_for_suffixes(
             selected_input_files,
             suffixes=(".fastq", ".fq", ".fastq.gz", ".fq.gz"),
         )
         return fastq_candidates[0] if fastq_candidates else None
-    if lowered_key.endswith("fastq2") or lowered_key.endswith("read2") or lowered_key.endswith("r2"):
+    if (
+        lowered_key.endswith("fastq2")
+        or lowered_key.endswith("read2")
+        or lowered_key.endswith("r2")
+    ):
         fastq_candidates = _benchmark_selected_paths_for_suffixes(
             selected_input_files,
             suffixes=(".fastq", ".fq", ".fastq.gz", ".fq.gz"),
@@ -5389,7 +5703,11 @@ def _benchmark_placeholder_replacement(
             suffixes=(".gtf",),
         )
         return gtf_candidates[0] if gtf_candidates else None
-    if "fasta" in lowered_key or lowered_key.endswith("genome_fasta") or lowered_key.endswith("reference_fasta"):
+    if (
+        "fasta" in lowered_key
+        or lowered_key.endswith("genome_fasta")
+        or lowered_key.endswith("reference_fasta")
+    ):
         fasta_candidates = _benchmark_selected_paths_for_suffixes(
             selected_input_files,
             suffixes=(".fa", ".fasta", ".fna"),
@@ -5404,7 +5722,9 @@ def _benchmark_placeholder_replacement(
             return fastq_candidates[0] if fastq_candidates else None
         return None
     for suffix in (".bwt", ".pac", ".ann", ".amb", ".sa", ".csv"):
-        if lowered_key.endswith(suffix.lstrip(".")) or placeholder_name.casefold().endswith(suffix):
+        if lowered_key.endswith(
+            suffix.lstrip(".")
+        ) or placeholder_name.casefold().endswith(suffix):
             candidates = _benchmark_selected_paths_for_suffixes(
                 selected_input_files,
                 suffixes=(suffix,),
@@ -5413,7 +5733,9 @@ def _benchmark_placeholder_replacement(
     return None
 
 
-def _benchmark_selected_input_files_from_operator(operator: dict[str, object]) -> dict[str, str]:
+def _benchmark_selected_input_files_from_operator(
+    operator: dict[str, object],
+) -> dict[str, str]:
     selected: dict[str, str] = {}
     for item in operator.get("inputs", []):
         if not isinstance(item, dict):
@@ -5441,7 +5763,11 @@ def _benchmark_selected_input_files_for_case(
         dataset_key=dataset_key,
     )
     if candidate_selected:
-        source_kind = str(dataset_candidate.get("source_kind", "")).strip() if dataset_candidate else ""
+        source_kind = (
+            str(dataset_candidate.get("source_kind", "")).strip()
+            if dataset_candidate
+            else ""
+        )
         return candidate_selected, source_kind or "selected_dataset"
     dataset_selected = _benchmark_selected_input_files_from_dataset_store(
         operator=operator,
@@ -5507,7 +5833,9 @@ def _benchmark_selected_input_files_from_dataset_store(
     for store_root in _candidate_dataset_store_roots(workspace_root):
         try:
             store = DatasetStore(store_root)
-            rows = store.search_datasets(DatasetSearchFilter(dataset_id=dataset_key, limit=3))
+            rows = store.search_datasets(
+                DatasetSearchFilter(dataset_id=dataset_key, limit=3)
+            )
         except sqlite3.Error:
             continue
         for row in rows:
@@ -5597,7 +5925,9 @@ def _benchmark_selected_input_names(selected_input_files: dict[str, str]) -> lis
 def _benchmark_input_signature_from_manifest(manifest: dict[str, object]) -> str:
     selected_input_files = manifest.get("selected_input_files", {})
     if isinstance(selected_input_files, dict) and selected_input_files:
-        normalized = {str(key): str(value) for key, value in selected_input_files.items()}
+        normalized = {
+            str(key): str(value) for key, value in selected_input_files.items()
+        }
         return _sha256_jsonable(normalized)
     inputs_path_raw = manifest.get("inputs_path")
     if isinstance(inputs_path_raw, str) and inputs_path_raw.strip():
@@ -5657,7 +5987,10 @@ def _benchmark_intent_hint_score(*, query: str, searchable_text: str) -> int:
     score = 0
     docking_markers = ("dock", "docking", "vina")
     if any(marker in query_lower for marker in docking_markers):
-        if any(marker in searchable_lower for marker in ("dock", "docking", "vina", "pdbqt")):
+        if any(
+            marker in searchable_lower
+            for marker in ("dock", "docking", "vina", "pdbqt")
+        ):
             score += 25
     structure_markers = ("pdb", "pdbqt", "structure", "structural")
     if any(marker in query_lower for marker in structure_markers):
@@ -5694,7 +6027,9 @@ def _run_deterministic_benchmark_case(
     )
 
 
-def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path) -> WorkerResult:
+def _run_deterministic_benchmark_summary(
+    *, node: TaskNode, workspace_root: Path
+) -> WorkerResult:
     metadata = node.metadata if isinstance(node.metadata, dict) else {}
     run_dir_raw = metadata.get("run_dir")
     if not isinstance(run_dir_raw, str) or not run_dir_raw.strip():
@@ -5712,7 +6047,9 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
     if not selected_tools:
         cases_root = run_dir / "cases"
         if cases_root.exists():
-            selected_tools = sorted(path.name for path in cases_root.iterdir() if path.is_dir())
+            selected_tools = sorted(
+                path.name for path in cases_root.iterdir() if path.is_dir()
+            )
     rows: list[dict[str, object]] = []
     artifacts: list[str] = []
     evidence: list[str] = []
@@ -5734,7 +6071,9 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
         result_manifest_path = _benchmark_result_manifest_path(case_dir)
         worker_result = _benchmark_case_worker_result(run_dir=run_dir, repo=repo)
         status_payload = (
-            json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
+            json.loads(status_path.read_text(encoding="utf-8"))
+            if status_path.exists()
+            else {}
         )
         analysis_payload = (
             json.loads(analysis_path.read_text(encoding="utf-8"))
@@ -5749,8 +6088,12 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
         success = _benchmark_case_completed_from_artifacts(
             worker_result=worker_result,
             run_status=status_payload if isinstance(status_payload, dict) else {},
-            analysis_payload=analysis_payload if isinstance(analysis_payload, dict) else {},
-            result_manifest=result_manifest if isinstance(result_manifest, dict) else {},
+            analysis_payload=analysis_payload
+            if isinstance(analysis_payload, dict)
+            else {},
+            result_manifest=result_manifest
+            if isinstance(result_manifest, dict)
+            else {},
         )
         if success:
             completed_cases += 1
@@ -5761,8 +6104,12 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
                 "success": success,
                 "returncode": _benchmark_case_returncode(
                     worker_result=worker_result,
-                    run_status=status_payload if isinstance(status_payload, dict) else {},
-                    result_manifest=result_manifest if isinstance(result_manifest, dict) else {},
+                    run_status=status_payload
+                    if isinstance(status_payload, dict)
+                    else {},
+                    result_manifest=result_manifest
+                    if isinstance(result_manifest, dict)
+                    else {},
                 ),
                 "artifact_paths": _benchmark_case_analysis_artifact_paths(
                     analysis_payload if isinstance(analysis_payload, dict) else {}
@@ -5789,7 +6136,9 @@ def _run_deterministic_benchmark_summary(*, node: TaskNode, workspace_root: Path
         )
         manifest["phase_status"] = {
             **dict(manifest.get("phase_status", {})),
-            "analysis": "completed" if analysis_path.exists() else manifest.get("phase_status", {}).get("analysis"),
+            "analysis": "completed"
+            if analysis_path.exists()
+            else manifest.get("phase_status", {}).get("analysis"),
             "summary": "completed",
         }
         _write_json(manifest_path, manifest)
@@ -6010,8 +6359,7 @@ def _benchmark_case_has_output_evidence(
     checks = analysis_payload.get("checks")
     if isinstance(checks, dict):
         if any(
-            key.endswith("_present") and value is True
-            for key, value in checks.items()
+            key.endswith("_present") and value is True for key, value in checks.items()
         ):
             return True
     if analysis_payload.get("real_contigs_fasta_present") is True:
@@ -6044,7 +6392,9 @@ def _benchmark_case_returncode(
     return None
 
 
-def _benchmark_case_analysis_artifact_paths(analysis_payload: dict[str, object]) -> list[str]:
+def _benchmark_case_analysis_artifact_paths(
+    analysis_payload: dict[str, object],
+) -> list[str]:
     artifact_paths = analysis_payload.get("artifact_paths")
     if isinstance(artifact_paths, list) and artifact_paths:
         return [str(item) for item in artifact_paths if str(item).strip()]
@@ -6075,8 +6425,12 @@ def _build_benchmark_comparison(rows: list[dict[str, object]]) -> dict[str, str]
         return None
 
     best_n50 = _best_metric_repo(completed_rows, "n50", higher_is_better=True)
-    lowest_contigs = _best_metric_repo(completed_rows, "contig_count", higher_is_better=False)
-    largest_assembly = _best_metric_repo(completed_rows, "assembly_size", higher_is_better=True)
+    lowest_contigs = _best_metric_repo(
+        completed_rows, "contig_count", higher_is_better=False
+    )
+    largest_assembly = _best_metric_repo(
+        completed_rows, "assembly_size", higher_is_better=True
+    )
     if not any((best_n50, lowest_contigs, largest_assembly)):
         return None
     winners = [repo for repo in (best_n50, largest_assembly) if repo]
@@ -6091,7 +6445,9 @@ def _build_benchmark_comparison(rows: list[dict[str, object]]) -> dict[str, str]
             f"while {lowest_contigs} has the lower contig_count."
         )
     elif overall_repo:
-        overall = f"Overall favors {overall_repo} across the available comparison signals."
+        overall = (
+            f"Overall favors {overall_repo} across the available comparison signals."
+        )
     else:
         overall = "No single best tool could be identified from the available metrics."
 
@@ -6128,7 +6484,9 @@ def _best_metric_repo(
 
 def _benchmark_repo_from_node_id(node_id: str) -> str | None:
     candidate = node_id.removeprefix("retry_")
-    if candidate in {"register", "summarize"} or _looks_like_user_delivery_node(candidate):
+    if candidate in {"register", "summarize"} or _looks_like_user_delivery_node(
+        candidate
+    ):
         return None
     return candidate or None
 
@@ -6190,7 +6548,9 @@ def _run_repo_materialization_command(
         )
 
 
-def _trim_repo_materialization_output(stdout: str, stderr: str, *, limit: int = 400) -> str:
+def _trim_repo_materialization_output(
+    stdout: str, stderr: str, *, limit: int = 400
+) -> str:
     detail = (stderr or stdout or "no output").strip()
     if len(detail) <= limit:
         return detail
@@ -6212,14 +6572,18 @@ def _find_local_repo_for_github_task(
     workspace_root: Path,
 ) -> Path | None:
     seen: set[Path] = set()
-    for root in _candidate_local_repo_search_roots(node=node, workspace_root=workspace_root):
+    for root in _candidate_local_repo_search_roots(
+        node=node, workspace_root=workspace_root
+    ):
         if root in seen or not root.exists() or not root.is_dir():
             continue
         seen.add(root)
         direct = root / spec.name
         if _candidate_repo_matches_spec(direct, spec):
             return direct
-        for candidate in _iter_candidate_repo_dirs(root, max_depth=_LOCAL_REPO_SEARCH_MAX_DEPTH):
+        for candidate in _iter_candidate_repo_dirs(
+            root, max_depth=_LOCAL_REPO_SEARCH_MAX_DEPTH
+        ):
             if candidate == direct:
                 continue
             if _candidate_repo_matches_spec(candidate, spec):
@@ -6243,7 +6607,9 @@ def _find_cached_code_repository(spec: GitHubRepoSpec) -> Path | None:
     return None
 
 
-def _candidate_local_repo_search_roots(*, node: TaskNode, workspace_root: Path) -> list[Path]:
+def _candidate_local_repo_search_roots(
+    *, node: TaskNode, workspace_root: Path
+) -> list[Path]:
     metadata = node.metadata if isinstance(node.metadata, dict) else {}
     task = str(metadata.get("task", ""))
     roots: list[Path] = []
@@ -6468,7 +6834,10 @@ def _write_benchmark_result_manifest(
         for path in output_paths
     }
     log_path = case_dir / "run" / "repo_native.log"
-    output_log = next((path for path in output_paths if path.name == "log" or path.suffix == ".log"), None)
+    output_log = next(
+        (path for path in output_paths if path.name == "log" or path.suffix == ".log"),
+        None,
+    )
     payload = {
         "repo": repo,
         "dataset_key": manifest.get("dataset_key"),
@@ -6500,7 +6869,11 @@ def _benchmark_expected_output_paths(
     status_payload: dict[str, object],
 ) -> list[Path]:
     output_dir_raw = status_payload.get("output_dir")
-    output_dir = Path(output_dir_raw) if isinstance(output_dir_raw, str) else case_dir / "run" / "repo_native_output"
+    output_dir = (
+        Path(output_dir_raw)
+        if isinstance(output_dir_raw, str)
+        else case_dir / "run" / "repo_native_output"
+    )
     manifest_path = case_dir / "manifest.json"
     expected_outputs: list[str] = []
     if manifest_path.exists():
@@ -6526,7 +6899,11 @@ def _benchmark_expected_output_paths(
 def _tail_nonempty_lines(path: Path, *, limit: int = 3) -> list[str]:
     if not path.exists():
         return []
-    lines = [line.strip() for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
+    lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+        if line.strip()
+    ]
     return lines[-limit:]
 
 
@@ -6551,7 +6928,8 @@ def _build_benchmark_result_record(
     )
     metrics = (
         analysis_payload.get("metrics", {})
-        if isinstance(analysis_payload, dict) and isinstance(analysis_payload.get("metrics"), dict)
+        if isinstance(analysis_payload, dict)
+        and isinstance(analysis_payload.get("metrics"), dict)
         else {}
     )
     canonical_parts = [
@@ -6569,9 +6947,7 @@ def _build_benchmark_result_record(
     status_path = case_dir / "run" / "status.json"
     wdl_status_path = case_dir / "wdl" / "status.json"
     wdl_status_payload = (
-        _read_json_file(wdl_status_path)
-        if wdl_status_path.exists()
-        else None
+        _read_json_file(wdl_status_path) if wdl_status_path.exists() else None
     )
     return {
         "record_id": f"benchmark-result:{repo}:{run_dir.name}",
@@ -6584,7 +6960,9 @@ def _build_benchmark_result_record(
         "inputs_json_path": str(manifest.get("inputs_path", "")).strip(),
         "input_signature": input_signature,
         "selected_input_files": selected_input_files_payload,
-        "selected_input_names": _benchmark_selected_input_names(selected_input_files_payload),
+        "selected_input_names": _benchmark_selected_input_names(
+            selected_input_files_payload
+        ),
         "result_files": [
             str(path)
             for path in _benchmark_expected_output_paths(
@@ -6605,7 +6983,9 @@ def _build_benchmark_result_record(
         "result_manifest_path": str(result_manifest_path),
         "analysis_path": str(analysis_path),
         "status_payload": status_payload,
-        "wdl_status_payload": wdl_status_payload if isinstance(wdl_status_payload, dict) else {},
+        "wdl_status_payload": wdl_status_payload
+        if isinstance(wdl_status_payload, dict)
+        else {},
         "result_manifest": result_manifest,
         "analysis_payload": analysis_payload or {},
         "analysis_markdown": analysis_markdown or "",
@@ -6647,9 +7027,7 @@ def _materialize_benchmark_result_record_to_store(
     analysis_path = case_dir / "analysis.json"
     analysis_md_path = case_dir / "analysis.md"
     analysis_payload = (
-        _read_json_file(analysis_path)
-        if analysis_path.exists()
-        else None
+        _read_json_file(analysis_path) if analysis_path.exists() else None
     )
     analysis_markdown = (
         analysis_md_path.read_text(encoding="utf-8")
@@ -6664,7 +7042,9 @@ def _materialize_benchmark_result_record_to_store(
         manifest=manifest,
         status_payload=status_payload,
         result_manifest=result_manifest,
-        analysis_payload=analysis_payload if isinstance(analysis_payload, dict) else None,
+        analysis_payload=analysis_payload
+        if isinstance(analysis_payload, dict)
+        else None,
         analysis_markdown=analysis_markdown,
     )
     try:
@@ -6850,7 +7230,9 @@ async def _run_worker_and_capture(
     run_dir: Path,
     worker_runner,
 ) -> WorkerResult:
-    node = _augment_node_with_runtime_context(node=node, graph_round=graph_round, run_dir=run_dir)
+    node = _augment_node_with_runtime_context(
+        node=node, graph_round=graph_round, run_dir=run_dir
+    )
     started_at = datetime.now(UTC)
     _append_tool_activity_event(
         run_dir=run_dir,
@@ -6946,7 +7328,11 @@ async def _run_worker_and_capture(
         raise
     except TimeoutError:
         timeout_seconds = _worker_timeout_seconds(node)
-        timeout_display = f"{timeout_seconds} seconds" if timeout_seconds else "the configured timeout"
+        timeout_display = (
+            f"{timeout_seconds} seconds"
+            if timeout_seconds
+            else "the configured timeout"
+        )
         result = WorkerResult(
             status="partial",
             summary=f"{node.node_id} timed out after {timeout_display}.",
@@ -6996,7 +7382,9 @@ async def _run_worker_and_capture(
                     f"{node.node_id} stopped after a worker/tool exception; "
                     "continue composition with available lane traces and mark this lane incomplete."
                 ),
-                artifacts=_report_partial_exception_artifacts(run_dir=run_dir, node=node),
+                artifacts=_report_partial_exception_artifacts(
+                    run_dir=run_dir, node=node
+                ),
                 evidence=[
                     f"report evidence lane exception: {error}",
                     f"raw trace: {run_dir / 'raw_worker_traces' / f'{node.node_id}.jsonl'}",
@@ -7014,6 +7402,11 @@ async def _run_worker_and_capture(
             await heartbeat_task
         except asyncio.CancelledError:
             pass
+    result = _postprocess_worker_result(
+        node=node,
+        result=result,
+        run_dir=run_dir,
+    )
     payload = {
         "round_index": graph_round,
         "node": node.to_dict(),
@@ -7074,7 +7467,15 @@ def _is_report_evidence_lane_node(node: TaskNode) -> bool:
         bool(report_lane_base)
         or node_id.endswith("_lane")
         or "_lane_" in node_id
-        or node_id.startswith(("monitoring_lane", "existing_data_lane", "computed_data_lane", "local_data_lane", "literature_lane"))
+        or node_id.startswith(
+            (
+                "monitoring_lane",
+                "existing_data_lane",
+                "computed_data_lane",
+                "local_data_lane",
+                "literature_lane",
+            )
+        )
     )
 
 
@@ -7088,7 +7489,11 @@ def _report_partial_exception_artifacts(*, run_dir: Path, node: TaskNode) -> lis
         node.node_id,
         node.node_id.removeprefix("retry_"),
     }
-    for base_dir in (run_dir / "evidence_layers", run_dir / "artifacts", run_dir / "lanes"):
+    for base_dir in (
+        run_dir / "evidence_layers",
+        run_dir / "artifacts",
+        run_dir / "lanes",
+    ):
         if not base_dir.exists():
             continue
         for path in base_dir.rglob("*"):
@@ -7104,7 +7509,7 @@ def _worker_timeout_seconds(node: TaskNode) -> float | None:
 
     if not _is_report_worker_node(node):
         return None
-    raw_timeout = os.environ.get(SUPERVISOR_REPORT_NODE_TIMEOUT_ENV, "").strip()
+    raw_timeout = (get_env(SUPERVISOR_REPORT_NODE_TIMEOUT_ENV, "") or "").strip()
     if raw_timeout:
         try:
             timeout = float(raw_timeout)
@@ -7117,7 +7522,7 @@ def _worker_timeout_seconds(node: TaskNode) -> float | None:
 
 
 def _worker_heartbeat_seconds() -> float | None:
-    raw_interval = os.environ.get(SUPERVISOR_WORKER_HEARTBEAT_ENV, "").strip()
+    raw_interval = (get_env(SUPERVISOR_WORKER_HEARTBEAT_ENV, "") or "").strip()
     if raw_interval:
         try:
             interval = float(raw_interval)
@@ -7152,9 +7557,7 @@ def _augment_node_with_runtime_context(
         if path.is_file()
     )
     prior_node_traces = sorted(
-        str(path)
-        for path in (run_dir / "node_traces").glob("*.json")
-        if path.is_file()
+        str(path) for path in (run_dir / "node_traces").glob("*.json") if path.is_file()
     )
     run_dir_artifacts = sorted(
         str(path)
@@ -7199,7 +7602,9 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
     if node.metadata:
         metadata_hint = _compact_metadata_hint(node.metadata)
     guidance_lines = node_guidance_lines(node.node_id)
-    guidance_ids = node.metadata.get("guidance_ids", []) if isinstance(node.metadata, dict) else []
+    guidance_ids = (
+        node.metadata.get("guidance_ids", []) if isinstance(node.metadata, dict) else []
+    )
     if (
         isinstance(node.metadata, dict)
         and node.metadata.get("task_type") == "benchmark"
@@ -7207,7 +7612,9 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
     ):
         guidance_lines.extend(node_guidance_lines("benchmark_case"))
     if isinstance(guidance_ids, list):
-        guidance_lines.extend(family_guidance_lines([str(item) for item in guidance_ids]))
+        guidance_lines.extend(
+            family_guidance_lines([str(item) for item in guidance_ids])
+        )
         if isinstance(node.metadata, dict):
             guidance_lines.extend(
                 generic_experience_guidance_lines(
@@ -7246,10 +7653,23 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
                 "computed_data_lane is for cases where the report needs a value that does not already exist and should be produced by selecting a local operator plus compatible dataset/input bundle and running it.",
                 "literature_lane is for literature, preprints, technical reports, or primary-source web material.",
                 "You may create 0-3 nodes for each lane base type and at most 6 evidence-lane nodes total. Use multiple nodes of one base type only for genuinely independent branches, such as different pathogens, datasets, regions, or metrics.",
+                "The report contract artifact must explicitly declare the report shape with a field such as shape_archetype, report_archetype, expected_report_shape, required_sections_outline, or organizing_logic.",
                 "Put the selected next-round graph in spawned_subgraph with keys nodes and edges. Each node must include node_id, title, objective, and capability_bundles; optional lane_type may name the lane base type.",
                 "Do not include init_report in spawned_subgraph. Include compose_report and summarize only if useful; the runtime will add them when missing.",
                 "Use node_id values that start with one of the lane base types, for example monitoring_lane, existing_data_lane_2, computed_data_lane_growth, or literature_lane_vaccine.",
                 "Use only these capability_bundles: web_search, web_fetch, db_access, api_call, data_filter, operator_filter, metric_compute, wdl_run, docker_build_run, summarize, validate.",
+            ]
+        )
+    if node.node_id == "compose_report":
+        run_dir_hint = str(node.metadata.get("run_dir", "")).strip() or "<run_dir>"
+        guidance_lines.extend(
+            [
+                "This node must create the final report artifact, not only summarize what it would write.",
+                f"Write the full user-facing Markdown report to `{run_dir_hint}/composed_report/final_report.md` before returning.",
+                "Return JSON only after the artifact exists; include that final_report.md path in artifacts and mention it in summary.",
+                "Do not finish with an empty response, a placeholder such as `Worker completed.`, or a JSON result that has no final report artifact.",
+                "The report artifact must use valid Markdown spacing: `# 标题`, `## 一、章节`, `### 1.1 小节`, `1. 条目`, and `- 条目`.",
+                "Keep the report paragraph-led. Use bullets only for compact takeaways, recommendations, enumerations, or sources.",
             ]
         )
     if node.node_id.startswith("summarize") or node.node_id == "summarize":
@@ -7269,6 +7689,17 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
             [
                 "You are the final chat-facing answer editor. Write the answer the user should see, not an execution log.",
                 "Use only the source material already gathered by supervisor and workers. Do not invent files, commands, evidence, test results, or completion status.",
+                (
+                    "Prefer Chinese for user-facing prose when the original task is Chinese "
+                    "or does not explicitly request another language. Only use another "
+                    "language when the user explicitly asks for it or an exact-output "
+                    "constraint requires it."
+                ),
+                (
+                    "Never return the raw Supervisor Summary, round list, node list, JSON "
+                    "payload, or other internal diagnostics as the final chat response. "
+                    "Rewrite them into natural language."
+                ),
                 "Lead with useful information that was successfully obtained. Mention unfinished, failed, or blocked work only when it materially changes what the user can rely on.",
                 "For report, risk assessment, monitoring, or judgment-style answers, include a brief evidence-source explanation unless the user's requested format forbids it. Name the source categories and preserve direct-vs-inferred evidence distinctions.",
                 "For judgment-style answers, end the final response with a short section titled '判断轨迹（可审计摘要）'. This section must expose the auditable reasoning path, not private chain-of-thought: list the evidence checked, comparison rule, key inference, and uncertainty or gaps so a reviewer can spot likely false positives.",
@@ -7288,6 +7719,9 @@ def _build_worker_prompt(*, node: TaskNode, workspace_root: Path) -> str:
                     "For report task final responses, preserve the composed report as a structured Markdown deliverable instead of compressing it into a chat summary.",
                     "Keep the report shape chosen by composition unless the user requested another format; do not force a default heading checklist at the final-response step.",
                     "Use one # title, ## section headings, and ### subsections only where they improve readability.",
+                    "Keep formal reports paragraph-led: each substantive section should use cohesive paragraphs as the main body, not one-sentence bullet notes.",
+                    "Use bullets or numbered lists only for short takeaways, recommendations, risk dimensions, compact enumerations, or source lists; do not convert the report body into a note-style outline.",
+                    "Markdown syntax must be valid: put one space after heading markers and after ordered/unordered list markers; never write `#标题`, `###1.1标题`, `1.结论`, or `-证据`.",
                     "Write in the same language as the user's report request unless the user explicitly asked otherwise.",
                     "Do not expose worker names, internal node names, or orchestration diagnostics in the report body; mention local artifact paths only in the evidence appendix when useful for auditability.",
                     "Keep citations or source references consistent. If the composed report used numbered sources, preserve the numbering and include the source list.",
@@ -7357,7 +7791,12 @@ def _local_computation_context_material(*, node: TaskNode, workspace_root: Path)
         or "forecast" in node_id
         or any(
             bundle in set(node.capability_bundles)
-            for bundle in ("db_access", "operator_filter", "metric_compute", "data_filter")
+            for bundle in (
+                "db_access",
+                "operator_filter",
+                "metric_compute",
+                "data_filter",
+            )
         )
     )
     if not (is_report_local_data or is_generic_evidence_or_compute):
@@ -7502,9 +7941,21 @@ def _local_computation_context_material(*, node: TaskNode, workspace_root: Path)
     else:
         lines.append("- Candidate local operators for computed_data:")
         for index, candidate in enumerate(operator_candidates[:8], start=1):
-            runtime = candidate.get("runtime") if isinstance(candidate.get("runtime"), dict) else {}
-            inputs = candidate.get("inputs") if isinstance(candidate.get("inputs"), list) else []
-            outputs = candidate.get("outputs") if isinstance(candidate.get("outputs"), list) else []
+            runtime = (
+                candidate.get("runtime")
+                if isinstance(candidate.get("runtime"), dict)
+                else {}
+            )
+            inputs = (
+                candidate.get("inputs")
+                if isinstance(candidate.get("inputs"), list)
+                else []
+            )
+            outputs = (
+                candidate.get("outputs")
+                if isinstance(candidate.get("outputs"), list)
+                else []
+            )
             input_paths = _preview_io_paths(inputs)
             output_paths = _preview_io_paths(outputs)
             lines.append(
@@ -7560,13 +8011,17 @@ def _rank_local_operator_candidates(
     for store_root in _candidate_operator_store_roots(workspace_root):
         try:
             store = OperatorStore(store_root)
-            rows = store.search_operators(OperatorSearchFilter(query=query, limit=max(limit * 2, 12)))
+            rows = store.search_operators(
+                OperatorSearchFilter(query=query, limit=max(limit * 2, 12))
+            )
         except sqlite3.Error:
             rows = []
         if not rows:
             try:
                 store = OperatorStore(store_root)
-                rows = store.search_operators(OperatorSearchFilter(limit=max(limit * 2, 12)))
+                rows = store.search_operators(
+                    OperatorSearchFilter(limit=max(limit * 2, 12))
+                )
             except sqlite3.Error:
                 rows = []
         for rank, row in enumerate(rows):
@@ -7581,15 +8036,25 @@ def _rank_local_operator_candidates(
                     str(candidate.get("name", "")),
                     str(candidate.get("summary", "")),
                     str(candidate.get("canonical_text", "")),
-                    " ".join(str(tag) for tag in candidate.get("tags", []) if isinstance(tag, str)),
+                    " ".join(
+                        str(tag)
+                        for tag in candidate.get("tags", [])
+                        if isinstance(tag, str)
+                    ),
                 ]
             )
-            score = _local_operator_status_score(candidate) + 4 * _benchmark_query_overlap_score(
+            score = _local_operator_status_score(
+                candidate
+            ) + 4 * _benchmark_query_overlap_score(
                 query=query,
                 searchable_text=searchable,
             )
             current = candidates.get(operator_id)
-            if current is None or score > current[0] or (score == current[0] and rank < current[1]):
+            if (
+                current is None
+                or score > current[0]
+                or (score == current[0] and rank < current[1])
+            ):
                 candidates[operator_id] = (score, rank, candidate)
     ranked = sorted(
         candidates.values(),
@@ -7646,7 +8111,9 @@ def _rank_local_dataset_store_candidates(
         if not rows:
             try:
                 store = DatasetStore(store_root)
-                rows = store.search_datasets(DatasetSearchFilter(limit=max(limit * 2, 12)))
+                rows = store.search_datasets(
+                    DatasetSearchFilter(limit=max(limit * 2, 12))
+                )
             except sqlite3.Error:
                 rows = []
         for rank, row in enumerate(rows):
@@ -7662,10 +8129,18 @@ def _rank_local_dataset_store_candidates(
                     str(candidate.get("canonical_text", "")),
                 ]
             )
-            score = 4 * _benchmark_query_overlap_score(query=query, searchable_text=searchable)
-            score += _benchmark_dataset_task_score(task=task, dataset_candidate=candidate)
+            score = 4 * _benchmark_query_overlap_score(
+                query=query, searchable_text=searchable
+            )
+            score += _benchmark_dataset_task_score(
+                task=task, dataset_candidate=candidate
+            )
             current = candidates.get(dataset_id)
-            if current is None or score > current[0] or (score == current[0] and rank < current[1]):
+            if (
+                current is None
+                or score > current[0]
+                or (score == current[0] and rank < current[1])
+            ):
                 candidates[dataset_id] = (score, rank, candidate)
     ranked = sorted(
         candidates.values(),
@@ -7674,7 +8149,9 @@ def _rank_local_dataset_store_candidates(
     return [item[2] for item in ranked[: max(1, limit)]]
 
 
-def _local_dataset_candidate_from_search_row(row: dict[str, object]) -> dict[str, object]:
+def _local_dataset_candidate_from_search_row(
+    row: dict[str, object],
+) -> dict[str, object]:
     record_path_raw = str(row.get("record_path", "")).strip()
     payload: dict[str, object] = {}
     if record_path_raw:
@@ -7693,7 +8170,9 @@ def _local_dataset_candidate_from_search_row(row: dict[str, object]) -> dict[str
         "version": str(payload.get("version", row.get("version", ""))).strip(),
         "domain": str(payload.get("domain", row.get("domain", ""))).strip(),
         "summary": str(payload.get("summary", row.get("summary", ""))).strip(),
-        "canonical_text": str(payload.get("canonical_text", row.get("canonical_text", ""))).strip(),
+        "canonical_text": str(
+            payload.get("canonical_text", row.get("canonical_text", ""))
+        ).strip(),
         "files": [item for item in payload.get("files", []) if isinstance(item, dict)],
         "tags": [
             str(tag).strip()
@@ -7709,7 +8188,9 @@ def _local_dataset_candidate_from_search_row(row: dict[str, object]) -> dict[str
     }
 
 
-def _local_operator_candidate_from_search_row(row: dict[str, object]) -> dict[str, object] | None:
+def _local_operator_candidate_from_search_row(
+    row: dict[str, object],
+) -> dict[str, object] | None:
     operator_path_raw = row.get("operator_path")
     if not isinstance(operator_path_raw, str) or not operator_path_raw.strip():
         return None
@@ -7722,11 +8203,16 @@ def _local_operator_candidate_from_search_row(row: dict[str, object]) -> dict[st
         return None
     runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
     return {
-        "operator_id": str(payload.get("operator_id", row.get("operator_id", ""))).strip(),
+        "operator_id": str(
+            payload.get("operator_id", row.get("operator_id", ""))
+        ).strip(),
         "name": str(payload.get("name", row.get("name", ""))).strip(),
         "family": str(payload.get("family", row.get("family", ""))).strip(),
         "validation_status": str(
-            payload.get("validation_status", payload.get("status", row.get("validation_status", "")))
+            payload.get(
+                "validation_status",
+                payload.get("status", row.get("validation_status", "")),
+            )
         ).strip(),
         "summary": str(payload.get("summary", "")),
         "canonical_text": str(payload.get("canonical_text", "")),
@@ -7744,8 +8230,12 @@ def _local_operator_candidate_from_search_row(row: dict[str, object]) -> dict[st
             "inputs_json_path": str(runtime.get("inputs_json_path", "")).strip(),
             "dockerfile_path": str(runtime.get("dockerfile_path", "")).strip(),
         },
-        "inputs": [item for item in payload.get("inputs", []) if isinstance(item, dict)],
-        "outputs": [item for item in payload.get("outputs", []) if isinstance(item, dict)],
+        "inputs": [
+            item for item in payload.get("inputs", []) if isinstance(item, dict)
+        ],
+        "outputs": [
+            item for item in payload.get("outputs", []) if isinstance(item, dict)
+        ],
         "operator_path": str(operator_path),
     }
 
@@ -7782,7 +8272,9 @@ def _preview_io_paths(items: list[object], *, max_items: int = 4) -> str:
     return "; ".join(compact)
 
 
-def _dataset_store_files_preview(candidate: dict[str, object], *, max_items: int = 4) -> str:
+def _dataset_store_files_preview(
+    candidate: dict[str, object], *, max_items: int = 4
+) -> str:
     files = candidate.get("files") if isinstance(candidate.get("files"), list) else []
     previews: list[str] = []
     for item in files:
@@ -7826,15 +8318,23 @@ def _local_dataset_candidates(
         result_files = row.get("result_files")
         result_preview = ""
         if isinstance(result_files, list) and result_files:
-            result_preview = f", result_files={'; '.join(str(item) for item in result_files[:3])}"
+            result_preview = (
+                f", result_files={'; '.join(str(item) for item in result_files[:3])}"
+            )
         add(
             f"history dataset_key={dataset_key}, operator_id={row.get('operator_id') or 'unknown'}, run_id={row.get('run_id') or 'unknown'}{result_preview}"
         )
     for candidate in operator_candidates:
         name = str(candidate.get("name", "")).strip() or "unknown"
-        inputs = candidate.get("inputs") if isinstance(candidate.get("inputs"), list) else []
+        inputs = (
+            candidate.get("inputs") if isinstance(candidate.get("inputs"), list) else []
+        )
         input_paths = _preview_io_paths(inputs)
-        runtime = candidate.get("runtime") if isinstance(candidate.get("runtime"), dict) else {}
+        runtime = (
+            candidate.get("runtime")
+            if isinstance(candidate.get("runtime"), dict)
+            else {}
+        )
         inputs_json = str(runtime.get("inputs_json_path", "")).strip()
         if inputs_json and inputs_json != "unknown":
             add(f"operator {name} inputs_json={inputs_json}, input_paths={input_paths}")
@@ -7872,7 +8372,11 @@ def _rank_report_benchmark_history_rows(
                 "canonical_text",
             )
         )
-        overlap = _benchmark_query_overlap_score(query=query, searchable_text=text) if query else 0
+        overlap = (
+            _benchmark_query_overlap_score(query=query, searchable_text=text)
+            if query
+            else 0
+        )
         success_bonus = 2 if bool(row.get("success")) else 0
         return (-(overlap + success_bonus), index)
 
@@ -7980,10 +8484,22 @@ def _final_response_source_material(node: TaskNode) -> str:
     final_summary = str(metadata.get("final_summary", ""))
     if run_dir is not None:
         final_summary = _relativize_user_facing_paths(final_summary, run_dir=run_dir)
+    fallback_candidate = str(metadata.get("fallback_candidate", "")).strip()
+    if run_dir is not None and fallback_candidate:
+        fallback_candidate = _relativize_user_facing_paths(
+            fallback_candidate,
+            run_dir=run_dir,
+        )
+    fallback_block = (
+        f"- Deterministic natural-language fallback draft:\n{fallback_candidate}\n"
+        if fallback_candidate
+        else ""
+    )
     return (
         "Final response source material:\n"
         f"- Original user task: {metadata.get('task', '')}\n"
         f"- Supervisor decision: {json.dumps(payload, ensure_ascii=False, sort_keys=True)}\n"
+        f"{fallback_block}"
         f"- Supervisor final summary:\n{final_summary}\n"
         f"{benchmark_dataset_material}"
         "End final response source material.\n"
@@ -8013,7 +8529,9 @@ def _benchmark_final_response_dataset_material(run_dir: Path) -> str:
         if isinstance(payload, dict):
             target.update(payload)
 
-    selection_dataset_key = str(register_report.get("selection_dataset_key", "")).strip()
+    selection_dataset_key = str(
+        register_report.get("selection_dataset_key", "")
+    ).strip()
     shared_datasets = [
         str(item).strip()
         for item in register_report.get("shared_datasets", []) or []
@@ -8043,7 +8561,7 @@ def _benchmark_final_response_dataset_material(run_dir: Path) -> str:
         for row in metric_rows[:8]:
             if not isinstance(row, dict):
                 continue
-            repo = str(row.get('repo', '')).strip() or "unknown"
+            repo = str(row.get("repo", "")).strip() or "unknown"
             dataset_key = str(row.get("dataset_key", "")).strip() or "unknown"
             selected_inputs = row.get("selected_input_files")
             input_names: list[str] = []
@@ -8083,6 +8601,176 @@ def _parse_worker_result(text: str) -> WorkerResult:
         if isinstance(payload.get("spawned_subgraph"), dict)
         else None,
     )
+
+
+def _postprocess_worker_result(
+    *,
+    node: TaskNode,
+    result: WorkerResult,
+    run_dir: Path,
+) -> WorkerResult:
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    if str(metadata.get("task_type", "")).strip() != "report":
+        return result
+    if node.node_id == "compose_report":
+        return _postprocess_compose_report_result(result=result, run_dir=run_dir)
+    return result
+
+
+def _postprocess_compose_report_result(
+    *,
+    result: WorkerResult,
+    run_dir: Path,
+) -> WorkerResult:
+    """Ensure compose_report leaves a concrete report artifact for final delivery."""
+
+    report_path = _materialize_report_artifact_from_existing_paths(
+        run_dir=run_dir,
+        artifacts=result.artifacts,
+    )
+    if report_path is not None:
+        return _with_report_artifact(result=result, report_path=report_path)
+
+    summary = _clean_user_response_text(result.summary)
+    if _looks_like_markdown_report(summary):
+        report_path = run_dir / "composed_report" / "final_report.md"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            _normalize_report_markdown_syntax(summary).strip(),
+            encoding="utf-8",
+        )
+        return _with_report_artifact(
+            result=WorkerResult(
+                status=result.status,
+                summary=f"Final report written to {report_path}.",
+                artifacts=list(result.artifacts),
+                evidence=list(result.evidence),
+                next_action_hint=result.next_action_hint,
+                failure_reason=result.failure_reason,
+                spawned_subgraph=result.spawned_subgraph,
+            ),
+            report_path=report_path,
+        )
+
+    if result.status == "completed":
+        return WorkerResult(
+            status="partial",
+            summary=(
+                "compose_report completed without a user-facing final report artifact; "
+                "the report needs to be composed or retried from the available lane evidence."
+            ),
+            artifacts=list(result.artifacts),
+            evidence=list(result.evidence),
+            next_action_hint=(
+                "Create composed_report/final_report.md from the completed report lanes, "
+                "using valid Markdown heading/list spacing and paragraph-led prose."
+            ),
+            failure_reason="missing_final_report_artifact",
+            spawned_subgraph=result.spawned_subgraph,
+        )
+    return result
+
+
+def _with_report_artifact(*, result: WorkerResult, report_path: Path) -> WorkerResult:
+    artifact = str(report_path)
+    artifacts = list(dict.fromkeys([*result.artifacts, artifact]))
+    summary = result.summary
+    if not summary.strip() or _is_placeholder_worker_summary(summary):
+        summary = f"Final report written to {report_path}."
+    return WorkerResult(
+        status=result.status,
+        summary=summary,
+        artifacts=artifacts,
+        evidence=list(result.evidence),
+        next_action_hint=result.next_action_hint,
+        failure_reason=result.failure_reason,
+        spawned_subgraph=result.spawned_subgraph,
+    )
+
+
+def _materialize_report_artifact_from_existing_paths(
+    *,
+    run_dir: Path,
+    artifacts: list[str],
+) -> Path | None:
+    canonical = run_dir / "composed_report" / "final_report.md"
+    candidates: list[Path] = [canonical, run_dir / "compose" / "final_report.md"]
+    for artifact in artifacts:
+        artifact_path = Path(artifact)
+        if not artifact_path.is_absolute():
+            artifact_path = run_dir / artifact_path
+        if artifact_path.name == "final_report.md":
+            candidates.append(artifact_path)
+
+    for candidate in candidates:
+        if not candidate.exists() or not candidate.is_file():
+            continue
+        try:
+            text = candidate.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if (
+            not text
+            or _is_placeholder_worker_summary(text)
+            or _is_internal_supervisor_diagnostic(text)
+        ):
+            continue
+        normalized = _normalize_report_markdown_syntax(text).strip()
+        if candidate == canonical:
+            if normalized != text:
+                candidate.write_text(normalized, encoding="utf-8")
+            return canonical
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_text(normalized, encoding="utf-8")
+        return canonical
+    return None
+
+
+def _looks_like_markdown_report(text: str) -> bool:
+    if len(text.strip()) < 300:
+        return False
+    return bool(re.search(r"(?m)^#\s*\S+", text)) and bool(
+        re.search(r"(?m)^##\s*\S+", text)
+    )
+
+
+def _normalize_report_markdown_syntax(text: str) -> str:
+    """Repair common spacing mistakes that make generated reports invalid Markdown."""
+
+    lines: list[str] = []
+    in_fence = False
+    fence_marker = ""
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            if not in_fence:
+                in_fence = True
+                fence_marker = marker
+            elif marker == fence_marker:
+                in_fence = False
+                fence_marker = ""
+            lines.append(line)
+            continue
+        if in_fence:
+            lines.append(line)
+            continue
+
+        fixed = re.sub(r"^(#{1,6})([^#\s].*)$", r"\1 \2", line)
+        fixed = re.sub(
+            r"^(#{1,6}\s+)((?:\d\s*){4})\s*-\s*((?:\d\s*){4})(?=\D|$)",
+            lambda match: (
+                f"{match.group(1)}{''.join(match.group(2).split())}"
+                f"-{''.join(match.group(3).split())}"
+            ),
+            fixed,
+        )
+        fixed = re.sub(r"^(#{1,6}\s+)(\d+(?:\.\d+)*)\s+\.\s+", r"\1\2. ", fixed)
+        fixed = re.sub(r"^(#{1,6}\s+)(\d+(?:\.\d+)*\.?)(?=[^\s\d.-])", r"\1\2 ", fixed)
+        fixed = re.sub(r"^(\s*)(\d+\.)(?=\S)", r"\1\2 ", fixed)
+        fixed = re.sub(r"^(\s*)([-*+])(?=[^\s\-*+])", r"\1\2 ", fixed)
+        lines.append(fixed)
+    return "\n".join(lines)
 
 
 def _extract_spawned_subgraph_from_text(text: str) -> dict[str, Any] | None:
@@ -8210,8 +8898,7 @@ def _looks_like_user_delivery_node(node_id: str) -> bool:
     }:
         return True
     return any(
-        marker in normalized
-        for marker in ("answer", "reply", "response", "deliver")
+        marker in normalized for marker in ("answer", "reply", "response", "deliver")
     )
 
 
@@ -8280,8 +8967,24 @@ async def _render_user_response(
     but it must not add new facts or turn partial work into a claimed success.
     """
 
-    fallback = _select_user_response_candidate(task_type=task_type, rounds=rounds)
-    fallback = fallback or final_summary
+    fallback_candidate = _select_user_response_candidate(
+        task_type=task_type,
+        rounds=rounds,
+    )
+    fallback = _build_fallback_user_response(
+        task=task,
+        task_type=task_type,
+        rounds=rounds,
+        decision=decision,
+        preferred_candidate=fallback_candidate,
+    )
+    if task_type == "report":
+        composed_report = _report_composed_final_report_candidate(run_dir)
+        if composed_report:
+            return _relativize_user_facing_paths(
+                _normalize_report_markdown_syntax(composed_report),
+                run_dir=run_dir,
+            )
     finalizer_node = TaskNode(
         node_id="final_response",
         title="Write final user response",
@@ -8317,12 +9020,37 @@ async def _render_user_response(
         result.status in {"completed", "partial"}
         and finalizer_summary
         and not _is_placeholder_worker_summary(finalizer_summary)
+        and not _is_internal_supervisor_diagnostic(finalizer_summary)
     ):
+        if task_type == "report":
+            finalizer_summary = _normalize_report_markdown_syntax(finalizer_summary)
         return _relativize_user_facing_paths(
             finalizer_summary,
             run_dir=run_dir,
         )
+    if task_type == "report":
+        fallback = _normalize_report_markdown_syntax(fallback)
     return _relativize_user_facing_paths(fallback, run_dir=run_dir)
+
+
+def _report_composed_final_report_candidate(run_dir: Path) -> str | None:
+    """Return the composed report artifact when it is already user-facing."""
+
+    report_path = _materialize_report_artifact_from_existing_paths(
+        run_dir=run_dir,
+        artifacts=[],
+    )
+    if report_path is None:
+        return None
+    try:
+        text = report_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not text:
+        return None
+    if _is_placeholder_worker_summary(text) or _is_internal_supervisor_diagnostic(text):
+        return None
+    return text
 
 
 def _is_placeholder_worker_summary(text: str) -> bool:
@@ -8331,6 +9059,19 @@ def _is_placeholder_worker_summary(text: str) -> bool:
         "worker completed.",
         "worker completed",
     }
+
+
+def _is_internal_supervisor_diagnostic(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.strip()).casefold()
+    if not normalized:
+        return False
+    if "supervisor summary" in normalized and (
+        "round" in normalized or "decision:" in normalized or "- task:" in normalized
+    ):
+        return True
+    return normalized.startswith("# supervisor summary") or normalized.startswith(
+        "supervisor summary"
+    )
 
 
 def _select_user_response_candidate(*, task_type: str, rounds) -> str | None:
@@ -8344,6 +9085,8 @@ def _select_user_response_candidate(*, task_type: str, rounds) -> str | None:
             if not cleaned:
                 continue
             if _is_placeholder_worker_summary(cleaned):
+                continue
+            if _is_internal_supervisor_diagnostic(cleaned):
                 continue
             score = (
                 _user_response_node_score(str(item.node_id), task_type=task_type)
@@ -8359,6 +9102,351 @@ def _select_user_response_candidate(*, task_type: str, rounds) -> str | None:
     if best_score < 0:
         return None
     return best_text
+
+
+def _build_fallback_user_response(
+    *,
+    task: str,
+    task_type: str,
+    rounds,
+    decision: SupervisorDecision,
+    preferred_candidate: str | None,
+) -> str:
+    """Render deterministic chat-facing text when the final LLM pass is unusable."""
+
+    candidate = (preferred_candidate or "").strip()
+    if (
+        candidate
+        and not _is_placeholder_worker_summary(candidate)
+        and not _is_internal_supervisor_diagnostic(candidate)
+    ):
+        if _task_prefers_chinese_response(task) and not re.search(
+            r"[\u3400-\u9fff]",
+            candidate,
+        ):
+            return f"这次已有可用结果：{_truncate_user_facing_summary(candidate)}"
+        return candidate
+    if _task_prefers_chinese_response(task):
+        return _build_fallback_user_response_zh(
+            task_type=task_type,
+            rounds=rounds,
+            decision=decision,
+        )
+    return _build_fallback_user_response_en(
+        task_type=task_type,
+        rounds=rounds,
+        decision=decision,
+    )
+
+
+def _build_fallback_user_response_zh(
+    *,
+    task_type: str,
+    rounds,
+    decision: SupervisorDecision,
+) -> str:
+    items = _fallback_user_visible_items(rounds)
+    summaries = " ".join(str(item.summary or "") for item in items)
+    if _summary_indicates_missing_repository(summaries):
+        return (
+            "这次还没法真正开始部署：没有拿到要部署的仓库 URL 或本地源码路径，"
+            "当前工作区里也没有可检查的源码。为了避免基于空工作区继续构建、测试或生成不可靠结论，"
+            "我已经提前停止，后续构建和工作流验证没有继续执行。\n\n"
+            "请补充 GitHub 仓库地址或本地仓库路径后再试，我就可以继续做仓库检查、构建和验证。"
+        )
+
+    unresolved = _rounds_have_unresolved_nodes(rounds) or bool(decision.failed_nodes)
+    opening = "这次没有完整完成。" if unresolved else "这次已经完成。"
+    reason = _humanize_decision_reason_zh(decision.reason)
+    paragraphs = [f"{opening}{reason}"]
+
+    detail_sentences = [
+        sentence for item in items[:3] if (sentence := _fallback_item_sentence_zh(item))
+    ]
+    if detail_sentences:
+        paragraphs.append("目前可确认的是：" + "；".join(detail_sentences) + "。")
+
+    if unresolved:
+        paragraphs.append(_next_step_hint_zh(task_type))
+    return "\n\n".join(paragraphs)
+
+
+def _build_fallback_user_response_en(
+    *,
+    task_type: str,
+    rounds,
+    decision: SupervisorDecision,
+) -> str:
+    items = _fallback_user_visible_items(rounds)
+    summaries = " ".join(str(item.summary or "") for item in items)
+    if _summary_indicates_missing_repository(summaries):
+        return (
+            "I could not start the repository deployment because no repository URL, "
+            "local source path, or materialized source tree was available in the workspace. "
+            "I stopped before build or workflow validation so the final answer would not "
+            "claim unsupported progress.\n\n"
+            "Please provide a GitHub repository URL or a local repository path, then I can "
+            "continue with inspection, build, and validation."
+        )
+
+    unresolved = _rounds_have_unresolved_nodes(rounds) or bool(decision.failed_nodes)
+    opening = "This run did not complete." if unresolved else "This run completed."
+    reason = _humanize_decision_reason_en(decision.reason)
+    paragraphs = [f"{opening}{reason}"]
+    detail_sentences = [
+        sentence for item in items[:3] if (sentence := _fallback_item_sentence_en(item))
+    ]
+    if detail_sentences:
+        paragraphs.append("What I can confirm: " + "; ".join(detail_sentences) + ".")
+    if unresolved:
+        paragraphs.append(_next_step_hint_en(task_type))
+    return "\n\n".join(paragraphs)
+
+
+def _fallback_user_visible_items(rounds) -> list[Any]:
+    primary: list[Any] = []
+    secondary: list[Any] = []
+    for round_result in rounds:
+        for item in round_result.node_results:
+            cleaned = _clean_user_response_text(str(item.summary or ""))
+            if not cleaned:
+                continue
+            if _is_placeholder_worker_summary(
+                cleaned
+            ) or _is_internal_supervisor_diagnostic(cleaned):
+                continue
+            node_id = str(item.node_id)
+            failure_reason = str(item.failure_reason or "")
+            if node_id.startswith("check_"):
+                continue
+            if failure_reason in {
+                "blocked_by_node_decision_check",
+                "blocked_by_failed_dependency",
+                "blocked_by_unresolved_dependency",
+            }:
+                secondary.append(item)
+                continue
+            if item.status in {"failed", "blocked", "partial"}:
+                primary.append(item)
+            elif item.status == "completed":
+                secondary.append(item)
+    return primary or secondary
+
+
+def _rounds_have_unresolved_nodes(rounds) -> bool:
+    for round_result in rounds:
+        for item in round_result.node_results:
+            if item.status in {"failed", "blocked", "partial"}:
+                return True
+    return False
+
+
+def _task_prefers_chinese_response(task: str) -> bool:
+    lowered = task.casefold()
+    english_markers = (
+        "reply in english",
+        "respond in english",
+        "answer in english",
+        "english only",
+        "in english",
+        "用英文",
+        "使用英文",
+        "英文回答",
+        "英语回答",
+    )
+    if any(marker in lowered for marker in english_markers):
+        return False
+    chinese_markers = ("中文", "汉语", "用中文", "中文回答")
+    if any(marker in lowered for marker in chinese_markers):
+        return True
+    return True
+
+
+def _summary_indicates_missing_repository(text: str) -> bool:
+    lowered = text.casefold()
+    return any(
+        marker in lowered
+        for marker in (
+            "does not include a repository url or source path",
+            "no materialized software repository",
+            "nothing to inspect for build/test assets",
+            "missing repository url",
+            "missing_repo",
+            "missing source path",
+        )
+    )
+
+
+def _humanize_decision_reason_zh(reason: str) -> str:
+    normalized = reason.strip().casefold()
+    if not normalized:
+        return ""
+    if normalized == "node decision check requested finalization.":
+        return "前置检查认为继续执行不可靠，所以已提前结束。"
+    if normalized == "reached max rounds with unresolved nodes.":
+        return "达到本次执行轮次上限后仍有未解决问题。"
+    if normalized == "all nodes completed.":
+        return "所有步骤都已正常完成。"
+    if normalized == "no rounds executed.":
+        return "流程还没有实际开始。"
+    if normalized == "replan to retry unresolved nodes.":
+        return "仍需要重试未解决的步骤。"
+    return f"原因是：{reason}"
+
+
+def _humanize_decision_reason_en(reason: str) -> str:
+    normalized = reason.strip().casefold()
+    if not normalized:
+        return ""
+    if normalized == "node decision check requested finalization.":
+        return " A prerequisite check determined that continuing would be unreliable."
+    if normalized == "reached max rounds with unresolved nodes.":
+        return " The run reached the maximum number of rounds with unresolved work."
+    if normalized == "all nodes completed.":
+        return " All steps completed normally."
+    if normalized == "no rounds executed.":
+        return " No execution round actually started."
+    if normalized == "replan to retry unresolved nodes.":
+        return " Some unresolved steps still need a retry."
+    return f" Reason: {reason}"
+
+
+def _fallback_item_sentence_zh(item: Any) -> str:
+    summary = _humanize_worker_summary_zh(str(item.summary or ""))
+    label = _node_label_zh(str(item.node_id))
+    status = _status_label_zh(str(item.status))
+    if summary:
+        return f"{label}{status}：{summary}"
+    return f"{label}{status}"
+
+
+def _fallback_item_sentence_en(item: Any) -> str:
+    summary = _humanize_worker_summary_en(str(item.summary or ""))
+    label = _node_label_en(str(item.node_id))
+    status = _status_label_en(str(item.status))
+    if summary:
+        return f"{label} {status}: {summary}"
+    return f"{label} {status}"
+
+
+def _humanize_worker_summary_zh(summary: str) -> str:
+    text = _clean_user_response_text(summary)
+    lowered = text.casefold()
+    if _summary_indicates_missing_repository(text):
+        return "没有拿到仓库 URL 或本地源码路径，当前工作区也没有可检查的源码"
+    if "blocked by failed dependency" in lowered:
+        return "依赖的前置步骤没有通过，所以已跳过"
+    if "blocked by unresolved dependency chain" in lowered:
+        return "依赖链没有形成可执行结果，所以已跳过"
+    if "skipped because node decision check requested finalization" in lowered:
+        return "前置检查已经要求提前结束，所以已跳过"
+    if "timed out" in lowered:
+        return "执行超时，当前结果不完整"
+    if "unexpected exception" in lowered:
+        return "执行过程中遇到未预期异常"
+    return _truncate_user_facing_summary(text)
+
+
+def _humanize_worker_summary_en(summary: str) -> str:
+    text = _clean_user_response_text(summary)
+    lowered = text.casefold()
+    if _summary_indicates_missing_repository(text):
+        return "no repository URL, local source path, or source tree was available"
+    if "blocked by failed dependency" in lowered:
+        return "a prerequisite step failed, so this step was skipped"
+    if "blocked by unresolved dependency chain" in lowered:
+        return "the dependency chain did not produce an executable result"
+    if "skipped because node decision check requested finalization" in lowered:
+        return "a prerequisite check requested early finalization"
+    if "timed out" in lowered:
+        return "execution timed out, so the result is incomplete"
+    if "unexpected exception" in lowered:
+        return "an unexpected exception occurred"
+    return _truncate_user_facing_summary(text)
+
+
+def _truncate_user_facing_summary(text: str, *, max_chars: int = 260) -> str:
+    stripped = re.sub(r"\s+", " ", text.strip())
+    if len(stripped) <= max_chars:
+        return stripped
+    return stripped[: max_chars - 3].rstrip() + "..."
+
+
+def _node_label_zh(node_id: str) -> str:
+    normalized = node_id.lower().removeprefix("retry_")
+    labels = {
+        "inspect": "仓库检查",
+        "build": "构建验证",
+        "wdl": "工作流验证",
+        "summarize": "结果汇总",
+        "register": "任务准备",
+        "init_generic": "任务规划",
+        "compose_generic": "答案整理",
+        "init_report": "报告规划",
+        "compose_report": "报告撰写",
+        "final_response": "最终回答",
+    }
+    return labels.get(normalized, "当前步骤")
+
+
+def _node_label_en(node_id: str) -> str:
+    normalized = node_id.lower().removeprefix("retry_")
+    labels = {
+        "inspect": "repository inspection",
+        "build": "build validation",
+        "wdl": "workflow validation",
+        "summarize": "result summary",
+        "register": "task preparation",
+        "init_generic": "task planning",
+        "compose_generic": "answer composition",
+        "init_report": "report planning",
+        "compose_report": "report writing",
+        "final_response": "final response",
+    }
+    return labels.get(normalized, "the current step")
+
+
+def _status_label_zh(status: str) -> str:
+    return {
+        "completed": "已完成",
+        "partial": "只完成了一部分",
+        "failed": "失败",
+        "blocked": "没有继续",
+    }.get(status, "状态不明确")
+
+
+def _status_label_en(status: str) -> str:
+    return {
+        "completed": "completed",
+        "partial": "partially completed",
+        "failed": "failed",
+        "blocked": "was blocked",
+    }.get(status, "has an unclear status")
+
+
+def _next_step_hint_zh(task_type: str) -> str:
+    if task_type == "github2workspace":
+        return (
+            "下一步需要补充可访问的仓库地址或本地源码路径，然后再继续检查、构建和验证。"
+        )
+    if task_type == "benchmark":
+        return "下一步需要补充可运行的 benchmark 输入、工具或数据集约束后再继续。"
+    if task_type == "report":
+        return "下一步需要补充缺失证据或放宽不可用来源后再继续生成完整报告。"
+    return "下一步需要补充缺失信息或处理上面的阻塞点后再继续。"
+
+
+def _next_step_hint_en(task_type: str) -> str:
+    if task_type == "github2workspace":
+        return (
+            "Next, provide an accessible repository URL or local source path, then rerun "
+            "inspection, build, and validation."
+        )
+    if task_type == "benchmark":
+        return "Next, provide runnable benchmark inputs, tool constraints, or dataset details, then retry."
+    if task_type == "report":
+        return "Next, provide the missing evidence or allow alternate sources before composing the full report."
+    return "Next, provide the missing information or resolve the blocker above, then retry."
 
 
 def _user_response_node_score(node_id: str, *, task_type: str) -> int:
@@ -8476,7 +9564,10 @@ def _is_relative_to(path: Path, base: Path) -> bool:
 def _extract_quoted_final_answer(text: str) -> str | None:
     if len(text) > 800:
         return None
-    if not any(marker in text for marker in ("回复", "答案", "输出", "交付", "answer", "response")):
+    if not any(
+        marker in text
+        for marker in ("回复", "答案", "输出", "交付", "answer", "response")
+    ):
         return None
     matches = re.findall(r"[“\"]([^”\"]{1,500})[”\"]", text)
     if not matches:
@@ -8670,11 +9761,21 @@ def _github2workspace_product_status(
     final_decision: SupervisorDecision,
 ) -> str:
     wdl_outputs = workspace_root / "results" / "wdl_result" / "outputs.json"
-    uses_synthetic_inputs = _github2workspace_uses_synthetic_inputs(workspace_root=workspace_root)
-    if wdl_outputs.exists() and wdl_outputs.stat().st_size > 0 and not uses_synthetic_inputs:
+    uses_synthetic_inputs = _github2workspace_uses_synthetic_inputs(
+        workspace_root=workspace_root
+    )
+    if (
+        wdl_outputs.exists()
+        and wdl_outputs.stat().st_size > 0
+        and not uses_synthetic_inputs
+    ):
         return "completed"
-    build_completed = _node_status_seen(rounds=rounds, node_id="build", status="completed")
-    docker_outputs = list((workspace_root / "results" / "docker_test").glob("**/contigs.fasta"))
+    build_completed = _node_status_seen(
+        rounds=rounds, node_id="build", status="completed"
+    )
+    docker_outputs = list(
+        (workspace_root / "results" / "docker_test").glob("**/contigs.fasta")
+    )
     if build_completed and docker_outputs:
         return "docker_validated"
     if uses_synthetic_inputs:
@@ -8720,7 +9821,9 @@ def _github2workspace_uses_synthetic_inputs(*, workspace_root: Path) -> bool:
         lowered = value.casefold()
         if any(marker in lowered for marker in ("toy", "synthetic", "generated")):
             return True
-        if "/results/wdl_file/" in lowered and lowered.endswith((".fastq", ".fq", ".fasta", ".fa")):
+        if "/results/wdl_file/" in lowered and lowered.endswith(
+            (".fastq", ".fq", ".fasta", ".fa")
+        ):
             return True
     return False
 
@@ -8741,7 +9844,9 @@ def _benchmark_operator_status(
             result_manifest_path = case_dir / "run" / "result_manifest.json"
             if result_manifest_path.exists():
                 try:
-                    result_manifest = json.loads(result_manifest_path.read_text(encoding="utf-8"))
+                    result_manifest = json.loads(
+                        result_manifest_path.read_text(encoding="utf-8")
+                    )
                 except json.JSONDecodeError:
                     result_manifest = {}
                 expected_outputs = result_manifest.get("expected_outputs")
@@ -8750,8 +9855,14 @@ def _benchmark_operator_status(
                         isinstance(item, dict) and item.get("exists") is True
                         for item in expected_outputs.values()
                     ):
-                        return "completed", f"{repo} ran successfully and produced expected output evidence."
-                    return "partial", f"{repo} ran successfully, but expected output files were not found."
+                        return (
+                            "completed",
+                            f"{repo} ran successfully and produced expected output evidence.",
+                        )
+                    return (
+                        "partial",
+                        f"{repo} ran successfully, but expected output files were not found.",
+                    )
             return "completed", f"{repo} ran successfully."
         reason = _optional_str(status_payload.get("failure_reason")) or "run_failed"
         return "failed", f"{repo} execution failed: {reason}."
@@ -8771,7 +9882,10 @@ def _benchmark_operator_status(
             blockers.append("missing_wdl_path")
         if not ready_payload.get("inputs_json_path"):
             blockers.append("missing_inputs_json_path")
-    return "blocked", f"{repo} is not execution-ready: {', '.join(blockers) or 'unknown blocker'}."
+    return (
+        "blocked",
+        f"{repo} is not execution-ready: {', '.join(blockers) or 'unknown blocker'}.",
+    )
 
 
 def _operator_store_root_for_run_dir(run_dir: Path) -> Path:
@@ -8793,7 +9907,9 @@ def _ensure_workspace_benchmark_history_backfilled(workspace_root: Path) -> list
     _BENCHMARK_HISTORY_BACKFILL_ATTEMPTED.add(target_root)
     if _history_store_has_records(target_root):
         return []
-    return _backfill_workspace_benchmark_history(workspace_root=workspace_root, store_root=target_root)
+    return _backfill_workspace_benchmark_history(
+        workspace_root=workspace_root, store_root=target_root
+    )
 
 
 def _history_store_has_records(store_root: Path) -> bool:
@@ -8835,7 +9951,9 @@ def _discover_workspace_benchmark_run_dirs(workspace_root: Path) -> list[Path]:
     discovered: list[Path] = []
     seen: set[Path] = set()
     for root, dirnames, filenames in os.walk(workspace_root, topdown=True):
-        dirnames[:] = [name for name in dirnames if name != _BENCHMARK_COMPARISON_HISTORY_STORE_DIR]
+        dirnames[:] = [
+            name for name in dirnames if name != _BENCHMARK_COMPARISON_HISTORY_STORE_DIR
+        ]
         if "cases" not in dirnames or "manifest.json" not in filenames:
             continue
         run_dir = Path(root)
@@ -8849,7 +9967,9 @@ def _discover_workspace_benchmark_run_dirs(workspace_root: Path) -> list[Path]:
         discovered.append(resolved)
         if "cases" in dirnames:
             dirnames.remove("cases")
-    discovered.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0.0, reverse=True)
+    discovered.sort(
+        key=lambda path: path.stat().st_mtime if path.exists() else 0.0, reverse=True
+    )
     return discovered
 
 
@@ -8860,8 +9980,17 @@ def _backfill_benchmark_history_record_for_case(
     run_dir: Path,
     repo: str,
 ) -> Path | None:
-    if store_root.resolve() == _benchmark_result_store_root_for_run_dir(run_dir).resolve():
-        existing_record = store_root / "records" / _safe_benchmark_store_part(repo) / _safe_benchmark_store_part(run_dir.name) / BENCHMARK_RECORD_NAME
+    if (
+        store_root.resolve()
+        == _benchmark_result_store_root_for_run_dir(run_dir).resolve()
+    ):
+        existing_record = (
+            store_root
+            / "records"
+            / _safe_benchmark_store_part(repo)
+            / _safe_benchmark_store_part(run_dir.name)
+            / BENCHMARK_RECORD_NAME
+        )
         if existing_record.exists():
             return existing_record
     case_dir = run_dir / "cases" / repo
@@ -8919,7 +10048,10 @@ def _benchmark_status_payload_from_wdl_status(
         for path in _benchmark_expected_output_paths(
             repo=repo,
             case_dir=case_dir,
-            status_payload={"output_dir": str(wdl_output_dir), "output_artifacts": wdl_status.get("output_artifacts", [])},
+            status_payload={
+                "output_dir": str(wdl_output_dir),
+                "output_artifacts": wdl_status.get("output_artifacts", []),
+            },
         )
         if path.exists()
     ]
@@ -8951,11 +10083,15 @@ def _safe_benchmark_store_part(value: str) -> str:
     return normalized.strip("-") or "unknown"
 
 
-def _write_metric_plan(*, run_dir: Path, selected_tools: list[str]) -> dict[str, object]:
+def _write_metric_plan(
+    *, run_dir: Path, selected_tools: list[str]
+) -> dict[str, object]:
     rows: list[dict[str, object]] = []
     shared_datasets: list[str] = []
     for repo in selected_tools:
-        manifest = json.loads((run_dir / "cases" / repo / "manifest.json").read_text(encoding="utf-8"))
+        manifest = json.loads(
+            (run_dir / "cases" / repo / "manifest.json").read_text(encoding="utf-8")
+        )
         dataset_key = str(manifest.get("dataset_key", ""))
         if dataset_key and dataset_key not in shared_datasets:
             shared_datasets.append(dataset_key)
@@ -8992,7 +10128,9 @@ def _write_metric_plan(*, run_dir: Path, selected_tools: list[str]) -> dict[str,
     return payload
 
 
-def _locate_repo_root_for_benchmark(*, node: TaskNode, workspace_root: Path) -> Path | None:
+def _locate_repo_root_for_benchmark(
+    *, node: TaskNode, workspace_root: Path
+) -> Path | None:
     task = str(node.metadata.get("task", "")) if isinstance(node.metadata, dict) else ""
     for match in _TASK_PATH_RE.finditer(task):
         candidate = Path(match.group(1).rstrip("。.,)"))
@@ -9028,7 +10166,9 @@ def _run_helper_json_command(
     try:
         payload = json.loads(stdout) if stdout else {}
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"{phase} returned non-JSON output: {stdout or stderr}") from exc
+        raise RuntimeError(
+            f"{phase} returned non-JSON output: {stdout or stderr}"
+        ) from exc
     return {
         "phase": phase,
         "command": command,
@@ -9072,7 +10212,9 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     )
 
 
-def _write_github_repo_materialization_log(path: Path, payload: dict[str, object]) -> None:
+def _write_github_repo_materialization_log(
+    path: Path, payload: dict[str, object]
+) -> None:
     _write_json(path, payload)
 
 
@@ -9110,6 +10252,225 @@ def _latest_human_text(state: dict[str, object]) -> str | None:
     return None
 
 
+def _latest_human_requests_execution(state: dict[str, object]) -> bool:
+    """Return whether the latest user message explicitly starts execution."""
+    latest = _latest_human_text(state)
+    if not latest:
+        return False
+    text = re.sub(r"\s+", " ", latest.strip().casefold())
+    if not text:
+        return False
+    negative_markers = (
+        "不要执行",
+        "不要开始",
+        "先不执行",
+        "先别执行",
+        "暂不执行",
+        "暂时不执行",
+        "不用执行",
+        "别开始",
+        "别执行",
+        "不要跑",
+        "先不跑",
+        "not yet",
+        "do not execute",
+        "don't execute",
+        "do not start",
+        "don't start",
+        "not start",
+    )
+    if any(marker in text for marker in negative_markers):
+        return False
+
+    direct_patterns = (
+        r"开始执行",
+        r"开始跑",
+        r"开始运行",
+        r"执行任务",
+        r"跑任务",
+        r"执行吧",
+        r"开始吧",
+        r"跑吧",
+        r"按.*方案.*(执行|开始|跑|做)",
+        r"照.*方案.*(执行|开始|跑|做)",
+        r"按.*计划.*(执行|开始|跑|做)",
+        r"可以.*(开始|执行|跑)",
+        r"没问题.*(开始|执行|跑)",
+        r"同意.*(开始|执行|跑)",
+        r"确认.*(开始|执行|跑)",
+        r"\b(go ahead|start|execute|run it|proceed)\b",
+    )
+    if any(re.search(pattern, text) for pattern in direct_patterns):
+        return True
+
+    if not _last_ai_asked_for_execution_confirmation(state):
+        return False
+    affirmative_replies = {
+        "可以",
+        "可以了",
+        "好",
+        "好的",
+        "行",
+        "行的",
+        "没问题",
+        "确认",
+        "同意",
+        "就这样",
+        "按这个来",
+        "按方案来",
+        "yes",
+        "ok",
+        "okay",
+        "sure",
+    }
+    return text in affirmative_replies
+
+
+def _last_ai_asked_for_execution_confirmation(state: dict[str, object]) -> bool:
+    messages = state.get("messages") or []
+    if not isinstance(messages, list):
+        return False
+    return _INTERACTIVE_CONFIRMATION_FOOTER in _last_ai_text(messages)
+
+
+async def _render_interactive_execution_proposal(
+    *,
+    state: dict[str, object],
+    proposal_model: Any | None,
+) -> str:
+    """Render a no-tools interactive proposal before Supervisor execution."""
+    prompt = _interactive_proposal_user_prompt(state)
+    text = ""
+    if proposal_model is not None:
+        try:
+            response = await proposal_model.ainvoke(
+                [
+                    SystemMessage(content=_INTERACTIVE_PROPOSAL_SYSTEM_PROMPT),
+                    HumanMessage(content=prompt),
+                ]
+            )
+            text = _message_text(response)
+        except Exception:
+            logger.debug(
+                "Interactive proposal model failed; using deterministic fallback.",
+                exc_info=True,
+            )
+    if not text.strip():
+        task = _latest_human_text(state) or "这次任务"
+        text = (
+            "我先把你的意图整理成一个待确认方案：\n\n"
+            f"1. 明确目标：{task}\n"
+            "2. 先按任务需要规划步骤和产物。\n"
+            "3. 你确认后，我再进入自动执行阶段并持续跑到完成。"
+        )
+    return _ensure_interactive_confirmation_footer(text)
+
+
+def _interactive_proposal_user_prompt(state: dict[str, object]) -> str:
+    messages = state.get("messages") or []
+    transcript = _recent_dialogue_text(messages if isinstance(messages, list) else [])
+    latest = _latest_human_text(state) or ""
+    return (
+        "请根据下面最近对话，整理一个用户确认后才会执行的方案。"
+        "当前不要执行。\n\n"
+        f"最新用户输入：\n{latest}\n\n"
+        f"最近对话：\n{transcript}"
+    )
+
+
+def _confirmed_interactive_execution_task(state: dict[str, object]) -> str | None:
+    latest = _latest_human_text(state)
+    if not latest:
+        return None
+    if not _latest_human_requests_execution(state):
+        return latest
+    messages = state.get("messages") or []
+    if not isinstance(messages, list):
+        return latest
+    prior_human = _recent_human_texts_before_latest(messages, limit=6)
+    plan = _strip_interactive_confirmation_footer(_last_ai_text(messages))
+    if not prior_human and not plan:
+        return latest
+    parts = [
+        "用户已明确确认开始执行。请把下面内容作为一个非交互式任务自动完成，直到产出最终结果。",
+        "",
+    ]
+    if prior_human:
+        parts.append("原始和修订意图：")
+        parts.extend(f"- {item}" for item in prior_human)
+        parts.append("")
+    if plan:
+        parts.append("已确认方案：")
+        parts.append(plan)
+        parts.append("")
+    parts.append("用户确认消息：")
+    parts.append(latest)
+    return "\n".join(parts).strip()
+
+
+def _ensure_interactive_confirmation_footer(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return _INTERACTIVE_CONFIRMATION_FOOTER
+    without_footer = _strip_interactive_confirmation_footer(stripped).rstrip()
+    return f"{without_footer}\n\n{_INTERACTIVE_CONFIRMATION_FOOTER}"
+
+
+def _strip_interactive_confirmation_footer(text: str) -> str:
+    stripped = text.strip()
+    if stripped.endswith(_INTERACTIVE_CONFIRMATION_FOOTER):
+        return stripped[: -len(_INTERACTIVE_CONFIRMATION_FOOTER)].rstrip()
+    return stripped
+
+
+def _recent_dialogue_text(messages: list[Any], *, limit: int = 10) -> str:
+    lines: list[str] = []
+    for message in messages[-limit:]:
+        role = str(getattr(message, "type", "") or "")
+        if role not in {"human", "ai"}:
+            continue
+        text = _message_content_text(getattr(message, "content", ""))
+        if not text:
+            continue
+        label = "用户" if role == "human" else "助手"
+        lines.append(f"{label}: {text}")
+    return "\n".join(lines) or "(无可用上下文)"
+
+
+def _recent_human_texts_before_latest(
+    messages: list[Any],
+    *,
+    limit: int,
+) -> list[str]:
+    humans: list[str] = []
+    for message in messages:
+        if getattr(message, "type", None) != "human":
+            continue
+        text = _message_content_text(getattr(message, "content", ""))
+        if text:
+            humans.append(text)
+    if not humans:
+        return []
+    return humans[:-1][-limit:]
+
+
+def _message_content_text(content: object) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                value = item.get("text") or item.get("content")
+                if isinstance(value, str):
+                    parts.append(value)
+            elif isinstance(item, str):
+                parts.append(item)
+        return "\n".join(part.strip() for part in parts if part and part.strip())
+    rendered = str(content).strip()
+    return rendered if rendered else ""
+
+
 def _latest_human_route_mode(state: dict[str, object]) -> str | None:
     """Return any explicit routing override stored on the latest human message."""
     messages = state.get("messages") or []
@@ -9121,7 +10482,9 @@ def _latest_human_route_mode(state: dict[str, object]) -> str | None:
         additional_kwargs = getattr(message, "additional_kwargs", None)
         if not isinstance(additional_kwargs, dict):
             return None
-        route = additional_kwargs.get("code2workspace_route")
+        route = additional_kwargs.get("epimindagent_route")
+        if route is None:
+            route = additional_kwargs.get("code2workspace_route")
         if isinstance(route, str) and route.strip():
             return route.strip().lower()
         return None

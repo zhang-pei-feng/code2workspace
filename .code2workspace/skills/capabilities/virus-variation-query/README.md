@@ -22,7 +22,7 @@ virus-variation-query/
 - **新冠病毒** (SARS-CoV-2): Spike蛋白抗体逃逸、ACE2受体结合分析
 - **流感病毒** (Influenza): HA/NA蛋白抗原性、受体结合风险评估  
 - **猴痘病毒** (Mpox): 膜蛋白变异风险分析
-- **数据治理库** (`covid_data`): Pango lineage catalog、谱系突变、NCBI/SRA 导入记录、EpiETL 报告/风险事件
+- **谱系/导入表** (`virus_variation` 主库，`covid19_data` 历史镜像): Pango lineage catalog、谱系突变、NCBI/SRA 导入记录
 
 ## 🎯 激活条件
 
@@ -40,15 +40,15 @@ virus-variation-query/
 | 流感 | ~524k | HA, NA |
 | 猴痘 | ~1052k | OPG210, OPG105 |
 
-数据治理智能体 `covid_data` 当前主要表：
+`virus_variation` 当前还包含这些谱系/导入表；`covid19_data` 是可选历史镜像：
 
 | 表 | 记录数 | 用途 |
 |----|--------|------|
 | `ncov_source_records` | ~20k | NCBI Virus / SRA 规范化记录 |
 | `ncov_lineage_catalog` | ~75 | Pango 谱系目录 |
 | `ncov_lineage_mutations` | ~625 | Pango constellation 谱系突变 |
-| `ncov_epietl_reports` | ~200 | EpiETL 监测报告 |
-| `ncov_epietl_risk_events` | ~188 | EpiETL 风险事件 |
+
+本机 MySQL 未发现 EpiETL 报告/风险事件表；EpiETL 数据请用 `epietl-api` skill。
 
 ## 🚀 使用方法
 

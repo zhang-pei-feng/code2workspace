@@ -247,10 +247,22 @@ class TestShortFlags:
         assert exc_info.value.code in (0, None)
 
     def test_short_auto_approve_flag(self) -> None:
-        """Verify -y sets auto_approve."""
+        """Verify -y keeps auto_approve enabled."""
         with patch.object(sys, "argv", ["code2workspace", "-y"]):
             args = parse_args()
         assert args.auto_approve is True
+
+    def test_auto_approve_default_enabled(self) -> None:
+        """Verify interactive sessions default to auto-approve."""
+        with patch.object(sys, "argv", ["code2workspace"]):
+            args = parse_args()
+        assert args.auto_approve is True
+
+    def test_no_auto_approve_flag(self) -> None:
+        """Verify --no-auto-approve starts in manual approval mode."""
+        with patch.object(sys, "argv", ["code2workspace", "--no-auto-approve"]):
+            args = parse_args()
+        assert args.auto_approve is False
 
     def test_short_shell_allow_list_flag(self) -> None:
         """Verify -S sets shell_allow_list."""

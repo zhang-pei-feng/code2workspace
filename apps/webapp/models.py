@@ -1,4 +1,4 @@
-"""Shared data shapes for the Code2Workspace web workbench."""
+"""Shared data shapes for the EpiMindAgent web workbench."""
 
 from __future__ import annotations
 

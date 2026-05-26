@@ -21,14 +21,25 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
 
 import tomli_w
 
+from code2workspace_cli._env_vars import (
+    DEFAULT_MODEL,
+    ENV_PREFIX as _ENV_PREFIX,
+    LEGACY_ENV_PREFIX as _LEGACY_ENV_PREFIX,
+    MODEL,
+    PROJECT_DEFAULT_MODEL,
+    PROJECT_MODEL,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
 
-_ENV_PREFIX = "CODE2WORKSPACE_CLI_"
-
 DEFAULT_MODEL_ENV_VARS: tuple[str, ...] = (
+    PROJECT_MODEL,
+    PROJECT_DEFAULT_MODEL,
+    MODEL,
+    DEFAULT_MODEL,
     "CODE2WORKSPACE_MODEL",
     "CODE2WORKSPACE_DEFAULT_MODEL",
     "CODE2WORKSPACE_CLI_MODEL",
@@ -38,18 +49,21 @@ DEFAULT_MODEL_ENV_VARS: tuple[str, ...] = (
 
 
 def resolve_env_var(name: str) -> str | None:
-    """Look up an env var with `CODE2WORKSPACE_CLI_` prefix override.
+    """Look up an env var with `EPIMINDAGENT_CLI_` prefix override.
 
-    Checks `CODE2WORKSPACE_CLI_{name}` first, then falls back to `{name}`.
+    Checks `EPIMINDAGENT_CLI_{name}` first, then the legacy
+    `CODE2WORKSPACE_CLI_{name}`, then falls back to `{name}`.
 
     If the prefixed variable is *present* in the environment (even as an empty
     string), the canonical variable is never consulted. This lets users
-    set `CODE2WORKSPACE_CLI_X=""` to shadow a canonically-set key -- the function
+    set `EPIMINDAGENT_CLI_X=""` to shadow a canonically-set key -- the function
     will return `None` (since empty strings are normalized to `None`),
-    effectively suppressing the canonical value.
+    effectively suppressing the canonical value. Legacy empty prefixed values
+    preserve the same behavior when no preferred name is set.
 
-    If `name` already carries the prefix, the double-prefixed lookup is skipped
-    to avoid nonsensical `CODE2WORKSPACE_CLI_CODE2WORKSPACE_CLI_*` reads
+    If `name` already carries either supported prefix, the double-prefixed
+    lookup is skipped to avoid nonsensical `EPIMINDAGENT_CLI_EPIMINDAGENT_CLI_*`
+    reads
     (e.g., when the name comes from a user's `config.toml`).
 
     Args:
@@ -59,21 +73,32 @@ def resolve_env_var(name: str) -> str | None:
     Returns:
         The resolved value, or `None` when absent or empty.
     """
-    if not name.startswith(_ENV_PREFIX):
-        prefixed = f"{_ENV_PREFIX}{name}"
-        if prefixed in os.environ:
-            val = os.environ[prefixed]
-            if not val and os.environ.get(name):
-                logger.debug(
-                    "%s is set but empty, blocking non-empty %s. "
-                    "Unset %s to use the canonical variable.",
-                    prefixed,
-                    name,
-                    prefixed,
-                )
+    if name.startswith(_ENV_PREFIX):
+        return os.environ.get(name) or None
+    if name.startswith(_LEGACY_ENV_PREFIX):
+        preferred = f"{_ENV_PREFIX}{name[len(_LEGACY_ENV_PREFIX) :]}"
+        if preferred in os.environ:
+            val = os.environ[preferred]
             if val:
-                logger.debug("Resolved %s from %s", name, prefixed)
+                logger.debug("Resolved %s from %s", name, preferred)
             return val or None
+        return os.environ.get(name) or None
+
+    for prefixed in (f"{_ENV_PREFIX}{name}", f"{_LEGACY_ENV_PREFIX}{name}"):
+        if prefixed not in os.environ:
+            continue
+        val = os.environ[prefixed]
+        if not val and os.environ.get(name):
+            logger.debug(
+                "%s is set but empty, blocking non-empty %s. "
+                "Unset %s to use the canonical variable.",
+                prefixed,
+                name,
+                prefixed,
+            )
+        if val:
+            logger.debug("Resolved %s from %s", name, prefixed)
+        return val or None
     return os.environ.get(name) or None
 
 
@@ -250,7 +275,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 """Repository root used for portable project-local configuration."""
 
 DEFAULT_CONFIG_DIR = PROJECT_ROOT / "backend" / "config"
-"""Directory for project-local Code2Workspace configuration."""
+"""Directory for project-local EpiMindAgent configuration."""
 
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "agent_models.json"
 """Path to the main agent model configuration file."""
@@ -787,7 +812,7 @@ def has_provider_credentials(provider: str) -> bool | None:
 
     1. **Config-file providers** (`config.toml` `[providers.<name>]`):
         - If the section declares `api_key_env`, that env var is checked
-            via `resolve_env_var()` (which honors `CODE2WORKSPACE_CLI_` prefixes).
+            via `resolve_env_var()` (which honors `EPIMINDAGENT_CLI_` prefixes).
 
             Returns `True`/`False` accordingly.
         - If the section has `class_path` but no `api_key_env`, the provider is
@@ -864,7 +889,11 @@ def is_qa_only_runtime(config_path: Path | None = None) -> bool:
     """Return whether the project config asks for QA-only supervisor routing."""
     config = ModelConfig.load(config_path)
     mode = config.runtime.get("mode")
-    return isinstance(mode, str) and mode.strip().lower() in {"qa", "qa_only", "question_answering"}
+    return isinstance(mode, str) and mode.strip().lower() in {
+        "qa",
+        "qa_only",
+        "question_answering",
+    }
 
 
 @dataclass(frozen=True)

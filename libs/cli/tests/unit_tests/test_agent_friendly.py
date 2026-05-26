@@ -47,32 +47,32 @@ class TestHelpScreenExamples:
     def test_list_help_has_examples(self) -> None:
         text = self._render(show_list_help)
         assert "Examples:" in text
-        assert "code2workspace list" in text
-        assert "code2workspace list --json" in text
+        assert "EpiMindAgent list" in text
+        assert "EpiMindAgent list --json" in text
 
     def test_skills_list_help_has_examples(self) -> None:
         text = self._render(show_skills_list_help)
         assert "Examples:" in text
-        assert "code2workspace skills list --project" in text
-        assert "code2workspace skills list --json" in text
+        assert "EpiMindAgent skills list --project" in text
+        assert "EpiMindAgent skills list --json" in text
 
     def test_skills_info_help_has_examples(self) -> None:
         text = self._render(show_skills_info_help)
         assert "Examples:" in text
-        assert "code2workspace skills info web-research" in text
-        assert "code2workspace skills info my-skill --project" in text
+        assert "EpiMindAgent skills info web-research" in text
+        assert "EpiMindAgent skills info my-skill --project" in text
 
     def test_agents_help_has_examples(self) -> None:
         text = self._render(show_agents_help)
         assert "Examples:" in text
-        assert "code2workspace agents list" in text
-        assert "code2workspace agents reset --agent coder" in text
+        assert "EpiMindAgent agents list" in text
+        assert "EpiMindAgent agents reset --agent coder" in text
 
     def test_update_help_has_examples(self) -> None:
         text = self._render(show_update_help)
         assert "Examples:" in text
-        assert "code2workspace update" in text
-        assert "code2workspace update --json" in text
+        assert "EpiMindAgent update" in text
+        assert "EpiMindAgent update --json" in text
 
     def test_reset_help_has_dry_run(self) -> None:
         text = self._render(show_reset_help)
@@ -231,23 +231,23 @@ class TestAgentsSubcommand:
     """Tests for the agents resource subcommand."""
 
     def test_agents_list_parses(self) -> None:
-        """Running `code2workspace agents list` should parse correctly."""
-        with patch.object(sys, "argv", ["code2workspace", "agents", "list"]):
+        """Running `EpiMindAgent agents list` should parse correctly."""
+        with patch.object(sys, "argv", ["EpiMindAgent", "agents", "list"]):
             args = parse_args()
         assert args.command == "agents"
         assert args.agents_command == "list"
 
     def test_agents_ls_alias(self) -> None:
-        """Running `code2workspace agents ls` should parse as list."""
-        with patch.object(sys, "argv", ["code2workspace", "agents", "ls"]):
+        """Running `EpiMindAgent agents ls` should parse as list."""
+        with patch.object(sys, "argv", ["EpiMindAgent", "agents", "ls"]):
             args = parse_args()
         assert args.command == "agents"
         assert args.agents_command == "ls"
 
     def test_agents_reset_parses(self) -> None:
-        """Running `code2workspace agents reset --agent coder` should parse."""
+        """Running `EpiMindAgent agents reset --agent coder` should parse."""
         with patch.object(
-            sys, "argv", ["code2workspace", "agents", "reset", "--agent", "coder"]
+            sys, "argv", ["EpiMindAgent", "agents", "reset", "--agent", "coder"]
         ):
             args = parse_args()
         assert args.command == "agents"
@@ -255,12 +255,12 @@ class TestAgentsSubcommand:
         assert args.agent == "coder"
 
     def test_agents_reset_with_target(self) -> None:
-        """Running `code2workspace agents reset --agent coder --target researcher`."""
+        """Running `EpiMindAgent agents reset --agent coder --target researcher`."""
         with patch.object(
             sys,
             "argv",
             [
-                "code2workspace",
+                "EpiMindAgent",
                 "agents",
                 "reset",
                 "--agent",
@@ -273,21 +273,21 @@ class TestAgentsSubcommand:
         assert args.source_agent == "researcher"
 
     def test_agents_reset_dry_run(self) -> None:
-        """Running `code2workspace agents reset --agent coder --dry-run`."""
+        """Running `EpiMindAgent agents reset --agent coder --dry-run`."""
         with patch.object(
             sys,
             "argv",
-            ["code2workspace", "agents", "reset", "--agent", "coder", "--dry-run"],
+            ["EpiMindAgent", "agents", "reset", "--agent", "coder", "--dry-run"],
         ):
             args = parse_args()
         assert args.dry_run is True
 
     def test_agents_help_exits_clean(self) -> None:
-        """Running `code2workspace agents -h` should show help and exit 0."""
+        """Running `EpiMindAgent agents -h` should show help and exit 0."""
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=120)
         with (
-            patch.object(sys, "argv", ["code2workspace", "agents", "-h"]),
+            patch.object(sys, "argv", ["EpiMindAgent", "agents", "-h"]),
             patch("code2workspace_cli.ui.console", test_console),
             pytest.raises(SystemExit) as exc_info,
         ):
@@ -296,9 +296,9 @@ class TestAgentsSubcommand:
         assert "agents" in buf.getvalue().lower()
 
     def test_top_level_list_rejected(self) -> None:
-        """Top-level `code2workspace list` should error — use `agents list` instead."""
+        """Top-level `EpiMindAgent list` should error; use `agents list` instead."""
         with (
-            patch.object(sys, "argv", ["code2workspace", "list"]),
+            patch.object(sys, "argv", ["EpiMindAgent", "list"]),
             pytest.raises(SystemExit) as exc_info,
         ):
             parse_args()
@@ -314,17 +314,17 @@ class TestUpdateSubcommand:
     """Tests for the update subcommand."""
 
     def test_update_parses(self) -> None:
-        """Running `code2workspace update` should parse as command='update'."""
-        with patch.object(sys, "argv", ["code2workspace", "update"]):
+        """Running `EpiMindAgent update` should parse as command='update'."""
+        with patch.object(sys, "argv", ["EpiMindAgent", "update"]):
             args = parse_args()
         assert args.command == "update"
 
     def test_update_help_exits_clean(self) -> None:
-        """Running `code2workspace update -h` should show help and exit 0."""
+        """Running `EpiMindAgent update -h` should show help and exit 0."""
         buf = io.StringIO()
         test_console = Console(file=buf, highlight=False, width=120)
         with (
-            patch.object(sys, "argv", ["code2workspace", "update", "-h"]),
+            patch.object(sys, "argv", ["EpiMindAgent", "update", "-h"]),
             patch("code2workspace_cli.ui.console", test_console),
             pytest.raises(SystemExit) as exc_info,
         ):
@@ -517,7 +517,7 @@ class TestErrorMessageHints:
             cli_main()
 
         output = stderr_buf.getvalue()
-        assert "code2workspace -n" in output
+        assert "EpiMindAgent -n" in output
 
     def test_reset_source_not_found_has_hint(self, tmp_path: Path) -> None:
         """Reset with missing source agent should suggest agents list."""
@@ -534,7 +534,7 @@ class TestErrorMessageHints:
                 reset_agent("coder", "nonexistent")
 
         output = buf.getvalue()
-        assert "code2workspace agents list" in output
+        assert "EpiMindAgent agents list" in output
 
 
 # ---------------------------------------------------------------------------

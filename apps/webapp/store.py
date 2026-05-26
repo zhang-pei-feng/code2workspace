@@ -1,4 +1,4 @@
-"""SQLite-backed persistence for the Code2Workspace web workbench."""
+"""SQLite-backed persistence for the EpiMindAgent web workbench."""
 
 from __future__ import annotations
 

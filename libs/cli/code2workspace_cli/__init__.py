@@ -1,4 +1,4 @@
-"""Code2Workspace CLI - Interactive AI coding assistant."""
+"""EpiMindAgent CLI - Interactive AI coding assistant."""
 
 from __future__ import annotations
 

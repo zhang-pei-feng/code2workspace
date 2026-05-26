@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from code2workspace_cli._env_vars import SERVER_ENV_PREFIX
+from code2workspace_cli._env_vars import SERVER_ENV_PREFIX, get_mapping_env
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -112,13 +112,15 @@ def get_server_project_context(
         Reconstructed project context, or `None` if no server context exists.
     """
     environment = os.environ if env is None else env
-    raw_cwd = environment.get(f"{SERVER_ENV_PREFIX}CWD")
+    raw_cwd = get_mapping_env(environment, f"{SERVER_ENV_PREFIX}CWD")
     if not raw_cwd:
         return None
 
     try:
         user_cwd = Path(raw_cwd).expanduser().resolve()
-        raw_project_root = environment.get(f"{SERVER_ENV_PREFIX}PROJECT_ROOT")
+        raw_project_root = get_mapping_env(
+            environment, f"{SERVER_ENV_PREFIX}PROJECT_ROOT"
+        )
         project_root = (
             Path(raw_project_root).expanduser().resolve()
             if raw_project_root

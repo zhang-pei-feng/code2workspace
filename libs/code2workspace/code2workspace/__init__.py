@@ -1,4 +1,4 @@
-"""Code2Workspace package."""
+"""EpiMindAgent package."""
 
 from code2workspace._version import __version__
 from code2workspace.graph import create_workspace_agent

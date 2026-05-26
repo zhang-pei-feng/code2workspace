@@ -6,6 +6,11 @@ description: 获取少量固定官方来源的数据，包括 WHO COVID-19 Cases
 # 概述
 该技能旨在获取多个来源的实时数据，涉及新冠疫情和其他呼吸道疾病的趋势和统计数据。数据来源包括 WHO、美国 CDC、中国 CDC 以及 WHO 非洲地区每周的疫情通报。
 
+脚本会优先抽取结构化指标，而不是只做网页探活：WHO cases 使用公开
+OData 指标端点返回全球报告病例数；美国 CDC 使用 respiratory viruses
+图表 JSON 返回 COVID/flu/RSV 检测阳性率和 ARI 活动等级；中国 CDC 会抓取
+最新月报详情并解析确诊、重症、死亡、哨点阳性率和主要变异株占比。
+
 # 自然语言触发
 仅在用户明确要少量固定源时使用本 skill，典型说法：
 
@@ -23,13 +28,13 @@ description: 获取少量固定官方来源的数据，包括 WHO COVID-19 Cases
 如果用户问的是“某个变异株/谱系是否可能突破疫苗或既往免疫屏障”“针对某个变异株是否有新疫苗或临床试验”“变异株风险研判”等综合问题，应把本 skill 作为官方/网页监测层，与 `academic-search` 的论文/预印本/临床试验证据和 `virus-variation-query` 的本地位点风险证据结合使用。若官方监测源没有直接覆盖该变异株或临床试验，不要编造；说明“官方监测未直接给出该点”，再用其他来源补充。
 
 # 数据源
-1. **WHO 新冠疫情数据**  
-   数据来源于 WHO 新冠疫情仪表板，包含各国报告的新冠病例数。  
+1. **WHO 新冠疫情数据**
+   数据来源于 WHO 新冠疫情仪表板及其公开 OData 指标端点，包含全球报告病例数、近 7 日和近 28 日报告病例数。
    [数据来源](https://data.who.int/dashboards/covid19/cases)
 
-2. **美国 CDC 新冠疫情趋势**  
-   美国新冠死亡病例、急诊科就诊情况和检测阳性率的趋势。  
-   [数据来源](https://covid.cdc.gov/covid-data-tracker/#trends_select_testpositivity_00)
+2. **美国 CDC 新冠疫情趋势**
+   美国 COVID-19、流感、RSV 检测阳性率，以及 acute respiratory illness activity 等级。
+   [数据来源](https://www.cdc.gov/respiratory-viruses/data/activity-levels.html)
 
 3. **中国 CDC 新冠疫情数据**  
    中国的 COVID-19 及其他呼吸道疾病的数据，包括全国的病例报告、医院监测和检测数据。  
@@ -59,9 +64,9 @@ description: 获取少量固定官方来源的数据，包括 WHO COVID-19 Cases
 - "获取 WHO 新冠变异株的详细数据。"
 
 ## 输出示例
-- WHO 新冠疫情数据（全球、国家级别的疫情数据）
-- 美国 CDC 新冠趋势（死亡率、急诊科就诊数据、检测阳性率）
-- 中国 CDC 每月疫情数据（确诊病例、重症病例、变异株监测）
+- WHO 新冠疫情数据（全球最新报告日期、最新周期/近 7 日/近 28 日报告病例数）
+- 美国 CDC 新冠/流感/RSV 趋势（全国检测阳性率、ARI 活动等级）
+- 中国 CDC 每月疫情数据（确诊病例、重症病例、死亡病例、哨点阳性率、变异株监测）
 - WHO 非洲地区每周疫情周报（PDF下载并提取的报告内容）
 - WHO 新冠变异株数据（包含 VOI 和 VUM 毒株的风险评估）
 

@@ -43,7 +43,7 @@ GitHub repository URL.
 
 - clone target repository
 - derive a standardized one-shot task prompt
-- run `code2workspace` once
+- run `EpiMindAgent` once
 - capture raw terminal output
 - persist prompt, metadata, logs, and summary in one run directory
 

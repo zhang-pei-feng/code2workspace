@@ -6,28 +6,22 @@
 
 - 跑 baseline generic case 集
 - 汇总 `generic_trace_summary.json` / `evaluation.json`
-- 基于 train 结果修改明确的 orchestration guidance surface
+- 基于 train 结果生成 `generic-experience` 经验候选
 - 复跑 candidate
 - 用 holdout guardrail 决定 keep / discard
 - 把 proposal、candidate、decision、report 全部落盘
 
 ## 优化对象
 
-第一版只优化 generic guidance surface，不碰 runtime Python 逻辑本身。原因是：
+当前 generic harness 不再暴露 `supervisor-guidance` 下的可编辑 surface，也不再
+使用 surface proposer。优化对象收敛为：
 
-- 这符合现有 harness “先改 surface，再比较结果”的结构
-- generic 编排的很多策略已经逐步迁到 Skill asset，更适合作为 prompt surface
-- 先把优化面收敛到 guidance，能更快验证 harness 闭环是否有效
+- `.code2workspace/skills/orchestration/generic-experience/records/*.json`
+- `.code2workspace/skills/orchestration/generic-experience/generated/generic_orchestration_experience.md`
 
-本次暴露的 surface：
-
-- `references/families/generic_qa.md`
-- `references/nodes/init_generic.md`
-- `references/nodes/worker_context.md`
-- `references/nodes/worker_solution.md`
-- `references/nodes/compose_generic.md`
-
-其中 `init_generic.md`、`worker_solution.md`、`generic_qa.md` 是这次补齐的资产化 surface，避免 generic harness 只能改一半节点。
+每轮候选只做一件事：从当前 train split 中已完成且高分的真实 generic run 抽取
+经验记录，重建 distilled guidance，然后用这批经验重跑 train / holdout。候选通过
+guardrail 就保留经验；失败则恢复进入该轮前的 `generic-experience` 快照。
 
 ## Case 集设计
 
@@ -81,14 +75,8 @@ split 设计：
 
 - `experiments/harness/generic_orchestration_harness/core.py`
   - config / dataclass / run layout
-- `experiments/harness/generic_orchestration_harness/patching.py`
-  - surface override
-- `experiments/harness/generic_orchestration_harness/agent.py`
-  - proposer workspace materialization
 - `experiments/harness/generic_orchestration_harness/runner.py`
-  - baseline / optimize 主循环
-- `experiments/harness/proposers/generic_orchestration_surface_proposer.py`
-  - 第一版规则型 proposer
+  - baseline / optimize 主循环、experience candidate 导出、快照恢复
 
 artifact layout 延续现有 harness 风格：
 
@@ -96,14 +84,15 @@ artifact layout 延续现有 harness 风格：
 - `variants/*.json`
 - `history/visible/train/<variant>/...`
 - `history/private/holdout/<variant>/...`
-- `history/visible/iterations/<n>/proposer_workspace/...`
+- `history/visible/iterations/<n>/experience_candidate.json`
+- `history/visible/iterations/<n>/generic_experience_snapshot/...`
 - `report.json`
 
 ## 运行路径
 
 runner 不模拟 Supervisor Graph，而是直接调用真实 CLI：
 
-`uv run --project libs/cli code2workspace --session-workdir-mode isolated --no-mcp -n <prompt> -q`
+`uv run --project libs/cli EpiMindAgent --session-workdir-mode isolated --no-mcp -n <prompt> -q`
 
 这样每个 case 都会生成真实：
 
@@ -118,20 +107,20 @@ runner 再从真实 run 中读取：
 
 为了稳定找到当前 case 对应的 run，runner 在调用前后比较已存在 run 集合，用“新出现的 run”而不是简单文件名排序。
 
-## 第一版 proposer 策略
+## Experience Candidate 策略
 
-规则 proposer 读取 train summary 后，只做小范围 guidance 增量：
+每轮 candidate 直接从当前 train 结果生成经验：
 
-- `init_generic`
-  - 窄任务优先最小图
-  - 不默认拆成 context + solution 双 lane
-- `worker_context`
-  - 一份关键 artifact 足够时，优先读透而不是扩大检索
-  - 单一主来源时说明 sufficiency / missing evidence
-- `compose_generic`
-  - 短答案里也保留 compact evidence boundary
-- `worker_solution`
-  - 足够 compose 后就停，不再继续工具回路
+- 只选择 `returncode = 0`、`completion_status = completed`、总分不低于阈值的
+  case
+- 从 `generic_trace_summary.json`、`graph_round_*.json` 和原始 prompt 中抽取
+  problem classification、trajectory、effect、applicability、confidence
+- 写入 `generic-experience/records/`
+- 重建 `generated/generic_orchestration_experience.md`
+- 复跑 train / holdout，由真实 runtime 的 experience 注入路径决定是否改善回答
+
+这样优化压力集中在 case memory 本身，而不是反复改写
+`supervisor-guidance` 的 family/node 文本。
 
 ## 实际 live 结果
 
@@ -153,16 +142,47 @@ runner 再从真实 run 中读取：
 - holdout `evidence_score`: `50 -> 70`
 - holdout 仍保持 `traceability_score = 100`
 
+2026-05-25 追加实践：
+
+- 配置新增一个本地代码 holdout case，检查 generic harness 是否真的形成
+  `accepted candidate -> experience records -> distilled guidance -> worker
+  prompt 注入` 的 skill 进化链路。
+- 配置新增三个 `scorecard` case，用于阶段性回放真实 generic 研判题：
+  春运与新冠传播、下一波新冠/流感阳性率高峰、BA.3.2 与 XFG 子代重症率。
+- `scorecard` baseline:
+  `experiments/harness/runs/generic-orchestration-harness/20260525T002747Z`
+  - `3/3` return code 0
+  - mean score `97.0`
+  - 三题均达到 `D6.evidence_boundary_preserved`
+  - 回答形态基本符合“口头判断、不要正式写作、说明证据边界”
+- `holdout` baseline:
+  `experiments/harness/runs/generic-orchestration-harness/20260525T003726Z`
+  - `3/3` return code 0
+  - mean score `92.0`
+  - 新增 skill 进化链路题达到 `D6.evidence_boundary_preserved`
+  - 回答正确区分“离线经验沉淀并回注”和“在线即时自进化”
+
+实践暴露的新观察：
+
+- 真实公共卫生题的 score 很高，但 `source_urls` 候选集合较宽，会混入
+  Wikipedia / 社交媒体等低权重来源；最终回答主要使用 CDC/WHO 等较强证据，
+  但后续 scorecard 可以增加“权威来源优先/低权重来源不支撑核心结论”的检查。
+- 最终回答会附带“判断轨迹（可审计摘要）”，利于 harness 审计，但对“口头判断、
+  不要正式写作”的用户形态来说略偏正式；后续可把这作为 compose_generic 的风格
+  guardrail。
+
 ## 已知限制
 
 - local-code generic 问题仍然偏爱起 inspect lane，说明 planner 仍偏保守
-- proposer 目前是规则型，不会做更细粒度的 surface search
+- experience 抽取目前是规则型 abstraction，不是 LLM 归纳
 - score 仍完全依赖 deterministic summary，没有接 LLM judge
-- case 集还偏小，适合作为第一版闭环，不足以覆盖 generic 的全部任务族
+- 常规 train/holdout case 集仍偏小；`scorecard` 已开始覆盖真实研判题，但还不参与
+  optimize keep/discard
 
 ## 下一步
 
 - 增加更短更窄的 local-code case，专门压 `init_generic` 的最小图倾向
-- 为 candidate 引入更多 proposer 变体，而不是单条规则修改
-- 把 proposer 结果和最终 score delta 写成更紧凑的 Markdown report
+- 把 experience candidate 与最终 score delta 写成更紧凑的 Markdown report
 - 在 harness 报告里增加“每 case 对应 orchestration run 链接清单”，方便手工复盘
+- 为 real-world scorecard 增加来源质量与口头回答风格检查，避免高分掩盖低权重
+  来源候选过宽或回答过正式的问题

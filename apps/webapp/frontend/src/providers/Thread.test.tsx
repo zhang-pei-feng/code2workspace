@@ -122,7 +122,7 @@ describe("ThreadProvider", () => {
 
     expect(payload?.threads[0].metadata).toEqual(
       expect.objectContaining({
-        code2workspace_model_spec: "anthropic:claude-sonnet-4-6",
+        epimindagent_model_spec: "anthropic:claude-sonnet-4-6",
       }),
     );
 

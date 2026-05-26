@@ -4,13 +4,16 @@ This is the fastest engineering snapshot for the repository.
 
 ## Snapshot
 
-- Last consolidated update: 2026-05-21
+- Last consolidated update: 2026-05-26
 - Latest local audit: 2026-05-17, see
   `docs/overview/supervisor-flow-experiment-status.md` for the current
   Supervisor Graph flow diagrams, recent experiment-result summary, and
   portability/single-configuration requirement audit.
 - Repository scope: focused on `libs/code2workspace`, `libs/cli`, the Web
   Workbench, one-shot repo experiments, and harness work
+- Public agent display name: EpiMindAgent. The source package and compatibility
+  paths still use `code2workspace` where changing them would break imports,
+  historical workspaces, or local config migration.
 - Current verified baseline: non-interactive CLI works, interactive TUI startup
   reaches a usable prompt again, the Web Workbench backend/frontend service
   works, the `spades`
@@ -51,6 +54,18 @@ This is the fastest engineering snapshot for the repository.
   normal `.env` / environment-variable behavior in code; isolated project-root
   session workspaces and all Supervisor Graph task families (`generic`,
   `github2workspace`, `benchmark`, and `report`) remain available.
+- Interactive CLI sessions now start with tool auto-approve enabled by default,
+  matching the autonomous long-task direction of non-interactive runs. Use
+  `--no-auto-approve` to start the TUI in manual approval mode; `Shift+Tab`
+  still toggles the mode during a session. A restrictive interactive
+  `--shell-allow-list` starts manual mode unless `-y/--auto-approve` is
+  explicitly provided.
+- Interactive CLI sessions now use a proposal-before-execution gate for normal
+  messages: the first response clarifies or summarizes the intended plan and
+  ends with `如果你觉得可以，我就开始执行任务。`. Only an explicit start/execute
+  confirmation enters the Supervisor Graph, and that confirmed execution runs
+  without the generic ask-user decision point so it behaves like an autonomous
+  task until completion. `/chat` still routes to the plain fallback path.
 - Current project-local default model is `openai:gpt-5.4` in
   `backend/config/agent_models.json`; report workers still default to the
   compatibility alias `openai_paid:gpt-5.4` in code and fall back to
@@ -73,6 +88,11 @@ This is the fastest engineering snapshot for the repository.
   They now also bias reports toward a total-subtotal-total flow and require
   Chinese-titled source sections plus relative/concise artifact references
   instead of absolute filesystem paths in normal user-facing report prose.
+  Report formatting guidance now also requires numbered major sections, valid
+  Markdown heading/list spacing, and paragraph-led formal report bodies instead
+  of note-style one-sentence bullet outlines; report final responses prefer the
+  composed `final_report.md` artifact directly to avoid a final rewrite
+  degrading spacing or prose shape.
   The
   constraints are split across `init_report` contract setup, `compose_report`
   writing/source/format rules, and `final_response` structure-preservation
@@ -99,6 +119,14 @@ This is the fastest engineering snapshot for the repository.
   the current project skills layout, distinguishing capability skills from
   runtime-owned orchestration skills and documenting the Supervisor Graph
   guidance/experience injection flow with Mermaid diagrams.
+- Capability skill audit refreshed `epietl-api` against the upstream
+  `https://epietl.com/SKILL.md` contract: the local skill now preserves
+  project YAML frontmatter and helper-entry instructions while following the
+  upstream query-only reports/events guidance, authenticated endpoint boundary,
+  official parameter names, citation rules, and public channel-catalogue note.
+  The helper now supports those official params, sends Bearer and `X-API-Key`
+  headers for compatibility, and trims oversized collection responses when
+  `limit` is ignored.
 - Added `docs/overview/agent-tool-design.zh.md` as a Chinese design note for
   the current agent tool system, covering tool sources, middleware injection,
   filesystem/shell/web/ask_user/MCP/subagent tools, Supervisor capability
@@ -168,6 +196,14 @@ This is the fastest engineering snapshot for the repository.
   asks workers to use run-relative paths for current-run artifacts and
   project-relative paths for other project files, and the runtime applies the
   same normalization before writing `final_response.md` as a safety net.
+- Final chat-facing Supervisor responses now have a deterministic natural
+  language fallback instead of falling back to raw `Supervisor Summary`
+  diagnostics when the `final_response` worker fails or copies internal
+  diagnostics. The fallback prefers Chinese user-facing prose, handles missing
+  repository URL/source-path failures with a concise Chinese explanation, and
+  rejects raw round/node summaries as final responses. Validation:
+  `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -q`
+  -> `120 passed`
 - Short-read benchmark compatibility now treats stale paired-end operator
   manifests more semantically instead of trusting historical file extensions too
   literally:
@@ -258,7 +294,7 @@ This is the fastest engineering snapshot for the repository.
     `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/test_supervisor_runtime.py -k 'benchmark_case or benchmark_workers_run_in_parallel or supervisor_worker_runner_sends_benchmark_case' -q`
     -> `9 passed`
 - Report supervisor worker nodes now have a bounded default timeout of 20
-  minutes (`CODE2WORKSPACE_SUPERVISOR_REPORT_NODE_TIMEOUT_SECONDS`). A timed
+  minutes (`EPIMINDAGENT_SUPERVISOR_REPORT_NODE_TIMEOUT_SECONDS`). A timed
   out report lane is recorded as `partial` with `worker_timeout`, allowing
   downstream composition to proceed with an explicit evidence gap instead of
   waiting forever on one evidence lane.
@@ -427,7 +463,7 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
     `github2workspace` debugging
   - every supervisor worker node now also has a configurable raw trace artifact
     under `raw_worker_traces/<node_id>.jsonl` unless
-    `CODE2WORKSPACE_SUPERVISOR_RAW_WORKER_TRACE=0` is set; model-backed workers
+    `EPIMINDAGENT_SUPERVISOR_RAW_WORKER_TRACE=0` is set; model-backed workers
     record full message payloads, final raw worker JSON/text, parsed
     `WorkerResult`, model/usage metadata when available, start/end timestamps,
     and extracted source URLs, while deterministic workers still record
@@ -473,32 +509,68 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
     `docs/overview/generic-harness-evaluation-plan.zh.md`
 - Generic orchestration now also has a first real harness optimization loop:
   - added `experiments/harness/generic_orchestration_harness/` with config
-    loading, run layout, surface patching, proposer workspace artifacts,
+    loading, run layout, generic-experience candidate generation,
     baseline-vs-candidate split evaluation, and keep/discard reporting
-  - added a rule-based proposer at
-    `experiments/harness/proposers/generic_orchestration_surface_proposer.py`
-    plus a live config at
-    `experiments/harness/configs/generic_orchestration_harness.toml`
+  - the live config at
+    `experiments/harness/configs/generic_orchestration_harness.toml` no longer
+    exposes `supervisor-guidance` files as editable surfaces and no longer uses
+    the surface proposer path
+  - the obsolete generic-only surface proposer and generic harness patching
+    helpers were removed; other harness families keep their own surface
+    mechanisms where still relevant
   - generic harness runs call the real CLI non-interactive generic path,
     collect `generic_trace_summary.json` / `evaluation.json` from real
     `orchestration_runs/<run_id>`, and score each case with weighted
     routing/graph/trace/evidence/answer/efficiency components
+  - each optimize iteration now snapshots `generic-experience`, exports
+    high-scoring train outcomes into `records/*.json`, rebuilds the distilled
+    guidance artifact, reruns train/holdout, and restores the snapshot if the
+    candidate fails the holdout guardrails
   - holdout acceptance currently requires combined improvement without
     degrading holdout traceability
   - the first live optimize run at
     `experiments/harness/runs/generic-orchestration-harness/20260519T010322Z`
     accepted `iter-001`, improving train mean score from `85.08` to `86.50`
     and holdout mean score from `84.75` to `86.88`
+  - the generic harness config now includes one additional local-code holdout
+    case for the skill-evolution chain plus three real-world public-health
+    `scorecard` cases covering Spring Festival travel/COVID spread, next
+    COVID/flu positivity peaks, and BA.3.2 vs XFG severity judgment
+  - live baseline practice on 2026-05-25 verified the new `scorecard` split at
+    `experiments/harness/runs/generic-orchestration-harness/20260525T002747Z`
+    with `3/3` cases completed at `D6` and mean score `97.0`; the new holdout
+    run at
+    `experiments/harness/runs/generic-orchestration-harness/20260525T003726Z`
+    completed `3/3` cases at `D6` with mean score `92.0`
+  - after the table-first generic-experience change, fresh baseline reruns on
+    2026-05-25 completed holdout at
+    `experiments/harness/runs/generic-orchestration-harness/20260525T030040Z`
+    with `3/3` passed, all `D6`, mean score `89.33`, and scorecard at
+    `experiments/harness/runs/generic-orchestration-harness/20260525T030728Z`
+    with `3/3` passed, mean score `93.17`
+  - the rerun exposed and fixed two harness robustness issues: run directory
+    discovery now prefers `request.json.task == case.prompt` so unrelated
+    concurrent orchestration runs cannot be selected as the latest case run,
+    and case timeouts are recorded as failed outcomes with stdout/stderr
+    instead of aborting the whole split
   - implementation design is documented in
     `docs/overview/generic-orchestration-harness-plan.zh.md`
 - Generic orchestration skill evolution now has a first case-memory loop:
   - added `.code2workspace/skills/orchestration/generic-experience/` as a
     runtime-owned experience skill package separate from stable
     `supervisor-guidance`
-  - accepted generic harness candidates now export structured experience
-    records with problem classification/abstraction, abstracted instance,
-    trajectory, trajectory explanation, trajectory effect, applicability, and
-    confidence
+  - the skill now has a table-first memory contract:
+    `experience_table.json` stores classification, problem abstraction,
+    strategy explain, and instance paths; `records/*.json` remain detailed
+    provenance; generated guidance is rebuilt from the table
+  - ordinary harness writes only append instance paths or create new table rows;
+    abstract fields are reserved for the deterministic 20-instance major update
+    hook, which currently dedupes, sorts, corrects counts, and resets the
+    pending counter without LLM rewriting
+  - generic harness candidates now evolve only this package by exporting
+    structured train experience records with problem classification/abstraction,
+    abstracted instance, trajectory, trajectory explanation, trajectory effect,
+    applicability, and confidence
   - those records are distilled into
     `generic-experience/generated/generic_orchestration_experience.md`
   - generic worker prompts now read both the distilled experience skill and
@@ -525,14 +597,14 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
 - Report supervisor workers can now be routed to model-specific worker
   runnables through environment variables. The default report worker model is
   `openai_paid:gpt-5.4`, overridable globally with
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_MODEL` or per report node with
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_INIT_MODEL`,
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_MONITORING_MODEL`,
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_LOCAL_DATA_MODEL`,
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_LITERATURE_MODEL`,
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_COMPOSE_MODEL`,
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_SUMMARIZE_MODEL`, and
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_FINAL_RESPONSE_MODEL`.
+  `EPIMINDAGENT_SUPERVISOR_REPORT_MODEL` or per report node with
+  `EPIMINDAGENT_SUPERVISOR_REPORT_INIT_MODEL`,
+  `EPIMINDAGENT_SUPERVISOR_REPORT_MONITORING_MODEL`,
+  `EPIMINDAGENT_SUPERVISOR_REPORT_LOCAL_DATA_MODEL`,
+  `EPIMINDAGENT_SUPERVISOR_REPORT_LITERATURE_MODEL`,
+  `EPIMINDAGENT_SUPERVISOR_REPORT_COMPOSE_MODEL`,
+  `EPIMINDAGENT_SUPERVISOR_REPORT_SUMMARIZE_MODEL`, and
+  `EPIMINDAGENT_SUPERVISOR_REPORT_FINAL_RESPONSE_MODEL`.
 - Fresh focused evidence from
   `experiments/harness/runs/supervisor-routing-trigger-eval/20260507T143455346391Z/`
   shows the generic family now reaches `5/5` correct under rules fallback, with
@@ -683,7 +755,7 @@ Status: v1 default wrapper is in place for `github2workspace`, `benchmark`,
     `run/reused_result_record.json` from the historical record with
     `execution_mode = history_reuse`, instead of recomputing the workflow
   - an optional shared history root can be configured through
-    `CODE2WORKSPACE_SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT`
+    `EPIMINDAGENT_SHARED_BENCHMARK_COMPARISON_HISTORY_STORE_ROOT`
 - Benchmark `register` no longer depends on helper-side repo-name discovery
   when operator selection already resolved concrete operator artifacts:
   - selected operator entries now carry resolved `workflow_path`,
@@ -777,7 +849,7 @@ Focused validation currently recorded:
     `tool_activity.jsonl` records `spades` and `megahit` both starting before
     either branch finished, then `megahit` finishing while `spades` continued
   - the same two-tool benchmark also completed through the outer
-    `code2workspace -n ... -q` path under
+    `EpiMindAgent -n ... -q` path under
     `workspace/20260505165456/orchestration_runs/20260505T085500Z`, with the
     same fan-out event order and final `decision=stop`
 - Current live limitation for the new agentic benchmark selector:
@@ -1213,7 +1285,7 @@ backend/config/agent_models.json
 - Smoke command:
 
 ```bash
-uv run --project libs/cli code2workspace -n "Reply with OK only." -q
+uv run --project libs/cli EpiMindAgent -n "Reply with OK only." -q
 ```
 
 - Expected result: `OK`
@@ -1408,6 +1480,62 @@ Remaining gaps:
     `benchmark-canu` operator manifests now rewrites both tools to the same
     shared file:
     `workspace/dataset_store/files/long-read-canu-pacbio/pacbio.fastq`
+
+### 2026-05-25
+
+- Repaired the fixed-source respiratory disease data skill so it now returns
+  structured indicators instead of page metadata only:
+  - WHO cases are read from the public WHO OData relay and expose latest global
+    reported case metrics, including latest period, last 7 days, and last 28 days
+  - U.S. CDC respiratory trends now use CDC module JSON plus `www.cdc.gov/wcms`
+    chart data to expose COVID-19 / influenza / RSV test positivity and ARI
+    activity levels
+  - China CDC monthly reports are parsed from current page markup, then the
+    latest detail page is structured into confirmed, severe, death, positivity,
+    variant-share, and lineage fields
+- Hardened `academic-search`:
+  - removed checked-in PubMed/Springer API keys
+  - PubMed optionally uses `PUBMED_API_KEY`; Springer requires `SPRINGER_OA_KEY`
+  - added query relevance ranking/filtering, including topic guards for broad
+    SARS-CoV-2 / influenza / RSV / Ebola / mpox searches
+- Tightened `epietl-api` key handling so authenticated calls read
+  `EPIETL_API_KEY` or `EPIETL_X_API_KEY` from the environment by default and the
+  helper no longer advertises command-line key passing in help/docs.
+- Fixed `data-governance-ops` NCBI nucleotide normalization:
+  - `subtype` / `subname` qualifiers now populate `country`,
+    `collection_date`, and optional lineage fields before falling back to title
+    parsing
+  - title fallback no longer treats the isolate host segment (`human`) as the
+    country
+  - `quality` and `query-latest` normalize historical snapshots at read time, so
+    older snapshots with raw qualifier data no longer keep false
+    `missing_collection_date` warnings
+- Validation:
+  - `python3 -m py_compile` passed for the three edited helper scripts
+  - `uv run --project libs/cli --group test pytest libs/cli/tests/unit_tests/skills`
+    -> `119 passed`
+  - live probes confirmed structured WHO, CDC, and China CDC respiratory fields
+    are present; authenticated Springer/EpiETL live probes require env keys in
+    the caller environment.
+  - a live NCBI refresh wrote `country = USA: California` and
+    `collection_date = 2026-04-30`; the earlier
+    `20260525T032932Z` snapshot now reports `issue_count = 0` after read-time
+    normalization.
+
+### 2026-05-26
+
+- Renamed the public agent/product display from Code2Workspace/code2workspace
+  to EpiMindAgent across the CLI title/banner/help text, Web Workbench chat
+  labels, default prompts, README command examples, and project environment
+  variable template.
+- Added `EpiMindAgent` as a console-script entrypoint while retaining the old
+  `code2workspace` and `code2workspace-cli` scripts for compatibility.
+- Added preferred `EPIMINDAGENT_*` / `EPIMINDAGENT_CLI_*` environment variable
+  names with fallback support for existing `CODE2WORKSPACE_*` /
+  `CODE2WORKSPACE_CLI_*` local configurations.
+- Kept Python import package names, `.code2workspace` project directories, and
+  historical artifact paths stable to avoid breaking existing workspaces and
+  tests that rely on those compatibility identifiers.
 
 ## Read Next
 

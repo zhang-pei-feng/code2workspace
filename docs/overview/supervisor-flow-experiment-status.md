@@ -359,9 +359,9 @@ Known violations or risks:
 - `backend/config/agent_models.json` stores `api_key_env` and `base_url_env`
   names rather than complete self-contained provider settings.
 - `libs/cli/code2workspace_cli/model_config.py` resolves credentials via
-  environment variables, including `CODE2WORKSPACE_CLI_`-prefixed overrides.
+  environment variables, including `EPIMINDAGENT_CLI_`-prefixed overrides.
 - `libs/cli/code2workspace_cli/agent.py` reads
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_MODEL` and per-report-node model override
+  `EPIMINDAGENT_SUPERVISOR_REPORT_MODEL` and per-report-node model override
   variables.
 - `.env.example` documents external variables such as `OPENAI_API_KEY`,
   `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `TAVILY_API_KEY`, and LangSmith
@@ -409,7 +409,7 @@ What remains split:
   source.
 - `.env` loading is still active in the normal CLI path.
 - Report worker model selection is configured through separate
-  `CODE2WORKSPACE_SUPERVISOR_REPORT_*` environment variables.
+  `EPIMINDAGENT_SUPERVISOR_REPORT_*` environment variables.
 - CLI settings, LangSmith tracing, shell allow-list, extra skill dirs, and some
   tool credentials still use environment variables.
 - Older TOML paths remain supported for tests/migration helpers, so the code is

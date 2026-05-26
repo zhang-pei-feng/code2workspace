@@ -1,4 +1,4 @@
-"""Clipboard utilities for code2workspace-cli."""
+"""Clipboard utilities for EpiMindAgent CLI."""
 
 from __future__ import annotations
 

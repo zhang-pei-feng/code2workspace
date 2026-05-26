@@ -1,4 +1,4 @@
-"""Sandbox provider interface used by the code2workspace CLI."""
+"""Sandbox provider interface used by the EpiMindAgent CLI."""
 
 from __future__ import annotations
 

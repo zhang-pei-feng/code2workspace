@@ -1,4 +1,4 @@
-"""ASGI app for the Code2Workspace web workbench."""
+"""ASGI app for the EpiMindAgent web workbench."""
 
 from __future__ import annotations
 
@@ -20,7 +20,13 @@ from starlette.applications import Starlette
 from starlette.background import BackgroundTask
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from starlette.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+    StreamingResponse,
+)
 from starlette.routing import Route
 
 from apps.webapp.langgraph_service import SharedLangGraphService
@@ -181,7 +187,10 @@ async def create_thread(request: Request) -> JSONResponse:
         cwd=str(cwd),
         title=payload.get("title"),
     )
-    return JSONResponse({"thread": _draft_to_summary(thread, active_status="idle").to_dict()}, status_code=201)
+    return JSONResponse(
+        {"thread": _draft_to_summary(thread, active_status="idle").to_dict()},
+        status_code=201,
+    )
 
 
 async def get_thread(request: Request) -> JSONResponse:
@@ -212,7 +221,9 @@ async def patch_thread_route(request: Request) -> JSONResponse:
     )
     if updated is None:
         return JSONResponse({"error": "thread_not_found"}, status_code=404)
-    summary = _draft_to_summary(updated, active_status=runtime.get_active_status(thread_id))
+    summary = _draft_to_summary(
+        updated, active_status=runtime.get_active_status(thread_id)
+    )
     return JSONResponse({"thread": summary.to_dict()})
 
 
@@ -277,7 +288,9 @@ async def create_message(request: Request) -> JSONResponse:
             prompt=prompt,
         )
     except RuntimeError as exc:
-        return JSONResponse({"error": "thread_busy", "detail": str(exc)}, status_code=409)
+        return JSONResponse(
+            {"error": "thread_busy", "detail": str(exc)}, status_code=409
+        )
     return JSONResponse({"turn": turn.to_dict()}, status_code=202)
 
 
@@ -345,7 +358,9 @@ async def get_workspace_tree(request: Request) -> JSONResponse:
         return JSONResponse({"error": "thread_not_found"}, status_code=404)
 
     try:
-        root, target = _resolve_workspace_target(meta["cwd"], request.query_params.get("path", ""))
+        root, target = _resolve_workspace_target(
+            meta["cwd"], request.query_params.get("path", "")
+        )
     except ValueError:
         return JSONResponse({"error": "invalid_workspace_path"}, status_code=400)
     if not target.exists():
@@ -382,7 +397,9 @@ async def get_workspace_file(request: Request) -> JSONResponse:
         return JSONResponse({"error": "thread_not_found"}, status_code=404)
 
     try:
-        root, target = _resolve_workspace_target(meta["cwd"], request.query_params.get("path", ""))
+        root, target = _resolve_workspace_target(
+            meta["cwd"], request.query_params.get("path", "")
+        )
     except ValueError:
         return JSONResponse({"error": "invalid_workspace_path"}, status_code=400)
     if not target.exists():
@@ -456,7 +473,7 @@ async def download_workspace_path(request: Request) -> Response:
     thread_id = request.path_params["thread_id"]
     meta = await _resolve_thread_meta(thread_id, store)
     if meta is None:
-      return JSONResponse({"error": "thread_not_found"}, status_code=404)
+        return JSONResponse({"error": "thread_not_found"}, status_code=404)
 
     try:
         root, target = _resolve_workspace_target(
@@ -475,7 +492,7 @@ async def download_workspace_path(request: Request) -> Response:
             media_type="application/octet-stream",
         )
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="code2workspace-webapp-zip-"))
+    temp_dir = Path(tempfile.mkdtemp(prefix="epimindagent-webapp-zip-"))
     zip_path = temp_dir / _workspace_archive_name(root, target, thread_id)
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for item in target.rglob("*"):
@@ -501,7 +518,9 @@ async def delete_workspace_path(request: Request) -> JSONResponse:
 
     raw_path = request.query_params.get("path", "")
     if raw_path == "":
-        return JSONResponse({"error": "workspace_root_delete_forbidden"}, status_code=400)
+        return JSONResponse(
+            {"error": "workspace_root_delete_forbidden"}, status_code=400
+        )
     try:
         root, target = _resolve_workspace_target(meta["cwd"], raw_path)
     except ValueError:
@@ -538,7 +557,9 @@ async def get_run(request: Request) -> JSONResponse:
     turn = store.get_turn(turn_id)
     if turn is None or turn["thread_id"] != thread_id:
         return JSONResponse({"error": "turn_not_found"}, status_code=404)
-    return JSONResponse({"turn": turn, "events": store.list_events(thread_id, turn_id=turn_id)})
+    return JSONResponse(
+        {"turn": turn, "events": store.list_events(thread_id, turn_id=turn_id)}
+    )
 
 
 async def clear_thread_events_route(request: Request) -> JSONResponse:
@@ -576,7 +597,9 @@ async def serve_frontend(request: Request) -> Response:
         except ValueError:
             return PlainTextResponse("Not found", status_code=404)
         if candidate.exists() and candidate.is_file():
-            return Response(candidate.read_bytes(), media_type=_guess_media_type(candidate))
+            return Response(
+                candidate.read_bytes(), media_type=_guess_media_type(candidate)
+            )
         html_candidate = (frontend_dir / f"{path}.html").resolve()
         try:
             html_candidate.relative_to(frontend_dir.resolve())
@@ -608,18 +631,58 @@ def _build_routes() -> list[Route]:
         Route("/api/threads/{thread_id}/history", get_thread_history, methods=["GET"]),
         Route("/api/threads/{thread_id}/messages", create_message, methods=["POST"]),
         Route("/api/threads/{thread_id}/events", stream_events, methods=["GET"]),
-        Route("/api/threads/{thread_id}/interrupt", interrupt_thread_route, methods=["POST"]),
-        Route("/api/threads/{thread_id}/decisions", submit_decisions_route, methods=["POST"]),
-        Route("/api/threads/{thread_id}/workspace/tree", get_workspace_tree, methods=["GET"]),
-        Route("/api/threads/{thread_id}/workspace/file", get_workspace_file, methods=["GET"]),
-        Route("/api/threads/{thread_id}/workspace/upload", upload_workspace_files, methods=["POST"]),
-        Route("/api/threads/{thread_id}/workspace/download", download_workspace_path, methods=["GET"]),
-        Route("/api/threads/{thread_id}/workspace/item", delete_workspace_path, methods=["DELETE"]),
+        Route(
+            "/api/threads/{thread_id}/interrupt",
+            interrupt_thread_route,
+            methods=["POST"],
+        ),
+        Route(
+            "/api/threads/{thread_id}/decisions",
+            submit_decisions_route,
+            methods=["POST"],
+        ),
+        Route(
+            "/api/threads/{thread_id}/workspace/tree",
+            get_workspace_tree,
+            methods=["GET"],
+        ),
+        Route(
+            "/api/threads/{thread_id}/workspace/file",
+            get_workspace_file,
+            methods=["GET"],
+        ),
+        Route(
+            "/api/threads/{thread_id}/workspace/upload",
+            upload_workspace_files,
+            methods=["POST"],
+        ),
+        Route(
+            "/api/threads/{thread_id}/workspace/download",
+            download_workspace_path,
+            methods=["GET"],
+        ),
+        Route(
+            "/api/threads/{thread_id}/workspace/item",
+            delete_workspace_path,
+            methods=["DELETE"],
+        ),
         Route("/api/threads/{thread_id}/runs", list_runs, methods=["GET"]),
         Route("/api/threads/{thread_id}/runs/{turn_id}", get_run, methods=["GET"]),
-        Route("/api/threads/{thread_id}/maintenance/clear-events", clear_thread_events_route, methods=["POST"]),
-        Route("/langgraph", langgraph_proxy_route, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),
-        Route("/langgraph/{path:path}", langgraph_proxy_route, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),
+        Route(
+            "/api/threads/{thread_id}/maintenance/clear-events",
+            clear_thread_events_route,
+            methods=["POST"],
+        ),
+        Route(
+            "/langgraph",
+            langgraph_proxy_route,
+            methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        ),
+        Route(
+            "/langgraph/{path:path}",
+            langgraph_proxy_route,
+            methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        ),
         Route("/", serve_frontend, methods=["GET"]),
         Route("/{path:path}", serve_frontend, methods=["GET"]),
     ]
@@ -655,15 +718,15 @@ async def _load_thread_summaries(store: AppStore, runtime: Any) -> list[ThreadSu
             ThreadSummary(
                 thread_id=web_row.thread_id,
                 assistant_id=str(row.get("agent_name") or web_row.assistant_id),
-        cwd=row.get("cwd") or web_row.cwd,
-        active_status=runtime.get_active_status(web_row.thread_id),
-        created_at=row.get("created_at") or web_row.created_at,
-        updated_at=row.get("updated_at") or web_row.updated_at,
-        message_count=int(row.get("message_count") or 0),
-        initial_prompt=row.get("initial_prompt"),
-        title=web_row.title,
-        model_spec=web_row.model_spec,
-    )
+                cwd=row.get("cwd") or web_row.cwd,
+                active_status=runtime.get_active_status(web_row.thread_id),
+                created_at=row.get("created_at") or web_row.created_at,
+                updated_at=row.get("updated_at") or web_row.updated_at,
+                message_count=int(row.get("message_count") or 0),
+                initial_prompt=row.get("initial_prompt"),
+                title=web_row.title,
+                model_spec=web_row.model_spec,
+            )
         )
 
     return sorted(summaries, key=lambda item: item.updated_at or "", reverse=True)
@@ -681,17 +744,27 @@ async def _get_thread_summary(
     return None
 
 
-async def _resolve_thread_meta(thread_id: str, store: AppStore) -> dict[str, str | None] | None:
+async def _resolve_thread_meta(
+    thread_id: str, store: AppStore
+) -> dict[str, str | None] | None:
     """Resolve assistant/cwd metadata for a thread from web rows or checkpoints."""
     thread = store.get_thread(thread_id)
     if thread is not None:
-        return {"assistant_id": thread.assistant_id, "cwd": thread.cwd, "title": thread.title}
+        return {
+            "assistant_id": thread.assistant_id,
+            "cwd": thread.cwd,
+            "title": thread.title,
+        }
 
     assistant_id = await get_thread_agent(thread_id)
     cwd = await get_thread_cwd(thread_id)
     if assistant_id is None and cwd is None:
         return None
-    return {"assistant_id": assistant_id or "agent", "cwd": cwd or str(Path.cwd()), "title": None}
+    return {
+        "assistant_id": assistant_id or "agent",
+        "cwd": cwd or str(Path.cwd()),
+        "title": None,
+    }
 
 
 def _draft_to_summary(web_row, *, active_status: str) -> ThreadSummary:
@@ -800,10 +873,7 @@ def _extract_docx_text(path: Path) -> str:
     namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     paragraphs: list[str] = []
     for paragraph in root.findall(".//w:p", namespace):
-        texts = [
-            node.text or ""
-            for node in paragraph.findall(".//w:t", namespace)
-        ]
+        texts = [node.text or "" for node in paragraph.findall(".//w:t", namespace)]
         joined = "".join(texts).strip()
         if joined:
             paragraphs.append(joined)
@@ -923,10 +993,15 @@ async def _forward_langgraph_run_stream(request: Request, path: str) -> Response
             event_name = mode
             if mode == "messages":
                 message_obj, metadata = data
-                yield event_name, [
-                    _normalize_langgraph_message_payload(message_to_dict(message_obj)),
-                    metadata,
-                ]
+                yield (
+                    event_name,
+                    [
+                        _normalize_langgraph_message_payload(
+                            message_to_dict(message_obj)
+                        ),
+                        metadata,
+                    ],
+                )
             else:
                 yield event_name, data
 
@@ -952,7 +1027,15 @@ async def _forward_langgraph_run_stream(request: Request, path: str) -> Response
 
 def _normalize_proxy_stream_modes(raw_modes: Any) -> list[str]:
     """Normalize browser stream modes to the subset supported by the proxy path."""
-    supported = {"messages", "updates", "values", "events", "debug", "tasks", "checkpoints"}
+    supported = {
+        "messages",
+        "updates",
+        "values",
+        "events",
+        "debug",
+        "tasks",
+        "checkpoints",
+    }
     alias_map = {
         "messages-tuple": "messages",
     }
@@ -1058,7 +1141,9 @@ async def _forward_langgraph_history_request(request: Request, path: str) -> Res
         content=body,
     )
     if history_response.status_code != 404:
-        return JSONResponse(history_response.json(), status_code=history_response.status_code)
+        return JSONResponse(
+            history_response.json(), status_code=history_response.status_code
+        )
 
     thread_id = path.split("/")[1]
     state_response = await client.request(
@@ -1067,7 +1152,9 @@ async def _forward_langgraph_history_request(request: Request, path: str) -> Res
         headers=headers,
     )
     if state_response.status_code >= 400:
-        return JSONResponse(state_response.json(), status_code=state_response.status_code)
+        return JSONResponse(
+            state_response.json(), status_code=state_response.status_code
+        )
 
     state_payload = state_response.json()
     fallback_history = [
@@ -1077,7 +1164,11 @@ async def _forward_langgraph_history_request(request: Request, path: str) -> Res
             "tasks": state_payload.get("tasks", []),
             "checkpoint": state_payload.get(
                 "checkpoint",
-                {"thread_id": thread_id, "checkpoint_ns": "", "checkpoint_id": "fallback"},
+                {
+                    "thread_id": thread_id,
+                    "checkpoint_ns": "",
+                    "checkpoint_id": "fallback",
+                },
             ),
             "parent_checkpoint": state_payload.get("parent_checkpoint"),
             "metadata": state_payload.get("metadata", {}),

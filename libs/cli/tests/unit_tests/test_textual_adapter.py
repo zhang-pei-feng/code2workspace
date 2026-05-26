@@ -303,7 +303,7 @@ class TestBuildStreamConfig:
         from code2workspace_cli._version import __version__
 
         config = build_stream_config("t-ver", assistant_id=None)
-        assert config["metadata"]["versions"]["code2workspace-cli"] == __version__
+        assert config["metadata"]["versions"]["EpiMindAgent-cli"] == __version__
 
     def test_versions_contains_sdk_version_when_installed(self) -> None:
         """SDK version should be in versions when code2workspace is installed."""
@@ -312,7 +312,7 @@ class TestBuildStreamConfig:
             return_value="0.5.0",
         ):
             config = build_stream_config("t-sdk", assistant_id=None)
-        assert config["metadata"]["versions"]["code2workspace"] == "0.5.0"
+        assert config["metadata"]["versions"]["EpiMindAgent-sdk"] == "0.5.0"
 
     def test_versions_omits_sdk_when_not_installed(self) -> None:
         """SDK version key should be absent when code2workspace is not installed."""
@@ -323,10 +323,10 @@ class TestBuildStreamConfig:
             side_effect=PackageNotFoundError("code2workspace"),
         ):
             config = build_stream_config("t-nosdk", assistant_id=None)
-        assert "code2workspace" not in config["metadata"]["versions"]
+        assert "EpiMindAgent-sdk" not in config["metadata"]["versions"]
         from code2workspace_cli._version import __version__
 
-        assert config["metadata"]["versions"]["code2workspace-cli"] == __version__
+        assert config["metadata"]["versions"]["EpiMindAgent-cli"] == __version__
 
     def test_user_id_included_when_set(self) -> None:
         """CODE2WORKSPACE_CLI_USER_ID should appear in metadata when set."""

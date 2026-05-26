@@ -478,7 +478,9 @@ class TestCreateModelProfileExtraction:
         assert result.context_limit is None
 
     @patch("langchain.chat_models.init_chat_model")
-    def test_handles_none_profile(self, mock_init_chat_model: Mock, tmp_path: Path) -> None:
+    def test_handles_none_profile(
+        self, mock_init_chat_model: Mock, tmp_path: Path
+    ) -> None:
         """Test that profile=None leaves context_limit as None."""
         mock_model = Mock()
         mock_model.profile = None
@@ -491,7 +493,9 @@ class TestCreateModelProfileExtraction:
         assert result.context_limit is None
 
     @patch("langchain.chat_models.init_chat_model")
-    def test_handles_non_dict_profile(self, mock_init_chat_model: Mock, tmp_path: Path) -> None:
+    def test_handles_non_dict_profile(
+        self, mock_init_chat_model: Mock, tmp_path: Path
+    ) -> None:
         """Test that non-dict profile is handled safely."""
         mock_model = Mock()
         mock_model.profile = "not a dict"
@@ -504,7 +508,9 @@ class TestCreateModelProfileExtraction:
         assert result.context_limit is None
 
     @patch("langchain.chat_models.init_chat_model")
-    def test_handles_non_int_max_input_tokens(self, mock_init_chat_model: Mock, tmp_path: Path) -> None:
+    def test_handles_non_int_max_input_tokens(
+        self, mock_init_chat_model: Mock, tmp_path: Path
+    ) -> None:
         """Test that string max_input_tokens is ignored."""
         mock_model = Mock()
         mock_model.profile = {"max_input_tokens": "200000"}  # String, not int
@@ -1015,6 +1021,8 @@ class TestGetLangsmithProjectName:
         env = {
             "LANGSMITH_API_KEY": "",
             "LANGCHAIN_API_KEY": "",
+            "EPIMINDAGENT_CLI_LANGSMITH_API_KEY": "",
+            "EPIMINDAGENT_CLI_LANGCHAIN_API_KEY": "",
             "CODE2WORKSPACE_CLI_LANGSMITH_API_KEY": "",
             "CODE2WORKSPACE_CLI_LANGCHAIN_API_KEY": "",
             "LANGSMITH_TRACING": "true",
@@ -1028,6 +1036,8 @@ class TestGetLangsmithProjectName:
             "LANGSMITH_API_KEY": "lsv2_test",
             "LANGSMITH_TRACING": "",
             "LANGCHAIN_TRACING_V2": "",
+            "EPIMINDAGENT_CLI_LANGSMITH_TRACING": "",
+            "EPIMINDAGENT_CLI_LANGCHAIN_TRACING_V2": "",
             "CODE2WORKSPACE_CLI_LANGSMITH_TRACING": "",
             "CODE2WORKSPACE_CLI_LANGCHAIN_TRACING_V2": "",
         }
@@ -1063,7 +1073,7 @@ class TestGetLangsmithProjectName:
             assert get_langsmith_project_name() == "env-project"
 
     def test_falls_back_to_default(self) -> None:
-        """Should fall back to 'code2workspace-cli' when no project name configured."""
+        """Should fall back to 'EpiMindAgent-cli' when no project name configured."""
         env = {
             "LANGSMITH_API_KEY": "lsv2_test",
             "LANGSMITH_TRACING": "true",
@@ -1073,7 +1083,7 @@ class TestGetLangsmithProjectName:
             patch("code2workspace_cli.config.settings") as mock_settings,
         ):
             mock_settings.code2workspace_langchain_project = None
-            assert get_langsmith_project_name() == "code2workspace-cli"
+            assert get_langsmith_project_name() == "EpiMindAgent-cli"
 
     def test_accepts_langchain_api_key(self) -> None:
         """Should accept LANGCHAIN_API_KEY as alternative to LANGSMITH_API_KEY."""
@@ -1087,7 +1097,7 @@ class TestGetLangsmithProjectName:
             patch("code2workspace_cli.config.settings") as mock_settings,
         ):
             mock_settings.code2workspace_langchain_project = None
-            assert get_langsmith_project_name() == "code2workspace-cli"
+            assert get_langsmith_project_name() == "EpiMindAgent-cli"
 
 
 class TestFetchLangsmithProjectUrl:
@@ -1255,7 +1265,7 @@ class TestBuildLangsmithThreadUrl:
 
         assert (
             result
-            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=code2workspace-cli"
+            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=epimindagent-cli"
         )
 
     def test_strips_trailing_slash(self) -> None:
@@ -1276,7 +1286,7 @@ class TestBuildLangsmithThreadUrl:
 
         assert (
             result
-            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=code2workspace-cli"
+            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=epimindagent-cli"
         )
 
     def test_returns_none_when_no_project_name(self) -> None:
@@ -1453,7 +1463,7 @@ num_ctx = 4000
     def test_env_model_uses_matching_provider_and_model_params(
         self, mock_init_chat_model: Mock, tmp_path: Path
     ) -> None:
-        """CODE2WORKSPACE_MODEL selects provider params plus matching model overrides."""
+        """EPIMINDAGENT_MODEL selects provider params plus matching model overrides."""
         config_path = tmp_path / "agent_models.json"
         config_path.write_text(
             """
@@ -1484,7 +1494,7 @@ num_ctx = 4000
             patch.dict(
                 "os.environ",
                 {
-                    "CODE2WORKSPACE_MODEL": "openai:gpt-5.5",
+                    "EPIMINDAGENT_MODEL": "openai:gpt-5.5",
                     "OPENAI_API_KEY": "test-key",
                 },
                 clear=True,
@@ -1574,7 +1584,9 @@ class TestOpenRouterVersionCheck:
 
     def test_skipped_for_other_providers(self) -> None:
         """Version check is not invoked for non-openrouter providers."""
-        with patch("code2workspace.profiles._openrouter.check_openrouter_version") as mock:
+        with patch(
+            "code2workspace.profiles._openrouter.check_openrouter_version"
+        ) as mock:
             _get_provider_kwargs("openai")
 
         mock.assert_not_called()
@@ -1592,7 +1604,7 @@ class TestOpenRouterHeaders:
         kwargs = _get_provider_kwargs("openrouter")
 
         assert kwargs["app_url"] == "https://pypi.org/project/code2workspace-cli/"
-        assert kwargs["app_title"] == "Code2Workspace CLI"
+        assert kwargs["app_title"] == "EpiMindAgent CLI"
         assert kwargs["app_categories"] == ["cli-agent"]
 
     def test_per_model_attribution_overrides_defaults(self, tmp_path: Path) -> None:
@@ -2133,7 +2145,8 @@ class TestLazyModuleAttributes:
 
         try:
             with patch(
-                "code2workspace_cli.config._load_dotenv", side_effect=RuntimeError("boom")
+                "code2workspace_cli.config._load_dotenv",
+                side_effect=RuntimeError("boom"),
             ):
                 _ensure_bootstrap()  # should warn, not raise
 
@@ -2153,7 +2166,7 @@ class TestLazyModuleAttributes:
     def test_ensure_bootstrap_langsmith_override(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """_ensure_bootstrap copies CODE2WORKSPACE_CLI_LANGSMITH_PROJECT."""
+        """_ensure_bootstrap copies EPIMINDAGENT_CLI_LANGSMITH_PROJECT."""
         import code2workspace_cli.config as config_mod
         from code2workspace_cli.config import _ensure_bootstrap
 
@@ -2162,7 +2175,8 @@ class TestLazyModuleAttributes:
         config_mod._bootstrap_done = False
 
         try:
-            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", "my-agent-project")
+            monkeypatch.setenv("EPIMINDAGENT_CLI_LANGSMITH_PROJECT", "my-agent-project")
+            monkeypatch.delenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", raising=False)
             monkeypatch.delenv("LANGSMITH_PROJECT", raising=False)
 
             with (
@@ -2195,7 +2209,8 @@ class TestLazyModuleAttributes:
 
         try:
             monkeypatch.setenv("LANGSMITH_PROJECT", "user-project")
-            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", "agent-project")
+            monkeypatch.setenv("EPIMINDAGENT_CLI_LANGSMITH_PROJECT", "agent-project")
+            monkeypatch.delenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", raising=False)
 
             with (
                 patch("code2workspace_cli.config._load_dotenv"),
@@ -2226,10 +2241,11 @@ class TestLazyModuleAttributes:
         config_mod._bootstrap_done = False
 
         try:
-            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_API_KEY", "lsv2_test")
-            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_TRACING", "true")
+            monkeypatch.setenv("EPIMINDAGENT_CLI_LANGSMITH_API_KEY", "lsv2_test")
+            monkeypatch.setenv("EPIMINDAGENT_CLI_LANGSMITH_TRACING", "true")
             monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
             monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
+            monkeypatch.delenv("EPIMINDAGENT_CLI_LANGSMITH_PROJECT", raising=False)
             monkeypatch.delenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", raising=False)
 
             with (
@@ -2262,7 +2278,8 @@ class TestLazyModuleAttributes:
 
         try:
             monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_original")
-            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_API_KEY", "lsv2_override")
+            monkeypatch.setenv("EPIMINDAGENT_CLI_LANGSMITH_API_KEY", "lsv2_override")
+            monkeypatch.delenv("EPIMINDAGENT_CLI_LANGSMITH_PROJECT", raising=False)
             monkeypatch.delenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", raising=False)
 
             with (
@@ -2294,8 +2311,9 @@ class TestLazyModuleAttributes:
         config_mod._bootstrap_done = False
 
         try:
-            monkeypatch.setenv("CODE2WORKSPACE_CLI_LANGSMITH_TRACING", "")
+            monkeypatch.setenv("EPIMINDAGENT_CLI_LANGSMITH_TRACING", "")
             monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
+            monkeypatch.delenv("EPIMINDAGENT_CLI_LANGSMITH_PROJECT", raising=False)
             monkeypatch.delenv("CODE2WORKSPACE_CLI_LANGSMITH_PROJECT", raising=False)
 
             with (

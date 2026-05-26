@@ -207,7 +207,7 @@ def compute_summarization_defaults(model: BaseChatModel) -> SummarizationDefault
     }
 
 
-class _Code2WorkspaceSummarizationMiddleware(AgentMiddleware):
+class _EpiMindAgentSummarizationMiddleware(AgentMiddleware):
     """Summarization middleware with backend for conversation history offloading."""
 
     state_schema = SummarizationState
@@ -288,7 +288,7 @@ class _Code2WorkspaceSummarizationMiddleware(AgentMiddleware):
             **deprecated_kwargs,
         )
 
-        # Code2Workspace specific attributes
+        # EpiMindAgent specific attributes
         self._backend = backend
 
         artifacts_root = backend.artifacts_root if isinstance(backend, CompositeBackend) else "/"
@@ -1091,8 +1091,8 @@ A condensed summary follows:
         )
 
 
-SummarizationMiddleware = _Code2WorkspaceSummarizationMiddleware
-"""Public alias for `_Code2WorkspaceSummarizationMiddleware`.
+SummarizationMiddleware = _EpiMindAgentSummarizationMiddleware
+"""Public alias for `_EpiMindAgentSummarizationMiddleware`.
 
 This is the name external callers should import and reference.
 """
@@ -1101,7 +1101,7 @@ This is the name external callers should import and reference.
 def create_summarization_middleware(
     model: BaseChatModel,
     backend: BACKEND_TYPES,
-) -> _Code2WorkspaceSummarizationMiddleware:
+) -> _EpiMindAgentSummarizationMiddleware:
     """Create a `SummarizationMiddleware` with model-aware defaults.
 
     Computes trigger, keep, and truncation settings from the model's profile
@@ -1211,7 +1211,7 @@ class SummarizationToolMiddleware(AgentMiddleware):
 
     This middleware never compacts automatically. Compaction only occurs when
     `compact_conversation` is called as a normal tool call (by the model or by
-    an explicit user action, e.g. as implemented in the code2workspace-cli).
+    an explicit user action, e.g. as implemented in the EpiMindAgent CLI).
 
     To avoid compacting too early, compact tool execution is gated by
     `_is_eligible_for_compaction`, which requires reported usage to reach about
@@ -1239,7 +1239,7 @@ class SummarizationToolMiddleware(AgentMiddleware):
 
     state_schema = SummarizationState
 
-    def __init__(self, summarization: _Code2WorkspaceSummarizationMiddleware) -> None:
+    def __init__(self, summarization: _EpiMindAgentSummarizationMiddleware) -> None:
         """Initialize with a reference to the summarization middleware.
 
         Args:

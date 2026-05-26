@@ -7,6 +7,12 @@ description: Search PubMed, Springer Nature, and bioRxiv papers or preprints for
 
 You are equipped with an academic search skill. When the user asks you to find academic papers, literature, references, or preprints related to biology, medicine, bioinformatics, vaccines, drugs, SARS-CoV-2, influenza, RSV, virology, mutations, or general science, run `search_tools.py` at `skills/capabilities/academic-search/scripts/search_tools.py` from the workspace root before considering generic browsing.
 
+The helper does not store API keys in the repository. PubMed works without a
+key but uses `PUBMED_API_KEY` when present. Springer Nature OpenAccess requires
+`SPRINGER_OA_KEY` in the environment. Returned PubMed/Springer/bioRxiv records
+are ranked and filtered against the query terms so broad searches do not pass
+through obviously unrelated hits.
+
 ## Instructions for Execution
 
 Execution rules:
@@ -34,10 +40,11 @@ Choose the appropriate source based on the user's request:
    - Detailed command: `python3 skills/capabilities/academic-search/scripts/search_tools.py --source springer --query "<search_terms>" --details [--max-results <n>]`
    - Example: `python3 skills/capabilities/academic-search/scripts/search_tools.py --source springer --query "cancer deep learning" --max-results 5`
    - Details include: title, date, journal, DOI, authors, abstract, and DOI/link when available.
+   - Requires `SPRINGER_OA_KEY` in the environment.
 
 3. **bioRxiv**: Best for recent biology preprints. Note that this requires date ranges, NOT keywords. bioRxiv can be used as a supporting source for latest-paper questions; when using it for a keyword-specific question, scan/filter the returned date-window records for actual relevance and clearly label that the source is bioRxiv/preprint data.
-   - Command: `python3 skills/capabilities/academic-search/scripts/search_tools.py --source biorxiv --start "<YYYY-MM-DD>" --end "<YYYY-MM-DD>" [--max-results <n>]`
-   - Detailed command: `python3 skills/capabilities/academic-search/scripts/search_tools.py --source biorxiv --start "<YYYY-MM-DD>" --end "<YYYY-MM-DD>" --details [--max-results <n>]`
+   - Command: `python3 skills/capabilities/academic-search/scripts/search_tools.py --source biorxiv --start "<YYYY-MM-DD>" --end "<YYYY-MM-DD>" [--query "<topic>"] [--max-results <n>]`
+   - Detailed command: `python3 skills/capabilities/academic-search/scripts/search_tools.py --source biorxiv --start "<YYYY-MM-DD>" --end "<YYYY-MM-DD>" --query "<topic>" --details [--max-results <n>]`
    - Example: `python3 skills/capabilities/academic-search/scripts/search_tools.py --source biorxiv --start "2023-10-01" --end "2023-10-05" --max-results 5`
    - Details include: title, date, DOI, authors, category, abstract, JATS XML URL, and bioRxiv link when available.
 

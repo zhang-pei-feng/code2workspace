@@ -2362,6 +2362,10 @@ def _report_contract_declares_shape(*, node: TaskNode, result: WorkerResult) -> 
         "shape_archetype",
         "report_archetype",
         "expected_report_shape",
+        "primary_archetype",
+        "secondary_archetype",
+        "report_shape_notes",
+        "authoritative_user_format",
         "required_sections_outline",
         "organizing_logic",
     )

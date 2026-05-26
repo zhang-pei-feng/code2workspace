@@ -374,7 +374,7 @@ class ServerProcess:
 
         work_dir = self.config_dir
         if work_dir is None:
-            self._temp_dir = tempfile.TemporaryDirectory(prefix="code2workspace_server_")
+            self._temp_dir = tempfile.TemporaryDirectory(prefix="epimindagent_server_")
             work_dir = Path(self._temp_dir.name)
 
         config_path = work_dir / "langgraph.json"
@@ -394,7 +394,7 @@ class ServerProcess:
 
         logger.info("Starting langgraph dev server: %s", " ".join(cmd))
         self._log_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
-            prefix="code2workspace_server_log_",
+            prefix="epimindagent_server_log_",
             suffix=".txt",
             delete=False,
             mode="w",
@@ -487,7 +487,7 @@ class ServerProcess:
 
         Args:
             **overrides: Key/value env var pairs
-                (e.g., `CODE2WORKSPACE_CLI_SERVER_MODEL="anthropic:claude-sonnet-4-6"`).
+                (e.g., `EPIMINDAGENT_CLI_SERVER_MODEL="anthropic:claude-sonnet-4-6"`).
         """
         self._env_overrides.update(overrides)
 

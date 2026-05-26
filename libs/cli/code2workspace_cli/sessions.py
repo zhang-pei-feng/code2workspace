@@ -1085,7 +1085,7 @@ async def list_threads_command(
     *,
     output_format: OutputFormat = "text",
 ) -> None:
-    """CLI handler for `code2workspace threads list`.
+    """CLI handler for `EpiMindAgent threads list`.
 
     Fetches and displays a table of recent conversation threads, optionally
     filtered by agent name or git branch.
@@ -1160,7 +1160,7 @@ async def list_threads_command(
             )
         else:
             console.print("[yellow]No threads found.[/yellow]")
-        console.print("[dim]Start a conversation with: code2workspace[/dim]")
+        console.print("[dim]Start a conversation with: EpiMindAgent[/dim]")
         return
 
     title_parts = []
@@ -1225,7 +1225,7 @@ async def delete_thread_command(
     dry_run: bool = False,
     output_format: OutputFormat = "text",
 ) -> None:
-    """CLI handler for: code2workspace threads delete.
+    """CLI handler for: EpiMindAgent threads delete.
 
     Args:
         thread_id: ID of the thread to delete.

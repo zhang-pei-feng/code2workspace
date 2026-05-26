@@ -114,11 +114,11 @@ with open(path, 'wb') as f:
     f.write(result.encode('utf-8'))
 
 print(json.dumps({{'count': count}}))
-" 2>&1 <<'__CODE2WORKSPACE_EDIT_EOF__'
+" 2>&1 <<'__EPIMINDAGENT_EDIT_EOF__'
 {payload_b64}
-__CODE2WORKSPACE_EDIT_EOF__
+__EPIMINDAGENT_EDIT_EOF__
 """
-# Make sure to maintain a new line at the end of CODE2WORKSPACE_EDIT_EOF to denote end of
+# Make sure to maintain a new line at the end of EPIMINDAGENT_EDIT_EOF to denote end of
 # feed. This may not matter for some integrations.
 
 """Server-side file edit via `execute()`.
@@ -133,7 +133,7 @@ on failure.
 Used for payloads under `_EDIT_INLINE_MAX_BYTES`; larger payloads fall back
 to `_edit_via_upload()` which transfers old/new strings as temp files.
 
-Keeps a trailing newline after `__CODE2WORKSPACE_EDIT_EOF__` so integrations that
+Keeps a trailing newline after `__EPIMINDAGENT_EDIT_EOF__` so integrations that
 detect end-of-input on a newline-delimited heredoc feed can observe completion.
 """
 

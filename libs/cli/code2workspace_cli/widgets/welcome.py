@@ -1,4 +1,4 @@
-"""Welcome banner widget for code2workspace-cli."""
+"""Welcome banner widget for EpiMindAgent CLI."""
 
 from __future__ import annotations
 
@@ -189,7 +189,7 @@ class WelcomeBanner(Static):
             "bold" if ansi else TStyle(foreground=TColor.parse(colors.tool), bold=True)
         )
         version_tag = f"v{__version__}"
-        parts.extend([("code2workspace", primary_style), (" ", "dim")])
+        parts.extend([("EpiMindAgent", primary_style), (" ", "dim")])
         if _is_editable_install():
             parts.extend([(f"{version_tag} (local)", dev_style), "\n"])
         else:
@@ -213,12 +213,12 @@ class WelcomeBanner(Static):
             if project_url:
                 link_style: str | TStyle
                 if ansi:
-                    url = f"{project_url}?utm_source=code2workspace-cli"
+                    url = f"{project_url}?utm_source=epimindagent-cli"
                     link_style = TStyle(bold=True, link=url)
                 else:
                     link_style = TStyle(
                         foreground=TColor.parse(colors.primary),
-                        link=f"{project_url}?utm_source=code2workspace-cli",
+                        link=f"{project_url}?utm_source=epimindagent-cli",
                     )
                 parts.append((f"'{self._project_name}'", link_style))
             else:
@@ -229,7 +229,7 @@ class WelcomeBanner(Static):
             if project_url:
                 thread_url = (
                     f"{project_url.rstrip('/')}/t/{self._cli_thread_id}"
-                    "?utm_source=code2workspace-cli"
+                    "?utm_source=epimindagent-cli"
                 )
                 parts.extend(
                     [

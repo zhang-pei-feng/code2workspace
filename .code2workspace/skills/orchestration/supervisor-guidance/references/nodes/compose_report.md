@@ -17,10 +17,19 @@
   - what can reasonably be inferred from it
   - what remains uncertain or unsupported
 - Prefer prose-first exposition. Use bullets only for summaries, recommendations, or compact enumerations; use tables for side-by-side comparisons, metrics, or evidence-strength matrices.
+- Paragraphs should be the default unit of the report. Each substantive `##` or `###` section should normally contain one to three cohesive paragraphs that synthesize evidence, interpretation, and caveats in natural prose.
+- Do not make the body read like notes by turning every sentence into a bullet, or by prefixing every line with labels such as `直接证据`, `推断`, `不确定性`, or `建议`. Use those labels sparingly when they genuinely clarify confidence; otherwise weave the distinction into paragraph prose.
+- Bulleted or numbered lists are appropriate for a short bottom-line set, risk dimensions, recommendations, source lists, or compact enumerations, but they should not replace the main analytic paragraphs of a formal report.
 - Keep the structure easy to scan:
   - one `#` title
-  - `##` major sections
+  - numbered `##` major sections
   - `###` subsections only when they improve readability
+- Unless the user explicitly requests unnumbered headings or a different fixed format, number every `##` major section in the final report. For Chinese reports, use Chinese numerals with dunhao, for example `## 一、报告范围与当前判断`, `## 二、核心证据`, `## 三、风险与建议`; for English reports, use simple numeric prefixes such as `## 1. Current Assessment`.
+- Markdown syntax must be valid, not merely visually similar:
+  - every heading marker must be followed by one space, for example `### 1.1 传播与临床意义`; never write `###1.1传播与临床意义`
+  - every ordered or unordered list marker must be followed by one space, for example `1. 结论` and `- 证据`; never write `1.结论`, `-证据`, or `-以及`
+  - nested bullets must use consistent indentation, preferably two spaces before the nested marker, for example `  - Sudan virus`; do not emit one-space dangling bullets like ` - Sudan virus`
+  - keep a blank line before headings and when switching between prose and list blocks if it affects Markdown parsing
 - Prefer a clear total-subtotal-total flow when the task fits it:
   - open with the overall answer/current judgment
   - expand into the main supporting findings, comparisons, or evidence blocks
